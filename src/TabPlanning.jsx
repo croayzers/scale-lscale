@@ -473,46 +473,54 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa }) {
 
   /* ── Drag global horizontal ─────────────────────────────────────────────── */
   useEffect(() => {
+    let rafId = null;
     const onMove = e => {
       const dr = dragRef.current;
       if (!dr) return;
-      const dx = e.clientX - dr.startX;
-      if (Math.abs(dx) > DRAG_THRESH) dr.hasMoved = true;
-      const dh = dx / W_PX;
+      const clientX = e.clientX;
+      if (rafId) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        const dr2 = dragRef.current;
+        if (!dr2) return;
+        const dx = clientX - dr2.startX;
+        if (Math.abs(dx) > DRAG_THRESH) dr2.hasMoved = true;
+        const dh = dx / W_PX;
 
-      setTramosForPedido(dr.pedidoId, prev => {
-        if (dr.type === "resize") {
+        setTramosForPedido(dr2.pedidoId, prev => {
+          if (dr2.type === "resize") {
+            return prev.map(t => {
+              if (t.id === dr2.id) {
+                const nf = snp(clamp(dr2.startHF + dh, dr2.startHI + SNAP, H_TOTAL));
+                return { ...t, hora_fin: nf };
+              }
+              if (dr2.grupoId && t.grupo_id === dr2.grupoId) {
+                const snap = dr2.groupSnaps.find(s => s.id === t.id);
+                if (!snap || snap.order <= dr2.order) return t;
+                const growth = snp(clamp(dr2.startHF + dh, dr2.startHI + SNAP, H_TOTAL)) - dr2.startHF;
+                return { ...t, hora_inicio: snp(snap.startHI + growth), hora_fin: snp(snap.startHF + growth) };
+              }
+              return t;
+            });
+          }
+          // move
+          if (dr2.grupoId) {
+            const dragged = dr2.groupSnaps.find(s => s.id === dr2.id);
+            if (!dragged) return prev;
+            const ni    = snp(clamp(dragged.startHI + dh, 0, H_TOTAL - dr2.dur));
+            const delta = ni - dragged.startHI;
+            return prev.map(t => {
+              if (t.grupo_id !== dr2.grupoId) return t;
+              const snap = dr2.groupSnaps.find(s => s.id === t.id);
+              if (!snap) return t;
+              return { ...t, hora_inicio: snp(snap.startHI + delta), hora_fin: snp(snap.startHF + delta) };
+            });
+          }
           return prev.map(t => {
-            if (t.id === dr.id) {
-              const nf = snp(clamp(dr.startHF + dh, dr.startHI + SNAP, H_TOTAL));
-              return { ...t, hora_fin: nf };
-            }
-            if (dr.grupoId && t.grupo_id === dr.grupoId) {
-              const snap = dr.groupSnaps.find(s => s.id === t.id);
-              if (!snap || snap.order <= dr.order) return t;
-              const growth = snp(clamp(dr.startHF + dh, dr.startHI + SNAP, H_TOTAL)) - dr.startHF;
-              return { ...t, hora_inicio: snp(snap.startHI + growth), hora_fin: snp(snap.startHF + growth) };
-            }
-            return t;
+            if (t.id !== dr2.id) return t;
+            const ni = snp(clamp(dr2.startHI + dh, 0, H_TOTAL - dr2.dur));
+            return { ...t, hora_inicio: ni, hora_fin: ni + dr2.dur };
           });
-        }
-        // move
-        if (dr.grupoId) {
-          const dragged = dr.groupSnaps.find(s => s.id === dr.id);
-          if (!dragged) return prev;
-          const ni    = snp(clamp(dragged.startHI + dh, 0, H_TOTAL - dr.dur));
-          const delta = ni - dragged.startHI;
-          return prev.map(t => {
-            if (t.grupo_id !== dr.grupoId) return t;
-            const snap = dr.groupSnaps.find(s => s.id === t.id);
-            if (!snap) return t;
-            return { ...t, hora_inicio: snp(snap.startHI + delta), hora_fin: snp(snap.startHF + delta) };
-          });
-        }
-        return prev.map(t => {
-          if (t.id !== dr.id) return t;
-          const ni = snp(clamp(dr.startHI + dh, 0, H_TOTAL - dr.dur));
-          return { ...t, hora_inicio: ni, hora_fin: ni + dr.dur };
         });
       });
     };
@@ -538,7 +546,11 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa }) {
 
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup",   onUp);
-    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup",   onUp);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
   }, [setTramosForPedido, vehById]);
 
   /* ── Pan-to-scroll (click+drag en zona vacía del canvas) ───────────────── */
@@ -654,9 +666,12 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa }) {
   /* ── Eje de horas ───────────────────────────────────────────────────────── */
   const totalW = H_TOTAL * W_PX;  // 72 * 80 = 5760 px
 
-  // Ticks: hora entera + medias horas
-  const ticks = [];
-  for (let h = 0; h < H_TOTAL; h += 0.5) ticks.push(h);
+  const ticks = useMemo(() => {
+    const t = [];
+    for (let h = 0; h < H_TOTAL; h += 0.5) t.push(h);
+    return t;
+  }, []);
+  const ticksHoraEntera = useMemo(() => ticks.filter(h => h % 1 === 0), [ticks]);
 
   // Franjas de días para el fondo
   const dayBands = fechasCanvas.map((iso, i) => ({
@@ -847,7 +862,7 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa }) {
                 );
               })}
               {/* Líneas verticales de hora en el eje */}
-              {ticks.filter(h => Math.abs(h % 1) < 0.01).map(h => (
+              {ticksHoraEntera.map(h => (
                 <div key={`vl-${h}`} style={{ position:"absolute", top:AXIS_H, bottom:0,
                   left:hToX(h), width:1, background:"var(--border)", pointerEvents:"none" }}/>
               ))}
@@ -856,7 +871,7 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa }) {
             {/* Líneas verticales sobre las filas */}
             <div style={{ position:"absolute", top:AXIS_H, left:0, right:0,
               bottom:0, zIndex:0, pointerEvents:"none" }}>
-              {ticks.filter(h => Math.abs(h % 1) < 0.01).map(h => (
+              {ticksHoraEntera.map(h => (
                 <div key={h} style={{ position:"absolute", top:0, bottom:0, left:hToX(h),
                   width:1,
                   background: (h % 24 === 0 && h > 0)
