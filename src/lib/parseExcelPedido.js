@@ -1,24 +1,17 @@
-/* ============================================================
-   Parser de Excel para "Listado Chequeo Materiales"
-   Hoja1: información de la expedición
-   Hoja2: materiales agrupados por Timing y Categoría
-   ============================================================
-   ESQUEMA (404 líneas)
-   ─────────────────────────────────────────────────────────
-    L9   parseFecha / parseHora / esEnteroPositivo   helpers
-   L45   parsearHoja1           extrae datos expedición de Hoja1
-  L152   parsearHoja2           extrae materiales de Hoja2
-  L276   parsearCabecera        lee cabecera para parser checklist
-  L318   detectarHeaderIdx      detecta fila de cabecera automáticamente
-  L330   extraerColumnas / parseCantidad
-  L356   checklistPreview       preview sin importar (export)
-  L398   parsearChecklistConCols
-  L439   parsearChecklist
-  L447   parsearExcelPedido     entry point principal (export)
-   ─────────────────────────────────────────────────────────── */
+// MARK: - Parser de Excel — Listado Chequeo Materiales
+// MARK: - parseFecha / parseHora / esEnteroPositivo
+// MARK: - parsearHoja1
+// MARK: - parsearHoja2
+// MARK: - parsearCabecera
+// MARK: - detectarHeaderIdx
+// MARK: - extraerColumnas / parseCantidad
+// MARK: - checklistPreview
+// MARK: - parsearChecklistConCols / parsearChecklist
+// MARK: - parsearExcelPedido [export]
 import * as XLSX from "xlsx";
 
 // DD/MM/YY(YY) o YYYY-MM-DD → YYYY-MM-DD
+// MARK: - parseFecha / parseHora / esEnteroPositivo
 function parseFecha(raw) {
   const s = String(raw ?? "").trim();
   // Número serial de Excel (días desde 1900)
@@ -55,6 +48,7 @@ function esEnteroPositivo(s) {
 }
 
 /* ─── Hoja 1: datos de la expedición ─────────────────────────────────────── */
+// MARK: - parsearHoja1
 function parsearHoja1(wb) {
   const sh = wb.Sheets[wb.SheetNames[0]];
   if (!sh) return {};
@@ -162,6 +156,7 @@ function parsearHoja1(wb) {
 
 /* ─── Hoja 2: materiales ─────────────────────────────────────────────────── */
 // startRow: 1-indexed row to begin reading (configurable por almacén)
+// MARK: - parsearHoja2
 function parsearHoja2(wb, startRow = 6) {
   const sh = wb.Sheets[wb.SheetNames[1]];
   if (!sh) return [];
@@ -286,6 +281,7 @@ function parsearHoja2(wb, startRow = 6) {
 
 /* ─── Parser "Checklist de materiales" (una sola hoja) ───────────────────── */
 
+// MARK: - parsearCabecera / detectarHeaderIdx / extraerColumnas / parseCantidad
 function parsearCabecera(rows, rowsFmt) {
   const exp = {
     nombre: "", destino: "", fecha_entrega: "", pax_adults: null,
@@ -366,6 +362,7 @@ function parseCantidad(raw, decimalSep = ",") {
 }
 
 // Extraer preview de filas de datos (desde headerIdx+1, máx 12 filas no vacías)
+// MARK: - checklistPreview [export]
 export function checklistPreview(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -408,6 +405,7 @@ export function checklistPreview(file) {
 // colCantidad: idx de columna de la cantidad
 // colGrupo: idx de columna del grupo/timing (opcional)
 // colCategoria: idx de columna de la categoría/familia (opcional)
+// MARK: - parsearChecklistConCols / parsearChecklist
 function parsearChecklistConCols(wb, { colNombre, colCantidad, colGrupo = -1, colCategoria = -1, decimalSep = "," }) {
   const sh      = wb.Sheets[wb.SheetNames[0]];
   const rows    = XLSX.utils.sheet_to_json(sh, { header: 1, defval: "" });
@@ -457,6 +455,7 @@ function parsearChecklist(wb, colMapping) {
 
 // parser: "hoja1hoja2" (default) | "checklist"
 // colMapping (solo checklist): { colNombre, colCantidad, colGrupo, colCategoria }
+// MARK: - parsearExcelPedido [export]
 export function parsearExcelPedido(file, { startRow = 6, parser = "hoja1hoja2", colMapping = null } = {}) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();

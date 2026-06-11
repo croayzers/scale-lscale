@@ -1,21 +1,19 @@
-/* ESQUEMA TabExpediciones.jsx (816 líneas)
- * ─────────────────────────────────────────────────────────────
- *   L6   HORA_INICIO/FIN / H_PX / LANE_W / SNAP   constantes layout
- *  L20   buildGrupo                helpers para construir grupos de tramos
- *  L53   DEMO_VEHICULOS            datos demo
- *  L66   TramoCard                 tarjeta arrastrable de tramo
- * L114   EventoCol                 columna de un evento/pedido con sus tramos
- * L225   COLORS / GRUPO_OPTS / DurRow
- * L252   AddModal                  modal añadir vehículo con tramos
- * L491   EditTramoModal            modal editar tramo existente
- * L571   TabExpediciones (default) shell: estado, drag & drop vertical, modales
- * ─────────────────────────────────────────────────────────────── */
+// MARK: - Constantes layout (HORA_INICIO/FIN, H_PX, LANE_W, SNAP)
+// MARK: - buildGrupo
+// MARK: - DEMO_VEHICULOS
+// MARK: - TramoCard
+// MARK: - EventoCol
+// MARK: - COLORS / GRUPO_OPTS / DurRow
+// MARK: - AddModal
+// MARK: - EditTramoModal
+// MARK: - TabExpediciones [export default]
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { Truck, ChevronLeft, ChevronRight, Package, Plus, X, Check, Trash2 } from "lucide-react";
 import { useL } from "./lib/i18n.js";
 import { TIPOS, DEFAULT_DURS } from "./lib/expedicionesConst.js";
 
 /* ─── Layout ────────────────────────────────────────────────────────────────── */
+// MARK: - Constantes layout (HORA_INICIO/FIN, H_PX, LANE_W, SNAP)
 const HORA_INICIO = 6;
 const HORA_FIN    = 26;
 const HORA_GRIS   = 21;
@@ -49,6 +47,7 @@ const uid = () => `t${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 const hhmm2dec = (s) => { if (!s) return null; const [hh, mm] = s.split(":").map(Number); return hh + (mm || 0) / 60; };
 
 /* Construye tramos con grupo_id. grupoId identifica el bloque (inicio o final) dentro del vehículo+pedido. */
+// MARK: - buildGrupo
 function buildGrupo(vehiculoId, pedidoId, tiposList, horaInicio, durs, grupoId) {
   let h = horaInicio;
   const vid = String(vehiculoId);
@@ -75,6 +74,7 @@ const buildDemoTramos = () => [
 ];
 
 /* ─── TramoCard ──────────────────────────────────────────────────────────────── */
+// MARK: - TramoCard
 function TramoCard({ tramo, laneIdx, numLanes, isDragging, isGroupDrag, onMD, onResizeMD, vehColor }) {
   const cfg    = TIPOS[tramo.tipo] || {};
   const vc     = vehColor || cfg.color;
@@ -123,6 +123,7 @@ function TramoCard({ tramo, laneIdx, numLanes, isDragging, isGroupDrag, onMD, on
 }
 
 /* ─── EventoCol ──────────────────────────────────────────────────────────────── */
+// MARK: - EventoCol
 function EventoCol({ pedido, tramosEvento, vehiculos, selected, onSelect, onCtxMenu, onTramoDn, onResizeDn, dragId, grupoActivo, L }) {
   const vehIds = [...new Set(tramosEvento.map(t => t.vehiculo_id))];
   const numLanes = Math.max(1, vehIds.length);
@@ -234,6 +235,7 @@ function EventoCol({ pedido, tramosEvento, vehiculos, selected, onSelect, onCtxM
 }
 
 /* ─── Modal: añadir vehículo (grupos) ───────────────────────────────────────── */
+// MARK: - COLORS / GRUPO_OPTS / DurRow / AddModal
 const COLORS = ["#3b82f6","#f59e0b","#10b981","#ef4444","#8b5cf6","#f97316","#06b6d4","#ec4899"];
 
 const GRUPO_OPTS = [
@@ -500,6 +502,7 @@ function AddModal({ pedidoId, pedidoLabel, vehiculos, tramos, horaCtx, horaVuelt
 }
 
 /* ─── Modal: editar tramo ────────────────────────────────────────────────────── */
+// MARK: - EditTramoModal
 function EditTramoModal({ tramo, veh, pedidoLabel, onSave, onDelete, onClose, L }) {
   const [form, setForm] = useState({ ...tramo });
   const f = k => v => setForm(p => ({ ...p, [k]: v }));
@@ -580,6 +583,7 @@ function EditTramoModal({ tramo, veh, pedidoLabel, onSave, onDelete, onClose, L 
 /* ═══════════════════════════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
+// MARK: - TabExpediciones [export default]
 export default function TabExpediciones({ pedidos, expediciones, vehiculosEmpresa, tramos: tramosProps, setTramos: setTramosProps, vehiculos: vehiculosProps, setVehiculos: setVehiculosProps, L: Lprop }) {
   const Lhook = useL();
   const L = Lprop || Lhook;

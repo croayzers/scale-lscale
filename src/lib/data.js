@@ -1,20 +1,15 @@
-/* ===========================================================================
- * Capa de datos de L-Scale. Abstrae Supabase (schema lscale) o el SEED demo.
- * ===========================================================================
- * ESQUEMA (323 líneas)
- * ─────────────────────────────────────────────────────────────
- *   L6   Mappers: mapEmpresa / mapMaterial / materialToRow / mapPedido / pedidoToRow / mapExpedicion
- *  L83   SEED demo: EMPRESA_DEMO / PEDIDOS_DEMO / MATERIALES_DEMO
- * L155   cargarDatos              carga inicial (auth + empresa + datos)
- * L221   crearMaterial / actualizarMaterial / borrarMaterial / recargarMateriales
- * L252   guardarPedido / borrarPedido / registrarVistoPor
- * L269   guardarExpedicion / borrarExpedicion
- * L295   guardarTramos            upsert tramos en expediciones.datos.tramos
- * L316   cargarTodosTramos        → { [pedidoId]: tramos[] }
- * L332   crearConfigInicial / cargarPrefs / guardarPrefs
- * ─────────────────────────────────────────────────────────────── */
+// MARK: - Capa de datos — Supabase (schema lscale) + SEED demo
+// MARK: - Mappers (mapEmpresa, mapMaterial, materialToRow, mapPedido, pedidoToRow, mapExpedicion)
+// MARK: - SEED demo (EMPRESA_DEMO, PEDIDOS_DEMO, MATERIALES_DEMO)
+// MARK: - cargarDatos
+// MARK: - Materiales CRUD (crearMaterial, actualizarMaterial, borrarMaterial, recargarMateriales)
+// MARK: - Pedidos CRUD (guardarPedido, borrarPedido, registrarVistoPor)
+// MARK: - Expediciones CRUD (guardarExpedicion, borrarExpedicion)
+// MARK: - Tramos Planning (guardarTramos, cargarTodosTramos)
+// MARK: - Empresa config (crearConfigInicial, cargarPrefs, guardarPrefs)
 import { sb, lsc, supabaseConfigurado } from "./supabase.js";
 
+// MARK: - Mappers (mapEmpresa, mapMaterial, materialToRow, mapPedido, pedidoToRow, mapExpedicion)
 // ── Mappers ────────────────────────────────────────────────────────────────
 
 function mapEmpresa(co, cfg) {
@@ -98,6 +93,7 @@ function mapExpedicion(r) {
     vehiculo: r.vehiculo };
 }
 
+// MARK: - SEED demo (EMPRESA_DEMO, PEDIDOS_DEMO, MATERIALES_DEMO)
 // ── SEED demo (sin Supabase) ───────────────────────────────────────────────
 
 const EMPRESA_DEMO = {
@@ -168,6 +164,7 @@ const MATERIALES_DEMO = [
     ubicacion: "D-01", estado: "activo", proveedor: null, precio_coste: null, notas: null },
 ];
 
+// MARK: - cargarDatos
 // ── Carga inicial ──────────────────────────────────────────────────────────
 
 export async function cargarDatos() {
@@ -234,6 +231,7 @@ export async function cargarDatos() {
   }
 }
 
+// MARK: - Materiales CRUD (crearMaterial, actualizarMaterial, borrarMaterial, recargarMateriales)
 // ── Materiales CRUD ────────────────────────────────────────────────────────
 
 export async function crearMaterial(m, companyId) {
@@ -265,6 +263,7 @@ export async function recargarMateriales() {
   return (data || []).map(mapMaterial);
 }
 
+// MARK: - Pedidos CRUD (guardarPedido, borrarPedido, registrarVistoPor)
 // ── Pedidos ────────────────────────────────────────────────────────────────
 
 export async function guardarPedido(p, companyId) {
@@ -291,6 +290,7 @@ export async function registrarVistoPor(pedidoId, userId, nombre) {
   await lsc().from("pedidos").update({ vistos_por: next }).eq("id", pedidoId);
 }
 
+// MARK: - Expediciones CRUD (guardarExpedicion, borrarExpedicion)
 // ── Expediciones ───────────────────────────────────────────────────────────
 
 export async function guardarExpedicion(exp, companyId) {
@@ -317,6 +317,7 @@ export async function borrarExpedicion(id) {
   if (error) throw error;
 }
 
+// MARK: - Tramos Planning (guardarTramos, cargarTodosTramos)
 // ── Tramos de Planning ─────────────────────────────────────────────────────
 // Guarda los tramos de un pedido dentro de expediciones.datos (crea registro si no existe)
 export async function guardarTramos(pedidoId, tramos, companyId) {
@@ -354,6 +355,7 @@ export async function cargarTodosTramos(companyId) {
   return result;
 }
 
+// MARK: - Empresa config (crearConfigInicial, cargarPrefs, guardarPrefs)
 // ── Empresa config ─────────────────────────────────────────────────────────
 
 export async function crearConfigInicial(companyId) {

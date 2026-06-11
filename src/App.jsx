@@ -1,15 +1,12 @@
-/* ESQUEMA App.jsx (1184 líneas)
- * ─────────────────────────────────────────────────────────────
- *  L21   C / TODAS_COLS / DEFAULT_ALMACENES / TABS   constantes globales
- *  L82   Badge / Btn / AvisoPortal                   helpers UI
- * L128   SinConfig                                   onboarding activar L-Scale
- * L156   UbicacionesModal                            modal cambiar ubicaciones almacén
- * L277   TabAlmacen                                  tab inventario/almacén
- * L604   ModalField
- * L629   TabRetorno                                  tab retorno/cierre pedidos
- * L773   TabConfig                                   tab configuración empresa
- * L1076  App (default export)                        shell principal: auth, tabs, estado global
- * ─────────────────────────────────────────────────────────────── */
+// MARK: - Constantes globales (C, TODAS_COLS, DEFAULT_ALMACENES, TABS)
+// MARK: - Badge / Btn / AvisoPortal
+// MARK: - SinConfig
+// MARK: - UbicacionesModal
+// MARK: - TabAlmacen
+// MARK: - ModalField
+// MARK: - TabRetorno
+// MARK: - TabConfig
+// MARK: - App [export default]
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {
@@ -91,6 +88,7 @@ const TABS = [
 ];
 
 /* ─── Utilidades UI ────────────────────────────────────────────────────────── */
+// MARK: - Badge / Btn / AvisoPortal
 function Badge({ children, color = C.brandSoft, ink = C.brand, size = 11 }) {
   return <span style={{ display:"inline-block", padding:"2px 8px", borderRadius:999, background:color, color:ink, fontSize:size, fontWeight:600, whiteSpace:"nowrap" }}>{children}</span>;
 }
@@ -137,6 +135,7 @@ function AvisoPortal({ tipo, L }) {
 }
 
 /* ─── Onboarding: activar L-Scale ─────────────────────────────────────────── */
+// MARK: - SinConfig
 function SinConfig({ empresa, onDone, L }) {
   const [busy, setBusy] = useState(false);
   const activar = async () => {
@@ -165,6 +164,7 @@ function SinConfig({ empresa, onDone, L }) {
 /* ═══════════════════════════════════════════════════════════════════════════
    MODAL UBICACIONES POR CATEGORÍA
    ═══════════════════════════════════════════════════════════════════════════ */
+// MARK: - UbicacionesModal
 function UbicacionesModal({ materiales, setMateriales, empresaId, almacenId, almacenNombre, onClose }) {
   const KEY = `lscale.ubicaciones.${empresaId}.${almacenId}`;
 
@@ -286,6 +286,7 @@ function UbicacionesModal({ materiales, setMateriales, empresaId, almacenId, alm
 /* ═══════════════════════════════════════════════════════════════════════════
    TAB ALMACÉN
    ═══════════════════════════════════════════════════════════════════════════ */
+// MARK: - TabAlmacen
 function TabAlmacen({ materiales, setMateriales, empresa, modo, almacenes, L }) {
   const EMP_ID = `lscale.cols.${empresa?.id}`;
   const defCols = TODAS_COLS.filter((c) => c.def).map((c) => c.id);
@@ -613,6 +614,7 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
   );
 }
 
+// MARK: - ModalField
 function ModalField({ label, value, onChange, type = "text", placeholder = "", style: s = {} }) {
   return (
     <div style={s}>
@@ -638,6 +640,7 @@ const CHIP_ESTADO = {
   cancelado:  { bg:"#fee2e2", ink:"#dc2626" },
 };
 
+// MARK: - TabRetorno
 function TabRetorno({ pedidos = [], setPedidos, vehiculosEmpresa = [], onSavePedido, formatoFecha = "DD/MM/YYYY", L }) {
   const [filtro, setFiltro] = useState("activos"); // "activos" | "entregados" | "todos"
   const [saving, setSaving] = useState(null);
@@ -782,6 +785,7 @@ function TabRetorno({ pedidos = [], setPedidos, vehiculosEmpresa = [], onSavePed
 // Colores predefinidos para nuevos roles
 const COLORES_ROLES = ["#0891b2","#be185d","#65a30d","#7c3aed","#f59e0b","#ef4444","#10b981","#8b5cf6","#f97316","#06b6d4"];
 
+// MARK: - TabConfig
 function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpresa, guardarVehiculos, rolesImport, guardarRoles, formatoFecha = "DD/MM/YYYY", guardarFormatoFecha, isAdmin = true, L }) {
   const [alms, setAlms] = useState(almacenes);
   const [vehs, setVehs] = useState(vehiculosEmpresa || []);
@@ -1085,6 +1089,7 @@ function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpres
 /* ═══════════════════════════════════════════════════════════════════════════
    APP PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
+// MARK: - App [export default]
 export default function App() {
   const [lang,  setLang]  = useState(() => localStorage.getItem("scale.lang")  || "es");
   const [tema,  setTema]  = useState(() => localStorage.getItem("scale.theme") || "light");

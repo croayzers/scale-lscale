@@ -1,15 +1,12 @@
-/* ESQUEMA TabPedidos.jsx (1660 líneas)
- * ─────────────────────────────────────────────────────────────
- *  L14   C / CHIP_ESTADO / ESTADOS          constantes UI
- *  L36   Btn / Field                        helpers UI
- *  L61   ExpedicionForm                     wizard: datos expedición
- *  L89   MaterialesList                     wizard: lista materiales editable
- *  L152  ListaPedidos                       tabla principal con filtros
- *  L241  cfgExportDefecto / lineasParaExportar / exportarExcelCfg / exportarPDFCfg
- *  L409  ExportConfigurador                 modal configurar columnas export
- *  L749  DetallePedido                      vista detalle + edición pedido
- * L1183  TabPedidos (default export)        shell con estado y navegación
- * ─────────────────────────────────────────────────────────────── */
+// MARK: - Constantes UI (C, CHIP_ESTADO, ESTADOS)
+// MARK: - Btn / Field
+// MARK: - ExpedicionForm
+// MARK: - MaterialesList
+// MARK: - ListaPedidos
+// MARK: - cfgExportDefecto / lineasParaExportar / exportarExcelCfg / exportarPDFCfg
+// MARK: - ExportConfigurador
+// MARK: - DetallePedido
+// MARK: - TabPedidos [export default]
 import React, { useState, useRef, useMemo, Fragment } from "react";
 import * as XLSX from "xlsx";
 import {
@@ -23,6 +20,7 @@ import ExcelConfigurador from "./ExcelConfigurador.jsx";
 import { guardarPedido, borrarPedido } from "./lib/data.js";
 import { fmtFecha, siguienteCodigo } from "./lib/fechas.js";
 
+// MARK: - Constantes UI (C, CHIP_ESTADO, ESTADOS)
 /* ─── Paleta ──────────────────────────────────────────────────────────────── */
 const C = {
   bg:"var(--bg)", surface:"var(--surface)", s2:"var(--surface-2)",
@@ -44,6 +42,7 @@ const CHIP_ESTADO = {
 };
 const ESTADOS = ["borrador","confirmado","planificado","en_ruta","entregado","cancelado"];
 
+// MARK: - Btn / Field
 /* ─── Helpers ─────────────────────────────────────────────────────────────── */
 function Btn({ children, onClick, disabled, color = C.brand, outline = false, style: s = {} }) {
   return (
@@ -69,6 +68,7 @@ function Field({ label, value, onChange, type = "text", placeholder = "", span =
   );
 }
 
+// MARK: - ExpedicionForm
 /* ─── Formulario de expedición (wizard) ───────────────────────────────────── */
 function ExpedicionForm({ form, setForm, nextCodigo, L }) {
   const f = (k) => (v) => setForm(p => ({ ...p, [k]: v }));
@@ -97,6 +97,7 @@ function ExpedicionForm({ form, setForm, nextCodigo, L }) {
   );
 }
 
+// MARK: - MaterialesList
 /* ─── Lista de materiales con nombre editable (wizard) ───────────────────── */
 function MaterialesList({ grouped, updateMaterial, L }) {
   if (!grouped.length) return (
@@ -161,6 +162,7 @@ function MaterialesList({ grouped, updateMaterial, L }) {
 /* ═══════════════════════════════════════════════════════════════════════════
    LISTA DE PEDIDOS
    ═══════════════════════════════════════════════════════════════════════════ */
+// MARK: - ListaPedidos
 function ListaPedidos({ pedidos, almacenes, vehiculosEmpresa, onSelect, onImport, formatoFecha = "DD/MM/YYYY", L }) {
   const sorted = [...pedidos].sort((a, b) => {
     const fa = a.fecha_entrega || a.fecha_pedido || "";
@@ -293,6 +295,7 @@ const COLS_BASE = [
 ];
 
 /* ─── Generar la configuración por defecto a partir de las líneas del pedido ─ */
+// MARK: - cfgExportDefecto / lineasParaExportar / exportarExcelCfg / exportarPDFCfg
 function cfgExportDefecto(lineas, rolesImport) {
   // Columnas: base + roles dinámicos
   const colsRoles = (rolesImport || []).map(r => ({
@@ -438,6 +441,7 @@ function exportarPDFCfg(pedido, almacenes, cfg) {
 /* ═══════════════════════════════════════════════════════════════════════════
    MODAL CONFIGURADOR DE EXPORTACIÓN
    ═══════════════════════════════════════════════════════════════════════════ */
+// MARK: - ExportConfigurador
 function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato, onClose }) {
   const almacenId = pedido.almacen_id;
   const [plantillas, setPlantillas] = useState(() => cargarPlantillasExport(empresaId, almacenId));
@@ -778,6 +782,7 @@ function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato
 /* ═══════════════════════════════════════════════════════════════════════════
    DETALLE / EDICIÓN DE PEDIDO
    ═══════════════════════════════════════════════════════════════════════════ */
+// MARK: - DetallePedido
 function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, rolesImport, empresaId, L }) {
   const [exportModal, setExportModal] = useState(null); // null | "pdf" | "excel"
   const [p, setP] = useState({ ...pedido });
@@ -1212,6 +1217,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
 /* ═══════════════════════════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
+// MARK: - TabPedidos [export default]
 export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto }) {
   const L = useL();
   const fileRef = useRef(null);

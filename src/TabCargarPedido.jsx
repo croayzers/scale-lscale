@@ -1,12 +1,9 @@
-/* ESQUEMA TabCargarPedido.jsx (469 líneas)
- * ─────────────────────────────────────────────────────────────
- *  L10   C                         paleta colores
- *  L22   Btn / Field               helpers UI
- *  L47   ExpedicionForm            formulario datos expedición
- *  L72   MaterialesList            lista materiales editable
- * L135   PedidoTabla               vista previa del pedido antes de guardar
- * L283   TabCargarPedido (default) shell: upload Excel → preview → guardar
- * ─────────────────────────────────────────────────────────────── */
+// MARK: - Constantes (C)
+// MARK: - Btn / Field
+// MARK: - ExpedicionForm
+// MARK: - MaterialesList
+// MARK: - PedidoTabla
+// MARK: - TabCargarPedido [export default]
 import React, { useState, useRef, useMemo } from "react";
 import {
   Upload, Loader, X, Check, AlertTriangle, Plus, Trash2,

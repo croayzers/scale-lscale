@@ -1,28 +1,12 @@
-/* ═══════════════════════════════════════════════════════════════════════════
-   TabPlanning — Calendario de horas continuo, izquierda→derecha
-   Canvas: 3 días (ayer · hoy · mañana). Scroll automático a hora_ida - 5h.
-   Todos los pedidos en esos 3 días aparecen como filas.
-   ═══════════════════════════════════════════════════════════════════════════
-   ESQUEMA (1024 líneas)
-   ─────────────────────────────────────────────────────────────
-    L14   W_PX / ROW_H / LABEL_W / SNAP / TIPOS_*   constantes layout
-    L31   isoPlus / hoyMas / fmtHora / hToX / xToH  utilidades fecha/hora
-    L62   calcularTramos           genera tramos por defecto desde pedido
-    L99   TramoBar                 barra arrastrable de un tramo
-   L136   PedidoRow                fila completa de un pedido en el canvas
-   L270   PedidoEditModal          modal editar campos del pedido + vehículo
-   L339   TramoModal               modal editar/eliminar un tramo
-   L458   TabPlanning (default)    componente principal
-              L464  estado: fecha, tramosOverride, dragRef, scrollRef
-              L477  useEffect: sync pedidosRef / tramosIniciales
-              L488  useMemo: anchorIso, eventosDia, offsetForPedido, vehById, tramosDelDia
-              L555  setTramosForPedido     helper actualizar tramosOverride
-              L561  drag & drop (mousedown → mousemove rAF → onUp + onSaveTramos)
-              L638  pan-to-scroll (click+drag zona vacía)
-              L665  buildSnaps / onCambiarVehiculo
-              L718  onSaveTramo / onDeleteTramo (modal)
-              L737  render: header fecha, canvas scroll, PedidoRow × n, modales
-   ─────────────────────────────────────────────────────────────── */
+// MARK: - TabPlanning — Calendario de horas continuo, izquierda→derecha
+// MARK: - Constantes layout (W_PX, ROW_H, LABEL_W, SNAP, TIPOS_*)
+// MARK: - Utilidades fecha/hora (isoPlus, hoyMas, fmtHora, hToX, xToH)
+// MARK: - calcularTramos
+// MARK: - TramoBar
+// MARK: - PedidoRow
+// MARK: - PedidoEditModal
+// MARK: - TramoModal
+// MARK: - TabPlanning [export default]
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   ChevronLeft, ChevronRight, Package, Truck, Check, X, Trash2, ClipboardList,
@@ -32,6 +16,7 @@ import { TIPOS, DEFAULT_DURS } from "./lib/expedicionesConst.js";
 import { fmtFecha } from "./lib/fechas.js";
 
 /* ─── Layout ─────────────────────────────────────────────────────────────── */
+// MARK: - Constantes layout (W_PX, ROW_H, LABEL_W, SNAP, TIPOS_*)
 const W_PX      = 80;     // px por hora
 const ROW_H     = 68;     // altura de cada fila pedido
 const LABEL_W   = 176;    // columna izquierda fija
@@ -79,6 +64,7 @@ const vueltaCanvas = (pedido, anchorIso) => {
 };
 
 /* ─── calcularTramos ─────────────────────────────────────────────────────── */
+// MARK: - calcularTramos
 function calcularTramos(pedido, vehiculoId, offsetH, offsetVuelta) {
   if (!vehiculoId) return [];
   const vid = String(vehiculoId);
@@ -116,6 +102,7 @@ function calcularTramos(pedido, vehiculoId, offsetH, offsetVuelta) {
 }
 
 /* ─── TramoBar ────────────────────────────────────────────────────────────── */
+// MARK: - TramoBar
 function TramoBar({ tramo, isDragging, isGroupDrag, vehColor, onMD, onResizeMD }) {
   const cfg   = TIPOS[tramo.tipo] || {};
   const vc    = vehColor || cfg.color;
@@ -153,6 +140,7 @@ function TramoBar({ tramo, isDragging, isGroupDrag, vehColor, onMD, onResizeMD }
 }
 
 /* ─── PedidoRow ──────────────────────────────────────────────────────────── */
+// MARK: - PedidoRow
 function PedidoRow({ pedido, tramos, offsetH, vehById, vehiculosEmpresa,
     dragId, grupoActivo, onTramoDn, onResizeDn, onGridClick, onCambiarVehiculo,
     totalW, anchorIso, L }) {
@@ -287,6 +275,7 @@ function PedidoRow({ pedido, tramos, offsetH, vehById, vehiculosEmpresa,
 }
 
 /* ─── PedidoEditModal ────────────────────────────────────────────────────── */
+// MARK: - PedidoEditModal
 function PedidoEditModal({ pedido, onSave, onClose, vehiculosEmpresa = [], L }) {
   const [form, setForm] = useState({ ...pedido });
   const f = k => v => setForm(p => ({ ...p, [k]: v }));
@@ -356,6 +345,7 @@ function PedidoEditModal({ pedido, onSave, onClose, vehiculosEmpresa = [], L }) 
 }
 
 /* ─── TramoModal ─────────────────────────────────────────────────────────── */
+// MARK: - TramoModal
 function TramoModal({ tramo, veh, pedidoLabel, isNew, onSave, onDelete, onClose, L }) {
   const [form, setForm] = useState({ ...tramo });
   const f   = k => v => setForm(p => ({ ...p, [k]: v }));
@@ -475,6 +465,7 @@ function TramoModal({ tramo, veh, pedidoLabel, isNew, onSave, onDelete, onClose,
 /* ═══════════════════════════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
+// MARK: - TabPlanning [export default]
 export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, formatoFecha = "DD/MM/YYYY", onSavePedido, onSaveTramos, tramosIniciales }) {
   const L = useL();
   const fmtD = iso => fmtFecha(iso, formatoFecha);

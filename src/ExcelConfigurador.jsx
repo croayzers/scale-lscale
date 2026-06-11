@@ -1,20 +1,17 @@
-/* ESQUEMA ExcelConfigurador.jsx (1630 líneas)
- * ─────────────────────────────────────────────────────────────
- *  L10   C / ROL_COLS_FIJOS / CAMPOS_STD    constantes
- *  L31   buildRolCols                       fusiona roles fijos + roles custom
- *  L54   colLetter / Btn                    helpers UI
- *  L75   leerLibro                          lee Excel → { wb, hojas[] }
- *  L98   configVacia                        config por defecto de una hoja
- * L114   cargarPlantillas / guardarPlantillaLS
- * L130   aplicarPlantilla                   aplica plantilla guardada a hojas
- * L150   limpiarTexto / normalizar          sanitización de strings
- * L164   procesarLibro                      convierte hojas+configs → { expedicion, materiales }
- * L247   InstruccionBanner / parseCantidad
- * L286   PanelDatos                         panel config hoja tipo "datos"
- * L793   PanelMateriales                    panel config hoja tipo "materiales"
- * L1122  PasoSeleccion                      paso final: elegir filas a importar
- * L1339  ExcelConfigurador (default export) orquestador principal (tabs hojas, pasos)
- * ─────────────────────────────────────────────────────────────── */
+// MARK: - Constantes (C, ROL_COLS_FIJOS, CAMPOS_STD)
+// MARK: - buildRolCols
+// MARK: - colLetter / Btn
+// MARK: - leerLibro
+// MARK: - configVacia
+// MARK: - cargarPlantillas / guardarPlantillaLS
+// MARK: - aplicarPlantilla
+// MARK: - limpiarTexto / normalizar
+// MARK: - procesarLibro
+// MARK: - InstruccionBanner / parseCantidad
+// MARK: - PanelDatos
+// MARK: - PanelMateriales
+// MARK: - PasoSeleccion
+// MARK: - ExcelConfigurador [export default]
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import * as XLSX from "xlsx";
 import {
