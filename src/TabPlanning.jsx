@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { useL } from "./lib/i18n.js";
 import { TIPOS, DEFAULT_DURS } from "./lib/expedicionesConst.js";
+import { fmtFecha } from "./lib/fechas.js";
 
 /* ─── Layout ─────────────────────────────────────────────────────────────── */
 const W_PX      = 80;     // px por hora
@@ -34,30 +35,37 @@ const uid    = () => `t${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
 const toHM   = h  => { const hh = Math.floor(((h % 24) + 24) % 24), mm = Math.round((h % 1 + (h % 1 < 0 ? 1 : 0)) * 60) % 60; return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`; };
 const dec2hm = s  => { if (!s) return null; const [hh, mm] = s.split(":").map(Number); return hh + (mm || 0) / 60; };
 const hoyMas = n  => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() + n); return d.toISOString().slice(0,10); };
-const fmtD   = iso => { if (!iso) return "—"; const [y,m,d] = iso.split("-"); return `${d}/${m}/${y}`; };
+// fmtD se redefine dentro del componente con el formato configurado
 const isoPlus = (iso, n) => { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return d.toISOString().slice(0,10); };
 
 // Convierte hora-decimal-canvas a px X
 const hToX = h => h * W_PX;
 
 // Dado un pedido y la fecha-ancla del canvas (día anterior),
-// devuelve la hora decimal dentro del canvas (0–72)
+// devuelve la hora decimal dentro del canvas (0–72) para la IDA (fecha_entrega)
 const pedidoHoraCanvas = (pedido, anchorIso) => {
-  // ¿En qué día del canvas cae el pedido?
   const fechaPed = pedido.fecha_entrega || pedido.fecha_retorno || "";
   const d0 = new Date(anchorIso + "T00:00:00");
   const dp = new Date(fechaPed + "T00:00:00");
-  const diffDias = Math.round((dp - d0) / 86400000); // 0=ayer, 1=hoy, 2=mañana
-  return diffDias * 24; // offset en horas dentro del canvas
+  return Math.round((dp - d0) / 86400000) * 24;
+};
+
+// Offset para la VUELTA: usa fecha_retorno si es distinta de fecha_entrega
+const vueltaCanvas = (pedido, anchorIso) => {
+  const fechaVuelta = pedido.fecha_retorno || pedido.fecha_entrega || "";
+  const d0 = new Date(anchorIso + "T00:00:00");
+  const dv = new Date(fechaVuelta + "T00:00:00");
+  return Math.round((dv - d0) / 86400000) * 24;
 };
 
 /* ─── calcularTramos ─────────────────────────────────────────────────────── */
-function calcularTramos(pedido, vehiculoId, offsetH) {
+function calcularTramos(pedido, vehiculoId, offsetH, offsetVuelta) {
   if (!vehiculoId) return [];
   const vid = String(vehiculoId);
   const pid = String(pedido.id);
   const horaIda    = dec2hm(pedido.hora_ida);
   const horaVuelta = dec2hm(pedido.hora_vuelta);
+  const effVuelta  = offsetVuelta ?? offsetH;
   const result = [];
 
   if (horaIda != null) {
@@ -74,7 +82,7 @@ function calcularTramos(pedido, vehiculoId, offsetH) {
 
   if (horaVuelta != null) {
     const durAntes = DEFAULT_DURS["llevar_evento"];
-    let h = snp(offsetH + horaVuelta - durAntes);
+    let h = snp(effVuelta + horaVuelta - durAntes);
     const gid = `g_${vid}_${pid}_fin`;
     for (const tipo of TIPOS_FINAL) {
       const dur = DEFAULT_DURS[tipo];
@@ -135,10 +143,12 @@ function PedidoRow({ pedido, tramos, offsetH, vehById, vehiculosEmpresa,
   const CHIP = { confirmado:"#16a34a", borrador:"#94a3b8", planificado:"#2563eb",
                  en_ruta:"#d97706", entregado:"#16a34a", cancelado:"#dc2626" };
   const chipColor = CHIP[pedido.estado] || CHIP.borrador;
+  const offsetV = vueltaCanvas(pedido, anchorIso);
+  const vueltaDiasExtra = (offsetV - offsetH) / 24; // 0=mismo día, 1=+1 día, etc.
 
   // Franja del evento en el canvas
-  const xIda    = horaIda    != null ? hToX(offsetH + horaIda)    : null;
-  const xVuelta = horaVuelta != null ? hToX(offsetH + horaVuelta) : null;
+  const xIda    = horaIda    != null ? hToX(offsetH + horaIda)   : null;
+  const xVuelta = horaVuelta != null ? hToX(offsetV + horaVuelta) : null;
 
   return (
     <div style={{ display:"flex", borderBottom:"1px solid var(--border)", height:ROW_H,
@@ -177,7 +187,7 @@ function PedidoRow({ pedido, tramos, offsetH, vehById, vehiculosEmpresa,
           {horaVuelta != null && (
             <span style={{ fontSize:8.5, fontWeight:700, color:"#d97706",
               background:"#fef3c7", borderRadius:4, padding:"0 4px", flexShrink:0 }}>
-              🏠 {pedido.hora_vuelta}
+              🏠 {pedido.hora_vuelta}{vueltaDiasExtra > 0 ? ` +${vueltaDiasExtra}d` : ""}
             </span>
           )}
           <select value={String(pedido.vehiculo_id ?? "")}
@@ -251,6 +261,59 @@ function PedidoRow({ pedido, tramos, offsetH, vehById, vehiculosEmpresa,
             <span style={{ fontSize:10 }}>{L("Sin tramos","No segments")}</span>
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ─── PedidoEditModal ────────────────────────────────────────────────────── */
+function PedidoEditModal({ pedido, onSave, onClose, L }) {
+  const [form, setForm] = useState({ ...pedido });
+  const f = k => v => setForm(p => ({ ...p, [k]: v }));
+  const inp = (label, key, type = "text", ph = "") => (
+    <div>
+      <label style={{ fontSize:11, fontWeight:700, color:"var(--text-2)", letterSpacing:.5, display:"block", marginBottom:4 }}>{label}</label>
+      <input type={type} value={form[key] ?? ""} onChange={e => f(key)(e.target.value)} placeholder={ph}
+        style={{ width:"100%", padding:"8px 10px", border:"1px solid var(--border-strong)", borderRadius:9,
+          fontSize:13.5, fontFamily:"inherit", background:"var(--surface-2)", color:"var(--text)", outline:"none", boxSizing:"border-box" }}/>
+    </div>
+  );
+  const ESTADOS = ["borrador","confirmado","planificado","en_ruta","entregado","cancelado"];
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)", zIndex:1000,
+      display:"grid", placeItems:"center", padding:16 }} onClick={onClose}>
+      <div style={{ background:"var(--surface)", borderRadius:16, boxShadow:"var(--shadow-lg)",
+        width:"100%", maxWidth:520, padding:24 }} onClick={e => e.stopPropagation()}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
+          <div style={{ fontWeight:800, fontSize:16 }}>{L("Editar pedido","Edit order")}</div>
+          <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer", color:"var(--text-2)", display:"flex" }}><X size={18}/></button>
+        </div>
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
+          {inp(L("CÓDIGO","CODE"), "codigo")}
+          <div>
+            <label style={{ fontSize:11, fontWeight:700, color:"var(--text-2)", letterSpacing:.5, display:"block", marginBottom:4 }}>ESTADO</label>
+            <select value={form.estado || "borrador"} onChange={e => f("estado")(e.target.value)}
+              style={{ width:"100%", padding:"8px 10px", border:"1px solid var(--border-strong)", borderRadius:9,
+                fontSize:13.5, fontFamily:"inherit", background:"var(--surface-2)", color:"var(--text)", outline:"none" }}>
+              {ESTADOS.map(s => <option key={s}>{s}</option>)}
+            </select>
+          </div>
+          <div style={{ gridColumn:"1/-1" }}>{inp(L("CLIENTE","CLIENT"), "nombre")}</div>
+          {inp(L("FECHA EXPEDICIÓN","DISPATCH DATE"), "fecha_entrega", "date")}
+          {inp(L("FECHA RETORNO","RETURN DATE"), "fecha_retorno", "date")}
+          {inp(L("HORA IDA","DEPARTURE TIME"), "hora_ida", "time")}
+          {inp(L("HORA VUELTA","RETURN TIME"), "hora_vuelta", "time")}
+          {inp(L("DESTINO","DESTINATION"), "destino")}
+          {inp("PAX", "pax_adults", "number")}
+        </div>
+        <div style={{ display:"flex", justifyContent:"flex-end", gap:10, marginTop:18 }}>
+          <button onClick={onClose} style={{ padding:"9px 18px", borderRadius:999, border:"1px solid var(--border-strong)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>
+            {L("Cancelar","Cancel")}
+          </button>
+          <button onClick={() => onSave(form)} style={{ padding:"9px 18px", borderRadius:999, border:"none", background:"var(--brand)", color:"#fff", fontSize:13.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:6 }}>
+            <Check size={15}/>{L("Guardar","Save")}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -376,12 +439,14 @@ function TramoModal({ tramo, veh, pedidoLabel, isNew, onSave, onDelete, onClose,
 /* ═══════════════════════════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
-export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa }) {
+export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, formatoFecha = "DD/MM/YYYY", onSavePedido }) {
   const L = useL();
+  const fmtD = iso => fmtFecha(iso, formatoFecha);
 
   const [fecha,          setFecha]          = useState(() => hoyMas(0));
   const [tramoModal,     setTramoModal]     = useState(null);
   const [tramosOverride, setTramosOverride] = useState({});
+  const [pedidoEdit,     setPedidoEdit]     = useState(null);
 
   const dragRef    = useRef(null);
   const tramosRef  = useRef({});
@@ -434,11 +499,12 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa }) {
     for (const p of eventosDia) {
       const pid = String(p.id);
       const off = offsetForPedido(p);
+      const offV = vueltaCanvas(p, anchorIso);
       out[pid] = tramosOverride[pid]
-        ?? (p.vehiculo_id ? calcularTramos(p, p.vehiculo_id, off) : []);
+        ?? (p.vehiculo_id ? calcularTramos(p, p.vehiculo_id, off, offV) : []);
     }
     return out;
-  }, [eventosDia, tramosOverride, offsetForPedido]);
+  }, [eventosDia, tramosOverride, offsetForPedido, anchorIso]);
 
   useEffect(() => { tramosRef.current = tramosDelDia; }, [tramosDelDia]);
 
@@ -748,9 +814,13 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa }) {
               const chipColor = CHIP[p.estado] || CHIP.borrador;
               const horaIda    = dec2hm(p.hora_ida);
               const horaVuelta = dec2hm(p.hora_vuelta);
+              const labelOffV  = vueltaCanvas(p, anchorIso);
+              const labelExtraD = (labelOffV - offsetForPedido(p)) / 24;
 
               return (
-                <div key={pid} style={{ height:ROW_H, padding:"5px 8px",
+                <div key={pid} onClick={() => setPedidoEdit(p)}
+                  title={L("Clic para editar","Click to edit")}
+                  style={{ height:ROW_H, padding:"5px 8px", cursor:"pointer",
                   borderBottom:"1px solid var(--border)", display:"flex",
                   flexDirection:"column", justifyContent:"center", gap:2,
                   background: p.fecha_entrega === fecha || p.fecha_retorno === fecha
@@ -789,7 +859,7 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa }) {
                     {horaVuelta != null && (
                       <span style={{ fontSize:8, fontWeight:700, color:"#d97706",
                         background:"#fef3c7", borderRadius:3, padding:"0 3px", flexShrink:0 }}>
-                        🏠 {p.hora_vuelta}
+                        🏠 {p.hora_vuelta}{labelExtraD > 0 ? ` +${labelExtraD}d` : ""}
                       </span>
                     )}
                     <select value={String(p.vehiculo_id ?? "")}
@@ -893,7 +963,9 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa }) {
             ) : (
               eventosDia.map(p => {
                 const pid = String(p.id);
-                const off = offsetForPedido(p);
+                const off  = offsetForPedido(p);
+                const offV = vueltaCanvas(p, anchorIso);
+                const extraDias = (offV - off) / 24;
                 return (
                   <div key={pid} style={{ height:ROW_H, position:"relative",
                     borderBottom:"1px solid var(--border)",
@@ -906,12 +978,12 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa }) {
                       onGridClick(pid, h);
                     }}>
 
-                    {/* Bloque evento */}
+                    {/* Bloque evento (usa offV para vuelta) */}
                     {(() => {
                       const hi = dec2hm(p.hora_ida);
                       const hv = dec2hm(p.hora_vuelta);
                       if (hi == null || hv == null) return null;
-                      const x1 = hToX(off + hi), x2 = hToX(off + hv);
+                      const x1 = hToX(off + hi), x2 = hToX(offV + hv);
                       return (
                         <div style={{ position:"absolute", top:4, bottom:4,
                           left:x1, width:Math.max(x2-x1, 3),
@@ -935,12 +1007,12 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa }) {
                     )}
                     {dec2hm(p.hora_vuelta) != null && (
                       <div style={{ position:"absolute", top:0, bottom:0,
-                        left:hToX(off + dec2hm(p.hora_vuelta)),
+                        left:hToX(offV + dec2hm(p.hora_vuelta)),
                         width:2, background:"#d9770655", zIndex:3, pointerEvents:"none" }}>
                         <span style={{ position:"absolute", top:2, left:3, fontSize:7.5,
                           color:"#d97706", fontWeight:700, background:"var(--surface)",
                           padding:"0 2px", borderRadius:2, whiteSpace:"nowrap" }}>
-                          {p.hora_vuelta}
+                          {p.hora_vuelta}{extraDias > 0 ? ` +${extraDias}d` : ""}
                         </span>
                       </div>
                     )}
@@ -971,7 +1043,7 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa }) {
         </div>
       </div>
 
-      {/* Modal */}
+      {/* Modal tramo */}
       {tramoModal && (
         <TramoModal
           tramo={tramoModal.tramo} veh={tramoModal.veh}
@@ -979,6 +1051,18 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa }) {
           isNew={tramoModal.isNew}
           onSave={onSaveTramo} onDelete={onDeleteTramo}
           onClose={() => setTramoModal(null)} L={L}/>
+      )}
+
+      {/* Modal edición pedido */}
+      {pedidoEdit && (
+        <PedidoEditModal
+          pedido={pedidoEdit}
+          onSave={p => {
+            setPedidos(prev => prev.map(x => x.id === p.id ? p : x));
+            onSavePedido?.(p);
+            setPedidoEdit(null);
+          }}
+          onClose={() => setPedidoEdit(null)} L={L}/>
       )}
     </div>
   );

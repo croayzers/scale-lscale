@@ -1,15 +1,17 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import * as XLSX from "xlsx";
 import {
   Package, CalendarDays, RotateCcw, Warehouse, Settings,
   Sun, Moon, Globe, Plus, Pencil, Trash2, Search, Columns3,
   X, Check, Loader, AlertTriangle, ArrowRight,
-  Building2, ShoppingBag, ClipboardList, MapPin,
+  Building2, ShoppingBag, ClipboardList, MapPin, Shield,
+  Upload, Download, FileDown,
 } from "lucide-react";
 import { LangContext, useL, useLang, IDIOMAS } from "./lib/i18n.js";
 import { sb, supabaseConfigurado } from "./lib/supabase.js";
 import {
   cargarDatos, crearMaterial, actualizarMaterial, borrarMaterial,
-  recargarMateriales, crearConfigInicial, cargarPrefs, guardarPrefs,
+  recargarMateriales, crearConfigInicial, cargarPrefs, guardarPrefs, guardarPedido,
 } from "./lib/data.js";
 import Login from "./Login.jsx";
 import TabPlanning from "./TabPlanning.jsx";
@@ -95,14 +97,19 @@ function Btn({ children, onClick, disabled, color = C.brand, textColor = "#fff",
 /* ─── AvisoPortal ─────────────────────────────────────────────────────────── */
 function AvisoPortal({ tipo, L }) {
   const PORTAL_URL = import.meta.env?.VITE_PORTAL_URL || "http://localhost:3000";
+  const esSinAcceso = tipo === "sin_acceso";
   const esContratar = tipo === "no_contratado";
-  const Icon = esContratar ? ShoppingBag : Building2;
-  const titulo = esContratar ? L("L-Scale no está contratado","L-Scale is not active") : L("Crea tu empresa en Scale","Create your company in Scale");
-  const texto  = esContratar
+  const Icon = esSinAcceso ? Shield : esContratar ? ShoppingBag : Building2;
+  const titulo = esSinAcceso
+    ? L("Sin acceso a L-Scale","No access to L-Scale")
+    : esContratar ? L("L-Scale no está contratado","L-Scale is not active") : L("Crea tu empresa en Scale","Create your company in Scale");
+  const texto  = esSinAcceso
+    ? L("No tienes permiso para acceder a L-Scale. Contacta con el administrador de tu empresa.","You don't have permission to access L-Scale. Contact your company administrator.")
+    : esContratar
     ? L("Tu empresa aún no tiene L-Scale. Contrátalo desde el portal Scale.","Your company doesn't have L-Scale yet. Get it from the Scale portal.")
     : L("Tu cuenta todavía no tiene empresa. Créala en el portal Scale.","Your account has no company yet. Create it in the Scale portal.");
-  const cta    = esContratar ? L("Contratar en el portal","Get it in the portal") : L("Ir al portal Scale","Go to the Scale portal");
-  const destino = esContratar ? `${PORTAL_URL}/apps` : `${PORTAL_URL}/onboarding`;
+  const cta    = esSinAcceso ? L("Volver al portal","Back to portal") : esContratar ? L("Contratar en el portal","Get it in the portal") : L("Ir al portal Scale","Go to the Scale portal");
+  const destino = esSinAcceso ? PORTAL_URL : esContratar ? `${PORTAL_URL}/apps` : `${PORTAL_URL}/onboarding`;
   return (
     <div style={{ minHeight:"100vh", background:C.bg, display:"grid", placeItems:"center", padding:24, fontFamily:"var(--font-body)" }}>
       <div style={{ maxWidth:420, background:C.surface, border:`1px solid ${C.line}`, borderRadius:16, boxShadow:"var(--shadow-lg)", padding:30, textAlign:"center" }}>
@@ -327,6 +334,78 @@ function TabAlmacen({ materiales, setMateriales, empresa, modo, almacenes, L }) 
     setDelConf(null);
   };
 
+  const importRef = useRef(null);
+
+  const handleImportAlm = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const data = new Uint8Array(ev.target.result);
+      const wb = XLSX.read(data, { type: "uint8array" });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
+      if (!rows.length) return;
+      // Mapeo flexible de columnas (case-insensitive)
+      const map = { nombre:"nombre", name:"nombre", referencia:"referencia", ref:"referencia",
+        descripcion:"descripcion", descripció:"descripcion", categoria:"categoria",
+        "categoría":"categoria", unidad:"unidad", stock:"stock_actual", stock_actual:"stock_actual",
+        stock_minimo:"stock_minimo", ubicacion:"ubicacion", "ubicación":"ubicacion",
+        estado:"estado", proveedor:"proveedor", precio:"precio_coste", precio_coste:"precio_coste", notas:"notas" };
+      const headers = Object.keys(rows[0]);
+      const colMap = {};
+      headers.forEach(h => { const k = map[h.toLowerCase().trim()]; if (k) colMap[h] = k; });
+      const nuevos = rows.map(r => {
+        const m = { ...blankMaterial };
+        Object.entries(colMap).forEach(([h, k]) => { if (r[h] !== "") m[k] = r[h]; });
+        m.stock_actual = Number(m.stock_actual) || 0;
+        m.stock_minimo = Number(m.stock_minimo) || 0;
+        m.id = Date.now() + Math.random();
+        m.emp = empresa?.id;
+        return m;
+      }).filter(m => m.nombre);
+      if (!nuevos.length) return;
+      if (modo === "demo") {
+        setMateriales(prev => [...prev, ...nuevos]);
+      } else {
+        Promise.all(nuevos.map(m => crearMaterial(m, empresa.id))).then(saved => {
+          setMateriales(prev => [...prev, ...saved]);
+        }).catch(console.error);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleExportAlmExcel = () => {
+    const cols = ["referencia","nombre","descripcion","categoria","unidad","stock_actual","stock_minimo","ubicacion","estado","proveedor","precio_coste","notas"];
+    const alm = almacenes?.find(a => a.id === almacenSel);
+    const rows = filtrados.map(m => Object.fromEntries(cols.map(k => [k, m[k] ?? ""])));
+    const ws = XLSX.utils.json_to_sheet(rows, { header: cols });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, alm?.nombre || "Almacén");
+    XLSX.writeFile(wb, `${(alm?.nombre || "almacen").replace(/\s+/g,"-")}.xlsx`);
+  };
+
+  const handleExportAlmPdf = () => {
+    const alm = almacenes?.find(a => a.id === almacenSel);
+    const cols = colsActivas.filter(c => c.id !== "nombre");
+    const thS = "padding:6px 10px;text-align:left;font-size:11px;font-weight:700;color:#6b7280;letter-spacing:.6px;text-transform:uppercase;border-bottom:2px solid #e5e7eb";
+    const tdS = "padding:6px 10px;font-size:13px;border-bottom:1px solid #f3f4f6";
+    const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>${alm?.nombre||"Almacén"}</title>
+<style>@page{size:A4;margin:18mm 14mm}body{font-family:system-ui,sans-serif;color:#111;margin:0}
+table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f9fafb}
+@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}</style></head><body>
+<div style="margin-bottom:16px;border-bottom:3px solid #6366f1;padding-bottom:10px;display:flex;justify-content:space-between;align-items:flex-end">
+  <div><div style="font-size:22px;font-weight:800;color:#6366f1">${alm?.nombre||"Almacén"}</div>
+  <div style="font-size:12px;color:#6b7280">${empresa?.nombre||""} · ${filtrados.length} materiales · ${new Date().toLocaleDateString("es-ES")}</div></div></div>
+<table><thead><tr><th style="${thS}">NOMBRE</th>${cols.map(c=>`<th style="${thS}">${c.label}</th>`).join("")}</tr></thead>
+<tbody>${filtrados.map(m=>`<tr><td style="${tdS}">${m.nombre||""}</td>${cols.map(c=>`<td style="${tdS}">${m[c.id]??""}</td>`).join("")}</tr>`).join("")}
+</tbody></table></body></html>`;
+    const win = window.open("","_blank","width=820,height=1000");
+    win.document.write(html); win.document.close(); setTimeout(()=>win.print(),400);
+  };
+
   const renderCel = (m, colId) => {
     switch (colId) {
       case "stock_actual": {
@@ -387,6 +466,18 @@ function TabAlmacen({ materiales, setMateriales, empresa, modo, almacenes, L }) 
         <Btn outline onClick={() => setShowUbicaciones(true)} style={{ padding:"8px 12px" }}>
           <MapPin size={15}/>{L("Ubicaciones","Locations")}
         </Btn>
+        <Btn outline onClick={() => importRef.current?.click()} style={{ padding:"8px 12px" }}>
+          <Upload size={15}/>{L("Importar","Import")}
+        </Btn>
+        <input ref={importRef} type="file" accept=".xlsx,.xls,.csv" style={{ display:"none" }} onChange={handleImportAlm}/>
+        <div style={{ position:"relative", display:"flex", gap:4 }}>
+          <Btn outline onClick={handleExportAlmExcel} style={{ padding:"8px 12px" }}>
+            <Download size={15}/>Excel
+          </Btn>
+          <Btn outline onClick={handleExportAlmPdf} style={{ padding:"8px 12px" }}>
+            <FileDown size={15}/>PDF
+          </Btn>
+        </div>
         <Btn onClick={() => setEditObj({ ...blankMaterial })}><Plus size={15}/>{L("Nuevo","New")}</Btn>
       </div>
 
@@ -563,7 +654,7 @@ function TabRetorno({ expediciones, L }) {
 // Colores predefinidos para nuevos roles
 const COLORES_ROLES = ["#0891b2","#be185d","#65a30d","#7c3aed","#f59e0b","#ef4444","#10b981","#8b5cf6","#f97316","#06b6d4"];
 
-function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpresa, guardarVehiculos, rolesImport, guardarRoles, L }) {
+function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpresa, guardarVehiculos, rolesImport, guardarRoles, formatoFecha = "DD/MM/YYYY", guardarFormatoFecha, isAdmin = true, L }) {
   const [alms, setAlms] = useState(almacenes);
   const [vehs, setVehs] = useState(vehiculosEmpresa || []);
   const [roles, setRoles] = useState(rolesImport || []);
@@ -599,6 +690,13 @@ function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpres
         <h2 style={{ fontSize:18 }}>{L("Configuración","Configuration")}</h2>
       </div>
 
+      {!isAdmin && (
+        <div style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:10, background:"rgba(99,102,241,0.08)", border:"1px solid rgba(99,102,241,0.2)", marginBottom:16, fontSize:13, color:"var(--brand)" }}>
+          <Shield size={14}/>
+          {L("Solo lectura. Solo un administrador puede modificar la configuración.","Read only. Only an administrator can modify the configuration.")}
+        </div>
+      )}
+
       {/* Info empresa */}
       <div style={{ background:C.surface, border:`1px solid ${C.line}`, borderRadius:14, overflow:"hidden", marginBottom:20 }}>
         <div style={{ padding:"14px 18px", borderBottom:`1px solid ${C.line}` }}>
@@ -627,16 +725,16 @@ function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpres
             <div style={{ fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, marginBottom:2 }}>{L("ALMACENES","WAREHOUSES")}</div>
             <div style={{ fontSize:12.5, color:C.sub }}>{L("Nombra los almacenes que usarás al importar pedidos.","Name the warehouses you'll use when importing orders.")}</div>
           </div>
-          <Btn onClick={addAlm} style={{ padding:"6px 12px", fontSize:12.5 }}><Plus size={14}/>{L("Añadir","Add")}</Btn>
+          {isAdmin && <Btn onClick={addAlm} style={{ padding:"6px 12px", fontSize:12.5 }}><Plus size={14}/>{L("Añadir","Add")}</Btn>}
         </div>
         {alms.map((a, i) => (
           <div key={a.id} style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 18px", borderBottom: i < alms.length - 1 ? `1px solid ${C.line}` : "none", flexWrap:"wrap" }}>
             <div style={{ width:26, height:26, borderRadius:7, background:C.brandSoft, color:C.brand, display:"grid", placeItems:"center", fontWeight:700, fontSize:12, flexShrink:0 }}>{i+1}</div>
-            <input value={a.nombre} onChange={e => updateAlm(a.id, "nombre", e.target.value)}
+            <input value={a.nombre} onChange={e => updateAlm(a.id, "nombre", e.target.value)} readOnly={!isAdmin}
               style={{ flex:1, minWidth:120, padding:"7px 10px", border:`1px solid ${C.strong}`, borderRadius:9, fontSize:13.5, fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none" }}/>
             <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
               <label style={{ fontSize:11.5, color:C.sub, whiteSpace:"nowrap" }}>{L("Formato Excel","Excel format")}</label>
-              <select value={a.parser || "hoja1hoja2"} onChange={e => updateAlm(a.id, "parser", e.target.value)}
+              <select value={a.parser || "hoja1hoja2"} onChange={e => updateAlm(a.id, "parser", e.target.value)} disabled={!isAdmin}
                 style={{ padding:"6px 9px", border:`1px solid ${C.strong}`, borderRadius:9, fontSize:13, fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none" }}>
                 <option value="hoja1hoja2">{L("Hoja1 + Hoja2","Sheet1 + Sheet2")}</option>
                 <option value="checklist">Checklist (1 hoja)</option>
@@ -645,23 +743,27 @@ function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpres
             {(a.parser || "hoja1hoja2") === "hoja1hoja2" && (
               <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
                 <label style={{ fontSize:11.5, color:C.sub, whiteSpace:"nowrap" }}>{L("Fila inicio","Start row")}</label>
-                <input type="number" min={1} max={50} value={a.startRow ?? 6}
+                <input type="number" min={1} max={50} value={a.startRow ?? 6} readOnly={!isAdmin}
                   onChange={e => updateAlm(a.id, "startRow", Math.max(1, Number(e.target.value) || 6))}
                   style={{ width:58, padding:"6px 8px", border:`1px solid ${C.strong}`, borderRadius:9, fontSize:13.5, fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none", textAlign:"center" }}/>
               </div>
             )}
-            <button onClick={() => removeAlm(a.id)} disabled={alms.length <= 1}
-              style={{ background:"none", border:"none", cursor: alms.length <= 1 ? "not-allowed" : "pointer", color: alms.length <= 1 ? C.line : C.sub, padding:5, display:"flex", borderRadius:7 }}>
-              <Trash2 size={15}/>
-            </button>
+            {isAdmin && (
+              <button onClick={() => removeAlm(a.id)} disabled={alms.length <= 1}
+                style={{ background:"none", border:"none", cursor: alms.length <= 1 ? "not-allowed" : "pointer", color: alms.length <= 1 ? C.line : C.sub, padding:5, display:"flex", borderRadius:7 }}>
+                <Trash2 size={15}/>
+              </button>
+            )}
           </div>
         ))}
-        <div style={{ padding:"12px 18px", display:"flex", justifyContent:"flex-end" }}>
-          <Btn onClick={guardar} color={saved ? C.ok : C.brand}>
-            {saved ? <Check size={14}/> : <Check size={14}/>}
-            {saved ? L("¡Guardado!","Saved!") : L("Guardar almacenes","Save warehouses")}
-          </Btn>
-        </div>
+        {isAdmin && (
+          <div style={{ padding:"12px 18px", display:"flex", justifyContent:"flex-end" }}>
+            <Btn onClick={guardar} color={saved ? C.ok : C.brand}>
+              {saved ? <Check size={14}/> : <Check size={14}/>}
+              {saved ? L("¡Guardado!","Saved!") : L("Guardar almacenes","Save warehouses")}
+            </Btn>
+          </div>
+        )}
       </div>
 
       {/* Roles de importación */}
@@ -674,7 +776,7 @@ function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpres
               <strong>Columna</strong>: aparece como columna independiente en el pedido. <strong>Descripción</strong>: aparece bajo el nombre del material.
             </div>
           </div>
-          <Btn onClick={addRol} style={{ padding:"6px 12px", fontSize:12.5, flexShrink:0, marginLeft:12 }}><Plus size={14}/>Añadir rol</Btn>
+          {isAdmin && <Btn onClick={addRol} style={{ padding:"6px 12px", fontSize:12.5, flexShrink:0, marginLeft:12 }}><Plus size={14}/>Añadir rol</Btn>}
         </div>
 
         {/* Roles fijos (informativos, no editables) */}
@@ -738,20 +840,24 @@ function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpres
                 ))}
               </div>
 
-              {/* Eliminar */}
-              <button onClick={() => removeRol(rol.key)}
-                style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, padding:5, borderRadius:7, flexShrink:0 }}>
-                <Trash2 size={15}/>
-              </button>
+              {/* Eliminar — solo admin */}
+              {isAdmin && (
+                <button onClick={() => removeRol(rol.key)}
+                  style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, padding:5, borderRadius:7, flexShrink:0 }}>
+                  <Trash2 size={15}/>
+                </button>
+              )}
             </div>
           ))}
         </div>
 
-        <div style={{ padding:"12px 18px", display:"flex", justifyContent:"flex-end" }}>
-          <Btn onClick={guardarR} color={savedR ? C.ok : C.brand}>
-            {savedR ? <><Check size={14}/> ¡Guardado!</> : <><Check size={14}/> Guardar roles</>}
-          </Btn>
-        </div>
+        {isAdmin && (
+          <div style={{ padding:"12px 18px", display:"flex", justifyContent:"flex-end" }}>
+            <Btn onClick={guardarR} color={savedR ? C.ok : C.brand}>
+              {savedR ? <><Check size={14}/> ¡Guardado!</> : <><Check size={14}/> Guardar roles</>}
+            </Btn>
+          </div>
+        )}
       </div>
 
       {/* Vehículos */}
@@ -761,7 +867,7 @@ function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpres
             <div style={{ fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, marginBottom:2 }}>{L("VEHÍCULOS / CONDUCTORES","VEHICLES / DRIVERS")}</div>
             <div style={{ fontSize:12.5, color:C.sub }}>{L("Vehículos disponibles para expediciones.","Vehicles available for expeditions.")}</div>
           </div>
-          <Btn onClick={addVeh} style={{ padding:"6px 12px", fontSize:12.5 }}><Plus size={14}/>{L("Añadir","Add")}</Btn>
+          {isAdmin && <Btn onClick={addVeh} style={{ padding:"6px 12px", fontSize:12.5 }}><Plus size={14}/>{L("Añadir","Add")}</Btn>}
         </div>
         {vehs.map((v, i) => (
           <div key={v.id} style={{ padding:"12px 18px", borderBottom: i < vehs.length - 1 ? `1px solid ${C.line}` : "none" }}>
@@ -769,32 +875,34 @@ function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpres
               {/* Color chip */}
               <div style={{ display:"flex", alignItems:"center", gap:6, flexShrink:0 }}>
                 <div style={{ width:22, height:22, borderRadius:6, background:v.color, border:`1px solid ${C.strong}`, flexShrink:0 }}/>
-                <input type="color" value={v.color || "#3b82f6"} onChange={e => updateVeh(v.id, "color", e.target.value)}
-                  style={{ width:28, height:28, padding:0, border:"none", background:"none", cursor:"pointer" }}/>
+                {isAdmin && <input type="color" value={v.color || "#3b82f6"} onChange={e => updateVeh(v.id, "color", e.target.value)}
+                  style={{ width:28, height:28, padding:0, border:"none", background:"none", cursor:"pointer" }}/>}
               </div>
-              <input value={v.nombre} onChange={e => updateVeh(v.id, "nombre", e.target.value)}
+              <input value={v.nombre} onChange={e => updateVeh(v.id, "nombre", e.target.value)} readOnly={!isAdmin}
                 placeholder={L("Nombre conductor","Driver name")}
                 style={{ flex:"1 1 110px", minWidth:100, padding:"6px 9px", border:`1px solid ${C.strong}`, borderRadius:8, fontSize:13, fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none" }}/>
-              <input value={v.matricula} onChange={e => updateVeh(v.id, "matricula", e.target.value)}
+              <input value={v.matricula} onChange={e => updateVeh(v.id, "matricula", e.target.value)} readOnly={!isAdmin}
                 placeholder="Matrícula"
                 style={{ flex:"1 1 90px", minWidth:80, padding:"6px 9px", border:`1px solid ${C.strong}`, borderRadius:8, fontSize:13, fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none" }}/>
-              <input value={v.modelo} onChange={e => updateVeh(v.id, "modelo", e.target.value)}
+              <input value={v.modelo} onChange={e => updateVeh(v.id, "modelo", e.target.value)} readOnly={!isAdmin}
                 placeholder="Modelo"
                 style={{ flex:"1 1 110px", minWidth:100, padding:"6px 9px", border:`1px solid ${C.strong}`, borderRadius:8, fontSize:13, fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none" }}/>
-              <select value={v.tipo || "Furgoneta"} onChange={e => updateVeh(v.id, "tipo", e.target.value)}
+              <select value={v.tipo || "Furgoneta"} onChange={e => updateVeh(v.id, "tipo", e.target.value)} disabled={!isAdmin}
                 style={{ flex:"0 0 100px", padding:"6px 9px", border:`1px solid ${C.strong}`, borderRadius:8, fontSize:13, fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none" }}>
                 <option>Furgoneta</option>
                 <option>Camión</option>
                 <option>Trailer</option>
                 <option>Coche</option>
               </select>
-              <input value={v.dni} onChange={e => updateVeh(v.id, "dni", e.target.value)}
+              <input value={v.dni} onChange={e => updateVeh(v.id, "dni", e.target.value)} readOnly={!isAdmin}
                 placeholder="DNI"
                 style={{ flex:"0 0 90px", padding:"6px 9px", border:`1px solid ${C.strong}`, borderRadius:8, fontSize:13, fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none" }}/>
-              <button onClick={() => removeVeh(v.id)}
-                style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, padding:5, display:"flex", borderRadius:7, flexShrink:0 }}>
-                <Trash2 size={15}/>
-              </button>
+              {isAdmin && (
+                <button onClick={() => removeVeh(v.id)}
+                  style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, padding:5, display:"flex", borderRadius:7, flexShrink:0 }}>
+                  <Trash2 size={15}/>
+                </button>
+              )}
             </div>
           </div>
         ))}
@@ -803,11 +911,38 @@ function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpres
             {L("Sin vehículos. Pulsa «Añadir» para crear uno.","No vehicles. Click «Add» to create one.")}
           </div>
         )}
-        <div style={{ padding:"12px 18px", display:"flex", justifyContent:"flex-end" }}>
+        {isAdmin && <div style={{ padding:"12px 18px", display:"flex", justifyContent:"flex-end" }}>
           <Btn onClick={guardarV} color={savedV ? C.ok : C.brand}>
             {savedV ? <Check size={14}/> : <Check size={14}/>}
             {savedV ? L("¡Guardado!","Saved!") : L("Guardar vehículos","Save vehicles")}
           </Btn>
+        </div>}
+      </div>
+
+      {/* Formato de fecha */}
+      <div style={{ background:C.surface, border:`1px solid ${C.line}`, borderRadius:14, overflow:"hidden", marginBottom:20 }}>
+        <div style={{ padding:"14px 18px", borderBottom:`1px solid ${C.line}` }}>
+          <div style={{ fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, marginBottom:2 }}>{L("FORMATO DE FECHA","DATE FORMAT")}</div>
+          <div style={{ fontSize:12.5, color:C.sub }}>{L("Formato en que se muestran las fechas en toda la aplicación.","Format used to display dates throughout the app.")}</div>
+        </div>
+        {!isAdmin && (
+          <div style={{ padding:"8px 16px", background:"var(--warn-soft)", borderBottom:`1px solid ${C.line}`, fontSize:12.5, color:"var(--warn)" }}>
+            🔒 {L("Solo lectura — sin permisos de edición.","Read-only — no edit permissions.")}
+          </div>
+        )}
+        <div style={{ padding:"16px 18px", display:"flex", gap:12, alignItems:"center", flexWrap:"wrap" }}>
+          {["DD/MM/YYYY","MM/DD/YYYY","DD-MM-YYYY"].map(fmt => (
+            <button key={fmt} disabled={!isAdmin} onClick={() => isAdmin && guardarFormatoFecha?.(fmt)}
+              style={{
+                padding:"8px 18px", borderRadius:8, border:`2px solid ${formatoFecha === fmt ? C.brand : C.line}`,
+                background: formatoFecha === fmt ? C.brandSoft : C.s2,
+                color: formatoFecha === fmt ? C.brand : C.ink,
+                fontWeight: formatoFecha === fmt ? 700 : 400,
+                cursor: isAdmin ? "pointer" : "not-allowed", fontSize:14, fontFamily:"monospace",
+              }}>
+              {fmt}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -838,8 +973,10 @@ export default function App() {
   const [rolesImport,       setRolesImport]       = useState(ROLES_DEFECTO);
   const [tramosExp,         setTramosExp]         = useState([]);
   const [vehiculosExp,      setVehiculosExp]      = useState([]);
+  const [myRol,             setMyRol]             = useState("owner"); // owner en demo/error
+  const [formatoFecha,      setFormatoFecha]      = useState("DD/MM/YYYY");
 
-  // Cargar preferencias de empresa (almacenes, vehículos, roles)
+  // Cargar preferencias de empresa (almacenes, vehículos, roles, formatoFecha)
   // En modo Supabase: desde empresa_config.datos_json. En demo: desde localStorage.
   useEffect(() => {
     if (!empresa?.id) return;
@@ -849,6 +986,7 @@ export default function App() {
         if (Array.isArray(prefs.almacenes) && prefs.almacenes.length) setAlmacenes(prefs.almacenes);
         if (Array.isArray(prefs.vehiculos) && prefs.vehiculos.length) setVehiculosEmpresa(prefs.vehiculos);
         if (Array.isArray(prefs.roles) && prefs.roles.length) setRolesImport(prefs.roles);
+        if (prefs.formatoFecha) setFormatoFecha(prefs.formatoFecha);
       });
     } else {
       try {
@@ -862,6 +1000,10 @@ export default function App() {
       try {
         const savedRoles = JSON.parse(localStorage.getItem(`lscale.roles.${empresa.id}`));
         if (Array.isArray(savedRoles) && savedRoles.length) setRolesImport(savedRoles);
+      } catch {}
+      try {
+        const savedFmt = localStorage.getItem(`lscale.formatoFecha.${empresa.id}`);
+        if (savedFmt) setFormatoFecha(savedFmt);
       } catch {}
     }
   }, [empresa?.id, modo]);
@@ -885,6 +1027,13 @@ export default function App() {
     if (!empresa?.id) return;
     if (modo === "supabase") guardarPrefs(empresa.id, { roles: list });
     else localStorage.setItem(`lscale.roles.${empresa.id}`, JSON.stringify(list));
+  };
+
+  const guardarFormatoFecha = (fmt) => {
+    setFormatoFecha(fmt);
+    if (!empresa?.id) return;
+    if (modo === "supabase") guardarPrefs(empresa.id, { formatoFecha: fmt });
+    else localStorage.setItem(`lscale.formatoFecha.${empresa.id}`, fmt);
   };
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", tema); }, [tema]);
@@ -915,6 +1064,7 @@ export default function App() {
     setMateriales(res.materiales || []);
     setPedidos(res.pedidos || []);
     setExpediciones(res.expediciones || []);
+    setMyRol(res.rol ?? "owner");
     setCarga(false);
   }, []);
 
@@ -946,6 +1096,9 @@ export default function App() {
   }
   if (modo === "no_contratado") {
     return <LangContext.Provider value={lang}><AvisoPortal tipo="no_contratado" L={L}/></LangContext.Provider>;
+  }
+  if (modo === "sin_acceso") {
+    return <LangContext.Provider value={lang}><AvisoPortal tipo="sin_acceso" L={L}/></LangContext.Provider>;
   }
   if (modo === "sin_config") {
     return <LangContext.Provider value={lang}><SinConfig empresa={empresa} onDone={cargar} L={L}/></LangContext.Provider>;
@@ -992,10 +1145,10 @@ export default function App() {
         {/* Contenido */}
         <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column", minHeight:0 }}>
           {tab === "almacen"  && <TabAlmacen  materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} L={L}/>}
-          {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} setTramos={setTramosExp} rolesImport={rolesImport}/>}
-          {tab === "planning" && <TabPlanning pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa}/>}
+          {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} setTramos={setTramosExp} rolesImport={rolesImport} formatoFecha={formatoFecha}/>}
+          {tab === "planning" && <TabPlanning pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha} onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }}/>}
           {tab === "retorno"  && <TabRetorno  expediciones={expediciones} L={L}/>}
-          {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} L={L}/>}
+          {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={myRol === "owner" || myRol === "admin"} L={L}/>}
         </div>
       </div>
     </LangContext.Provider>

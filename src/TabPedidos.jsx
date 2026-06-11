@@ -9,6 +9,7 @@ import { useL } from "./lib/i18n.js";
 import { parsearExcelPedido } from "./lib/parseExcelPedido.js";
 import ExcelConfigurador from "./ExcelConfigurador.jsx";
 import { guardarPedido, borrarPedido } from "./lib/data.js";
+import { fmtFecha, siguienteCodigo } from "./lib/fechas.js";
 
 /* ─── Paleta ──────────────────────────────────────────────────────────────── */
 const C = {
@@ -57,11 +58,11 @@ function Field({ label, value, onChange, type = "text", placeholder = "", span =
 }
 
 /* ─── Formulario de expedición (wizard) ───────────────────────────────────── */
-function ExpedicionForm({ form, setForm, L }) {
+function ExpedicionForm({ form, setForm, nextCodigo, L }) {
   const f = (k) => (v) => setForm(p => ({ ...p, [k]: v }));
   return (
     <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:14 }}>
-      <Field label={L("CÓDIGO EVENTO","EVENT CODE")}        value={form.codigo}         onChange={f("codigo")}/>
+      <Field label={L("CÓDIGO EVENTO","EVENT CODE")}        value={form.codigo}         onChange={f("codigo")} placeholder={nextCodigo || "OA_00000"}/>
       <Field label={L("REFERENCIA PEDIDO","ORDER REF")}     value={form.referencia}     onChange={f("referencia")}/>
       <Field label={L("CLIENTE","CLIENT")}                  value={form.nombre}         onChange={f("nombre")} span/>
       <Field label={L("CONTACTO","CONTACT")}                value={form.contacto}       onChange={f("contacto")}/>
@@ -70,6 +71,7 @@ function ExpedicionForm({ form, setForm, L }) {
       <Field label={L("FECHA RETORNO","RETURN DATE")}       value={form.fecha_retorno}  onChange={f("fecha_retorno")} placeholder="YYYY-MM-DD"/>
       <Field label={L("HORA IDA (descarga)","DEPARTURE TIME")}    value={form.hora_ida    ?? ""} onChange={f("hora_ida")}    type="time" placeholder="HH:MM"/>
       <Field label={L("HORA VUELTA (recogida)","RETURN TIME")}    value={form.hora_vuelta ?? ""} onChange={f("hora_vuelta")} type="time" placeholder="HH:MM"/>
+      <Field label={L("FECHA CARGA","LOAD DATE")}                 value={form.fecha_carga ?? ""} onChange={f("fecha_carga")} type="date" placeholder="YYYY-MM-DD"/>
       <Field label={L("PAX ADULTS","PAX ADULTS")}           value={form.pax_adults ?? ""} onChange={f("pax_adults")} type="number"/>
       <Field label={L("PAX NENS","PAX KIDS")}               value={form.pax_nens   ?? ""} onChange={f("pax_nens")}   type="number"/>
       <div style={{ gridColumn:"1 / -1" }}>
@@ -207,7 +209,7 @@ function ListaPedidos({ pedidos, almacenes, vehiculosEmpresa, onSelect, onImport
                     {p.nombre || "—"}
                   </div>
                   <div style={{ display:"flex", gap:12, flexWrap:"wrap", fontSize:11.5, color:C.sub, marginTop:2 }}>
-                    {p.fecha_entrega && <span>📅 {p.fecha_entrega}{p.hora_ida ? ` ${p.hora_ida}` : ""}</span>}
+                    {p.fecha_entrega && <span>📅 {fmtFecha(p.fecha_entrega, formatoFecha)}{p.hora_ida ? ` ${p.hora_ida}` : ""}</span>}
                     {p.hora_vuelta && <span>↩ {p.hora_vuelta}</span>}
                     <span>🏭 {almNombre}</span>
                     {p.destino && <span>📍 {p.destino}</span>}
@@ -634,7 +636,7 @@ function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato
                       {pedido.codigo || `PED-${pedido.id}`}
                     </div>
                     <div style={{ fontSize:11, color:C.sub }}>
-                      {pedido.nombre || ""}{pedido.fecha_entrega ? ` · ${pedido.fecha_entrega}` : ""}
+                      {pedido.nombre || ""}{pedido.fecha_entrega ? ` · ${fmtFecha(pedido.fecha_entrega, formatoFecha)}` : ""}
                     </div>
                   </div>
                   {/* Tabla preview */}
@@ -927,9 +929,9 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
             <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginTop:6, fontSize:12.5, color:C.sub }}>
               {p.destino   && <span>📍 {p.destino}</span>}
               {p.contacto  && <span>👤 {p.contacto}</span>}
-              {p.fecha_entrega && <span>📅 {L("Exp.","Disp.")}: <strong style={{ color:C.ink }}>{p.fecha_entrega}</strong></span>}
+              {p.fecha_entrega && <span>📅 {L("Exp.","Disp.")}: <strong style={{ color:C.ink }}>{fmtFecha(p.fecha_entrega, formatoFecha)}</strong></span>}
               {p.hora_ida     && <span>🚚 {L("Ida","Out")}: <strong style={{ color:C.ink }}>{p.hora_ida}</strong></span>}
-              {p.fecha_retorno && <span>↩ <strong style={{ color:C.ink }}>{p.fecha_retorno}</strong></span>}
+              {p.fecha_retorno && <span>↩ <strong style={{ color:C.ink }}>{fmtFecha(p.fecha_retorno, formatoFecha)}</strong></span>}
               {p.hora_vuelta  && <span>🏠 {L("Vuelta","Back")}: <strong style={{ color:C.ink }}>{p.hora_vuelta}</strong></span>}
               <span>🏭 <strong style={{ color:C.ink }}>{almNombre}</strong></span>
               {p.vehiculo_id && vehiculosEmpresa?.length > 0 && (() => {
@@ -1178,7 +1180,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
 /* ═══════════════════════════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
-export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [] }) {
+export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY" }) {
   const L = useL();
   const fileRef = useRef(null);
 
@@ -1314,6 +1316,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
     const vehiculoDefault = vehiculosEmpresa?.[0] ?? null;
     const pedido = {
       ...expForm,
+      codigo:         expForm.codigo?.trim() || siguienteCodigo(pedidos),
       fecha_entrega:  normFecha(expForm.fecha_entrega),
       fecha_retorno:  normFecha(expForm.fecha_retorno),
       almacen_id:     parsed.almacen.id,
@@ -1726,7 +1729,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
                 </div>
 
                 <div style={{ flex:1, overflowY:"auto", padding:"18px 22px" }}>
-                  {wizardTab === "exp" && modoImport === "nuevo" && <ExpedicionForm form={expForm} setForm={setExpForm} L={L}/>}
+                  {wizardTab === "exp" && modoImport === "nuevo" && <ExpedicionForm form={expForm} setForm={setExpForm} nextCodigo={siguienteCodigo(pedidos)} L={L}/>}
                   {wizardTab === "exp" && modoImport === "adjuntar" && (
                     <div style={{ padding:"12px 0", color:C.sub, fontSize:13.5 }}>
                       {L("Los datos de expedición ya están en el pedido seleccionado. Solo se añadirán las líneas de materiales.",
