@@ -1282,9 +1282,22 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
   };
 
   /* ── Resultado del configurador ─────────────────────────────────────────── */
+  const normFechaInput = (s) => {
+    if (!s) return s;
+    const m = String(s).trim().match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+    if (!m) return s;
+    const [, d, mo, y] = m;
+    return `${y.length === 2 ? "20" + y : y}-${mo.padStart(2,"0")}-${d.padStart(2,"0")}`;
+  };
+
   const onConfiguradorConfirm = ({ expedicion, materiales }) => {
     setParsed({ expedicion, materiales, almacen: configurador.almacen });
-    setExpForm({ ...expedicion });
+    setExpForm({
+      ...expedicion,
+      fecha_entrega: normFechaInput(expedicion.fecha_entrega),
+      fecha_retorno: normFechaInput(expedicion.fecha_retorno),
+      fecha_carga:   normFechaInput(expedicion.fecha_carga),
+    });
     setWizardTab("exp");
     setModoImport(null);
     setAdjuntarA(null);
@@ -1664,8 +1677,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
       {/* Wizard modal de importación */}
       {parsed && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.5)", zIndex:500,
-          display:"grid", placeItems:"center", padding:16 }}
-          onClick={() => { setParsed(null); setModoImport(null); setAdjuntarA(null); }}>
+          display:"grid", placeItems:"center", padding:16 }}>
           <div style={{ background:C.surface, borderRadius:18, width:"100%", maxWidth:820,
             maxHeight:"92vh", display:"flex", flexDirection:"column", boxShadow:"var(--shadow-lg)" }}
             onClick={e => e.stopPropagation()}>
