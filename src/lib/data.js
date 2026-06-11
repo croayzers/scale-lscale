@@ -155,6 +155,10 @@ export async function cargarDatos() {
     return { modo: "demo", empresas: [EMPRESA_DEMO], materiales: MATERIALES_DEMO, pedidos: PEDIDOS_DEMO, expediciones: [] };
   }
   try {
+    const { data: { user }, error: eUser } = await sb().auth.getUser();
+    console.log("%c[L-Scale] Auth getUser", "color:#2563eb;font-weight:bold", user?.id ?? "null", eUser?.message ?? "ok");
+    if (!user) return { modo: "sin_sesion", empresas: [], materiales: [], pedidos: [], expediciones: [] };
+
     const { data: comps, error: eComps } = await sb().from("companies").select("*");
     const { data: cfgs,  error: eCfgs  } = await lsc().from("empresa_config").select("*");
     const cfgBy  = Object.fromEntries((cfgs  || []).map((c) => [c.company_id, c]));

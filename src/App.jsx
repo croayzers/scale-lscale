@@ -938,7 +938,7 @@ export default function App() {
       </LangContext.Provider>
     );
   }
-  if (supabaseConfigurado && !sesion) {
+  if (supabaseConfigurado && (!sesion || modo === "sin_sesion")) {
     return <LangContext.Provider value={lang}><Login/></LangContext.Provider>;
   }
   if (modo === "sin_empresa") {
