@@ -1282,12 +1282,22 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
   };
 
   /* ── Resultado del configurador ─────────────────────────────────────────── */
+  // Convierte fecha del Excel (en el formato configurado por la empresa) a YYYY-MM-DD
   const normFechaInput = (s) => {
     if (!s) return s;
-    const m = String(s).trim().match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
-    if (!m) return s;
-    const [, d, mo, y] = m;
-    return `${y.length === 2 ? "20" + y : y}-${mo.padStart(2,"0")}-${d.padStart(2,"0")}`;
+    const str = String(s).trim();
+    // Si ya viene como YYYY-MM-DD, dejarlo
+    if (/^\d{4}-\d{2}-\d{2}$/.test(str)) return str;
+    const m = str.match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
+    if (!m) return str;
+    const [, p1, p2, p3] = m;
+    const y = p3.length === 2 ? "20" + p3 : p3;
+    // MM/DD/YYYY → p1=mes, p2=dia
+    if (formatoFecha === "MM/DD/YYYY") {
+      return `${y}-${p1.padStart(2,"0")}-${p2.padStart(2,"0")}`;
+    }
+    // DD/MM/YYYY y DD-MM-YYYY (por defecto) → p1=dia, p2=mes
+    return `${y}-${p2.padStart(2,"0")}-${p1.padStart(2,"0")}`;
   };
 
   const onConfiguradorConfirm = ({ expedicion, materiales }) => {
@@ -1357,13 +1367,8 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
     }
 
     // ── Pedido nuevo ─────────────────────────────────────────────────────
-    const normFecha = (s) => {
-      if (!s) return s;
-      const m = String(s).trim().match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
-      if (!m) return s;
-      const [, d, mo, y] = m;
-      return `${y.length === 2 ? "20" + y : y}-${mo.padStart(2,"0")}-${d.padStart(2,"0")}`;
-    };
+    // Reutiliza normFechaInput (definida arriba) que ya respeta formatoFecha
+    const normFecha = normFechaInput;
     const vehiculoDefault = vehiculosEmpresa?.[0] ?? null;
     const pedido = {
       ...expForm,
