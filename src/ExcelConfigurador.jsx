@@ -1142,6 +1142,8 @@ function PasoSeleccion({ hojasData, configs, setCfgHoja, ROL_COLS, onVolver, onC
       cfg.colMapping.colCantidad >= 0
     );
 
+  const [hojaSelIdx, setHojaSelIdx] = useState(0);
+
   const buildRows = ({ h, cfg }) => {
     const { colNombre, colCantidad, colGrupo, colCategoria, startRow, excludedRows = [], decimalSep = "," } = cfg;
     const startIdx = Math.max(0, (startRow || 1) - 1);
@@ -1213,16 +1215,32 @@ function PasoSeleccion({ hojasData, configs, setCfgHoja, ROL_COLS, onVolver, onC
             padding:"4px 12px", borderRadius:999 }}>
             {totalSel} / {totalRows} filas seleccionadas
           </span>
-          <Btn onClick={onConfirmar} color={C.ok} disabled={totalSel === 0}
+          <Btn onClick={onConfirmar} color={C.ok}
             style={{ padding:"7px 18px" }}>
             <Check size={14}/> Confirmar importación
           </Btn>
         </div>
       </div>
 
-      {/* Tablas por hoja */}
+      {/* Tabs de hojas (solo si hay más de una) */}
+      {materialHojas.length > 1 && (
+        <div style={{ display:"flex", gap:0, borderBottom:`1px solid ${C.line}`, flexShrink:0, padding:"0 20px", overflowX:"auto" }}>
+          {materialHojas.map(({ h }, idx) => (
+            <button key={idx} onClick={() => setHojaSelIdx(idx)}
+              style={{ padding:"8px 16px", border:"none", background:"transparent", cursor:"pointer",
+                fontFamily:"inherit", fontSize:13.5, whiteSpace:"nowrap",
+                borderBottom: hojaSelIdx === idx ? `2.5px solid ${C.brand}` : "2.5px solid transparent",
+                color: hojaSelIdx === idx ? C.brand : C.sub,
+                fontWeight: hojaSelIdx === idx ? 600 : 400, marginBottom:-1 }}>
+              {h.nombre}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Tabla de la hoja activa */}
       <div style={{ flex:1, overflowY:"auto", padding:"0 20px 20px" }}>
-        {materialHojas.map(({ h, i, cfg }) => {
+        {materialHojas.filter((_, idx) => materialHojas.length === 1 || idx === hojaSelIdx).map(({ h, i, cfg }) => {
           const rows    = buildRows({ h, cfg });
           const selCount = rows.filter(r => !r.excluded).length;
           const allSel   = selCount === rows.length;
