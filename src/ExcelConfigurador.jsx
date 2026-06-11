@@ -46,6 +46,7 @@ const CAMPOS_STD = [
   { key:"referencia",    label:"Menú / Referencia" },
   { key:"hora_ida",      label:"Hora ida" },
   { key:"hora_vuelta",   label:"Hora vuelta" },
+  { key:"fecha_carga",   label:"Fecha de carga" },
   { key:"notas",         label:"Comentario / Notas" },
 ];
 
@@ -105,6 +106,7 @@ function configVacia(rolCols = ROL_COLS_FIJOS) {
     startRow: 1,
     colMapping: mapping,
     decimalSep: ",",
+    excludedRows: [],  // índices absolutos de filas a excluir
   };
 }
 
@@ -130,16 +132,16 @@ function aplicarPlantilla(hojasData, plantilla, rolCols) {
     const cfg = plantilla.hojas?.[i];
     if (!cfg) return configVacia(rolCols);
     const hasCampos = (cfg.campos || []).length > 0;
-    // Asegurar que todos los roles actuales están en el colMapping
     const baseMapping = configVacia(rolCols).colMapping;
     return {
-      tipo:        cfg.tipo       || "ignorar",
-      fase:        hasCampos ? "asignacion" : "estructura",
-      campos:      cfg.campos     || [],
-      campoActivo: null,
-      startRow:    cfg.startRow   ?? 1,
-      colMapping:  { ...baseMapping, ...(cfg.colMapping || {}) },
-      decimalSep:  cfg.decimalSep || ",",
+      tipo:         cfg.tipo        || "ignorar",
+      fase:         hasCampos ? "asignacion" : "estructura",
+      campos:       cfg.campos      || [],
+      campoActivo:  null,
+      startRow:     cfg.startRow    ?? 1,
+      colMapping:   { ...baseMapping, ...(cfg.colMapping || {}) },
+      decimalSep:   cfg.decimalSep  || ",",
+      excludedRows: cfg.excludedRows || [],
     };
   });
 }
@@ -188,8 +190,10 @@ function procesarLibro(wb, hojasData, configs, rolCols) {
       let currentGrupo = "";
       let currentCat   = "";
       const startIdx   = Math.max(0, (cfg.startRow || 1) - 1);
+      const excSet     = new Set(cfg.excludedRows || []);
 
       for (let ri = startIdx; ri < hoja.rows.length; ri++) {
+        if (excSet.has(ri)) continue;
         const cells    = hoja.rows[ri].map(c => String(c ?? "").trim());
         const cellsFmt = (hoja.rowsFmt[ri] || []).map(c => String(c ?? "").trim());
         if (cells.every(c => !c)) continue;
@@ -1113,6 +1117,223 @@ function PanelMateriales({ hoja, cfg, setCfg, ROL_COLS }) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   PASO SELECCIÓN DE FILAS
+   ═══════════════════════════════════════════════════════════════════════════ */
+function PasoSeleccion({ hojasData, configs, setCfgHoja, ROL_COLS, onVolver, onConfirmar }) {
+  const materialHojas = hojasData
+    .map((h, i) => ({ h, i, cfg: configs[i] }))
+    .filter(({ cfg }) =>
+      cfg.tipo === "materiales" &&
+      cfg.colMapping.colNombre >= 0 &&
+      cfg.colMapping.colCantidad >= 0
+    );
+
+  const buildRows = ({ h, cfg }) => {
+    const { colNombre, colCantidad, colGrupo, colCategoria, startRow, excludedRows = [], decimalSep = "," } = cfg;
+    const startIdx = Math.max(0, (startRow || 1) - 1);
+    const out = [];
+    for (let ri = startIdx + 1; ri < h.rows.length; ri++) {
+      const cells    = h.rows[ri].map(c => String(c ?? "").trim());
+      const cellsFmt = (h.rowsFmt[ri] || []).map(c => String(c ?? "").trim());
+      if (cells.every(c => !c)) continue;
+      const nombre = limpiarTexto(cells[colNombre] || "");
+      if (!nombre) continue;
+      const cantRaw  = cellsFmt[colCantidad] || cells[colCantidad] || "";
+      const cantidad = parseCantidad(cantRaw, decimalSep);
+      if (cantidad === 0) continue;
+      out.push({
+        ri,
+        nombre,
+        cantidad,
+        grupo:    colGrupo     >= 0 ? limpiarTexto(cells[colGrupo]     || "") : "",
+        categoria:colCategoria >= 0 ? limpiarTexto(cells[colCategoria] || "") : "",
+        excluded: excludedRows.includes(ri),
+      });
+    }
+    return out;
+  };
+
+  const toggleRow = (hojaIdx, ri) => {
+    setCfgHoja(hojaIdx, cfg => {
+      const exc  = cfg.excludedRows || [];
+      const next = exc.includes(ri) ? exc.filter(x => x !== ri) : [...exc, ri];
+      return { ...cfg, excludedRows: next };
+    });
+  };
+
+  const toggleAll = (hojaIdx, rows, checked) => {
+    setCfgHoja(hojaIdx, cfg => ({
+      ...cfg,
+      excludedRows: checked ? [] : rows.map(r => r.ri),
+    }));
+  };
+
+  const totalSel = materialHojas.reduce((sum, mh) => {
+    const rows = buildRows(mh);
+    return sum + rows.filter(r => !r.excluded).length;
+  }, 0);
+  const totalRows = materialHojas.reduce((sum, mh) => sum + buildRows(mh).length, 0);
+
+  return (
+    <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
+
+      {/* Sub-header */}
+      <div style={{ padding:"10px 20px", borderBottom:`1px solid ${C.line}`, flexShrink:0,
+        display:"flex", alignItems:"center", gap:12, flexWrap:"wrap" }}>
+        <button onClick={onVolver}
+          style={{ display:"flex", alignItems:"center", gap:5, background:"none",
+            border:`1px solid ${C.strong}`, cursor:"pointer", color:C.sub,
+            padding:"5px 12px", borderRadius:8, fontSize:12.5, fontFamily:"inherit" }}>
+          ← Volver a configurar
+        </button>
+        <div style={{ flex:1 }}>
+          <div style={{ fontWeight:700, fontSize:14.5 }}>Seleccionar filas a importar</div>
+          <div style={{ fontSize:12, color:C.sub, marginTop:1 }}>
+            Desmarca las filas que no quieras importar. Por defecto se importan todas.
+          </div>
+        </div>
+        <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+          <span style={{ fontSize:13, fontWeight:600,
+            color: totalSel === totalRows ? C.ok : C.brand,
+            background: totalSel === totalRows ? C.okSoft : C.brandSoft,
+            padding:"4px 12px", borderRadius:999 }}>
+            {totalSel} / {totalRows} filas seleccionadas
+          </span>
+          <Btn onClick={onConfirmar} color={C.ok} disabled={totalSel === 0}
+            style={{ padding:"7px 18px" }}>
+            <Check size={14}/> Confirmar importación
+          </Btn>
+        </div>
+      </div>
+
+      {/* Tablas por hoja */}
+      <div style={{ flex:1, overflowY:"auto", padding:"0 20px 20px" }}>
+        {materialHojas.map(({ h, i, cfg }) => {
+          const rows    = buildRows({ h, cfg });
+          const selCount = rows.filter(r => !r.excluded).length;
+          const allSel   = selCount === rows.length;
+          const noneSel  = selCount === 0;
+          const hasGrupo = cfg.colMapping.colGrupo >= 0;
+          const hasCat   = cfg.colMapping.colCategoria >= 0;
+
+          return (
+            <div key={i} style={{ marginTop:16 }}>
+              {materialHojas.length > 1 && (
+                <div style={{ fontSize:12, fontWeight:700, color:C.sub, letterSpacing:.5,
+                  marginBottom:8 }}>HOJA: {h.nombre.toUpperCase()}</div>
+              )}
+              <div style={{ border:`1px solid ${C.line}`, borderRadius:12, overflow:"hidden" }}>
+                <table style={{ borderCollapse:"collapse", width:"100%", fontSize:13 }}>
+                  <thead>
+                    <tr style={{ background:C.s2 }}>
+                      <th style={{ padding:"8px 12px", borderBottom:`1px solid ${C.strong}`,
+                        borderRight:`1px solid ${C.line}`, width:36, textAlign:"center" }}>
+                        <input type="checkbox"
+                          checked={allSel}
+                          ref={el => { if (el) el.indeterminate = !allSel && !noneSel; }}
+                          onChange={e => toggleAll(i, rows, e.target.checked)}
+                          style={{ cursor:"pointer", width:14, height:14 }}/>
+                      </th>
+                      <th style={{ padding:"8px 10px", borderBottom:`1px solid ${C.strong}`,
+                        borderRight:`1px solid ${C.line}`, fontSize:11, color:C.sub,
+                        fontWeight:700, width:50, textAlign:"center" }}>#</th>
+                      {hasGrupo && <th style={{ padding:"8px 10px", borderBottom:`1px solid ${C.strong}`,
+                        borderRight:`1px solid ${C.line}`, fontSize:11, color:C.sub,
+                        fontWeight:700, textAlign:"left" }}>GRUPO</th>}
+                      {hasCat && <th style={{ padding:"8px 10px", borderBottom:`1px solid ${C.strong}`,
+                        borderRight:`1px solid ${C.line}`, fontSize:11, color:C.sub,
+                        fontWeight:700, textAlign:"left" }}>CATEGORÍA</th>}
+                      <th style={{ padding:"8px 10px", borderBottom:`1px solid ${C.strong}`,
+                        borderRight:`1px solid ${C.line}`, fontSize:11, color:C.sub,
+                        fontWeight:700, textAlign:"left" }}>NOMBRE</th>
+                      <th style={{ padding:"8px 10px", borderBottom:`1px solid ${C.strong}`,
+                        fontSize:11, color:C.sub, fontWeight:700, textAlign:"right", width:80 }}>CANT.</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((row, idx) => (
+                      <tr key={row.ri}
+                        onClick={() => toggleRow(i, row.ri)}
+                        style={{ cursor:"pointer",
+                          background: row.excluded ? C.s2 : "transparent",
+                          opacity: row.excluded ? 0.45 : 1,
+                          borderBottom: idx < rows.length - 1 ? `1px solid ${C.line}` : "none",
+                          transition:"background .1s, opacity .1s" }}
+                        onMouseEnter={e => !row.excluded && (e.currentTarget.style.background = C.brandSoft)}
+                        onMouseLeave={e => (e.currentTarget.style.background = row.excluded ? C.s2 : "transparent")}>
+                        <td style={{ padding:"7px 12px", textAlign:"center",
+                          borderRight:`1px solid ${C.line}` }}>
+                          <input type="checkbox" checked={!row.excluded}
+                            onChange={() => toggleRow(i, row.ri)}
+                            onClick={e => e.stopPropagation()}
+                            style={{ cursor:"pointer", width:14, height:14 }}/>
+                        </td>
+                        <td style={{ padding:"7px 10px", textAlign:"center", fontSize:11.5,
+                          color:C.dim, borderRight:`1px solid ${C.line}` }}>
+                          {row.ri + 1}
+                        </td>
+                        {hasGrupo && (
+                          <td style={{ padding:"7px 10px", fontSize:12.5, color:C.sub,
+                            borderRight:`1px solid ${C.line}`, whiteSpace:"nowrap" }}>
+                            {row.grupo || "—"}
+                          </td>
+                        )}
+                        {hasCat && (
+                          <td style={{ padding:"7px 10px", fontSize:12.5, color:C.sub,
+                            borderRight:`1px solid ${C.line}`, whiteSpace:"nowrap" }}>
+                            {row.categoria || "—"}
+                          </td>
+                        )}
+                        <td style={{ padding:"7px 10px", fontWeight:600,
+                          color: row.excluded ? C.dim : C.ink,
+                          borderRight:`1px solid ${C.line}`,
+                          textDecoration: row.excluded ? "line-through" : "none" }}>
+                          {row.nombre}
+                        </td>
+                        <td style={{ padding:"7px 10px", textAlign:"right",
+                          fontWeight:700, color: row.excluded ? C.dim : C.brand,
+                          fontVariantNumeric:"tabular-nums" }}>
+                          {row.cantidad}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {rows.length === 0 && (
+                  <div style={{ padding:24, textAlign:"center", color:C.sub, fontSize:13 }}>
+                    No se detectaron filas con datos en esta hoja.
+                  </div>
+                )}
+                <div style={{ padding:"8px 14px", background:C.s2,
+                  borderTop:`1px solid ${C.line}`, fontSize:12, color:C.sub,
+                  display:"flex", justifyContent:"space-between" }}>
+                  <span>
+                    <button onClick={() => toggleAll(i, rows, true)}
+                      style={{ background:"none", border:"none", cursor:"pointer",
+                        color:C.brand, fontSize:12, fontWeight:600, padding:"0 4px", fontFamily:"inherit" }}>
+                      Seleccionar todas
+                    </button>
+                    ·
+                    <button onClick={() => toggleAll(i, rows, false)}
+                      style={{ background:"none", border:"none", cursor:"pointer",
+                        color:C.sub, fontSize:12, padding:"0 4px", fontFamily:"inherit" }}>
+                      Deseleccionar todas
+                    </button>
+                  </span>
+                  <span style={{ fontWeight:600, color: selCount === rows.length ? C.ok : C.brand }}>
+                    {selCount} de {rows.length} seleccionadas
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
 export default function ExcelConfigurador({ file, almacen, empresaId, onConfirm, onCancel, rolesImport = [] }) {
@@ -1127,6 +1348,7 @@ export default function ExcelConfigurador({ file, almacen, empresaId, onConfirm,
   const [guardando,     setGuardando]    = useState(false);
   const [guardadoOk,    setGuardadoOk]   = useState(false);
   const [showPlantillas, setShowPlantillas] = useState(false);
+  const [paso,          setPaso]         = useState("config"); // "config" | "seleccion"
 
   const ROL_COLS = useMemo(() => buildRolCols(rolesImport), [rolesImport]);
 
@@ -1166,11 +1388,12 @@ export default function ExcelConfigurador({ file, almacen, empresaId, onConfirm,
     const plantilla = {
       nombre,
       hojas: configs.map(c => ({
-        tipo:       c.tipo,
-        campos:     c.campos.map(({ label, key, fila, col }) => ({ label, key, fila, col })),
-        startRow:   c.startRow,
-        colMapping: c.colMapping,
-        decimalSep: c.decimalSep,
+        tipo:         c.tipo,
+        campos:       c.campos.map(({ label, key, fila, col }) => ({ label, key, fila, col })),
+        startRow:     c.startRow,
+        colMapping:   c.colMapping,
+        decimalSep:   c.decimalSep,
+        excludedRows: c.excludedRows || [],
         // fase no se guarda; se recalcula al cargar
       })),
     };
@@ -1307,8 +1530,20 @@ export default function ExcelConfigurador({ file, almacen, empresaId, onConfirm,
           </div>
         </div>
 
+        {/* ── Paso selección de filas ── */}
+        {paso === "seleccion" && (
+          <PasoSeleccion
+            hojasData={hojasData}
+            configs={configs}
+            setCfgHoja={setCfgHoja}
+            ROL_COLS={ROL_COLS}
+            onVolver={() => setPaso("config")}
+            onConfirmar={confirmar}
+          />
+        )}
+
         {/* ── Tabs de hojas ── */}
-        <div style={{ display:"flex", gap:0, borderBottom:`1px solid ${C.line}`,
+        {paso === "config" && <div style={{ display:"flex", gap:0, borderBottom:`1px solid ${C.line}`,
           flexShrink:0, overflowX:"auto", padding:"0 20px" }}>
           {hojasData.map((h, i) => {
             const c    = configs[i];
@@ -1328,10 +1563,10 @@ export default function ExcelConfigurador({ file, almacen, empresaId, onConfirm,
               </button>
             );
           })}
-        </div>
+        </div>}
 
         {/* ── Panel de la hoja activa ── */}
-        {cfg && (
+        {paso === "config" && cfg && (
           <div style={{ flex:1, display:"flex", flexDirection:"column", minHeight:0 }}>
 
             {/* Selector de tipo */}
@@ -1422,7 +1657,7 @@ export default function ExcelConfigurador({ file, almacen, empresaId, onConfirm,
                   onGuardarPlantilla={guardarPlantilla}
                   guardadoOk={guardadoOk}
                   puedeConfirmar={puedeConfirmar}
-                  onConfirmar={confirmar}
+                  onConfirmar={() => setPaso("seleccion")}
                 />
               )}
               {cfg.tipo === "materiales" && (
@@ -1455,17 +1690,18 @@ export default function ExcelConfigurador({ file, almacen, empresaId, onConfirm,
           </div>
 
           <div style={{ display:"flex", gap:8, marginLeft:"auto", alignItems:"center" }}>
-            {!puedeConfirmar && (
+            {paso === "config" && !puedeConfirmar && (
               <span style={{ fontSize:12, color:C.sub }}>
                 Asigna <strong>Nombre</strong> y <strong>Cantidad</strong> en una hoja de materiales
               </span>
             )}
             <Btn outline onClick={onCancel}>Cancelar</Btn>
-            <Btn onClick={confirmar} disabled={!puedeConfirmar}
-              color={puedeConfirmar ? C.ok : C.brand}>
-              <Check size={14}/>
-              Confirmar importación
-            </Btn>
+            {paso === "config" && (
+              <Btn onClick={() => setPaso("seleccion")} disabled={!puedeConfirmar}
+                color={puedeConfirmar ? C.brand : C.brand}>
+                Elegir filas <ChevronRight size={14}/>
+              </Btn>
+            )}
           </div>
         </div>
       </div>
