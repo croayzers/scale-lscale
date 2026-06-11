@@ -23,7 +23,7 @@ import { LangContext, useL, useLang, IDIOMAS } from "./lib/i18n.js";
 import { sb, supabaseConfigurado } from "./lib/supabase.js";
 import {
   cargarDatos, crearMaterial, actualizarMaterial, borrarMaterial,
-  recargarMateriales, crearConfigInicial, cargarPrefs, guardarPrefs, guardarPedido, guardarTramos,
+  recargarMateriales, crearConfigInicial, cargarPrefs, guardarPrefs, guardarPedido, guardarTramos, registrarVistoPor,
 } from "./lib/data.js";
 import Login from "./Login.jsx";
 import TabPlanning from "./TabPlanning.jsx";
@@ -1265,11 +1265,29 @@ export default function App() {
           </div>
 
           {/* Controles derecha */}
-          <div style={{ display:"flex", gap:6, marginLeft:"auto" }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6, marginLeft:"auto" }}>
             <button onClick={cambiarLang} title={L("Cambiar idioma","Change language")} style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, padding:6, borderRadius:8, display:"flex" }}><Globe size={16}/></button>
             <button onClick={toggleTema} title={L("Cambiar tema","Toggle theme")} style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, padding:6, borderRadius:8, display:"flex" }}>
               {tema === "dark" ? <Sun size={16}/> : <Moon size={16}/>}
             </button>
+            {sesion?.user?.email && (() => {
+              const email = sesion.user.email;
+              const nombre = email.split("@")[0].split(".")[0];
+              const inicial = nombre[0].toUpperCase();
+              return (
+                <div title={email} style={{ display:"flex", alignItems:"center", gap:7, padding:"3px 8px 3px 4px",
+                  borderRadius:999, background:C.brandSoft, border:`1px solid ${C.brand}20` }}>
+                  <div style={{ width:24, height:24, borderRadius:999, background:C.brand, color:"#fff",
+                    display:"grid", placeItems:"center", fontSize:11, fontWeight:700, flexShrink:0 }}>
+                    {inicial}
+                  </div>
+                  <span style={{ fontSize:12, color:C.brand, fontWeight:600, maxWidth:120,
+                    overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                    {nombre}
+                  </span>
+                </div>
+              );
+            })()}
             {supabaseConfigurado && (
               <button onClick={() => sb().auth.signOut()} title={L("Cerrar sesión","Sign out")} style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, padding:6, borderRadius:8, display:"flex", fontSize:12 }}>
                 {L("Salir","Out")}
@@ -1281,7 +1299,7 @@ export default function App() {
         {/* Contenido */}
         <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column", minHeight:0 }}>
           {tab === "almacen"  && <TabAlmacen  materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} L={L}/>}
-          {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} setTramos={setTramosExp} rolesImport={rolesImport} formatoFecha={formatoFecha}/>}
+          {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} setTramos={setTramosExp} rolesImport={rolesImport} formatoFecha={formatoFecha} sesion={sesion} onRegistrarVisto={async (pid) => { if (modo==="supabase" && sesion?.user) { const nombre = sesion.user.email.split("@")[0].split(".")[0]; await registrarVistoPor(pid, sesion.user.id, nombre); }}}/>}
           {tab === "planning" && <TabPlanning pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha} onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} tramosIniciales={tramosIniciales} onSaveTramos={async (pid, tramos) => { if (modo === "supabase" && empresa?.id) await guardarTramos(pid, tramos, empresa.id); }}/>}
           {tab === "retorno"  && <TabRetorno  pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha} onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} L={L}/>}
           {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={myRol === "owner" || myRol === "admin"} L={L}/>}

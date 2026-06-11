@@ -161,7 +161,7 @@ function MaterialesList({ grouped, updateMaterial, L }) {
 /* ═══════════════════════════════════════════════════════════════════════════
    LISTA DE PEDIDOS
    ═══════════════════════════════════════════════════════════════════════════ */
-function ListaPedidos({ pedidos, almacenes, vehiculosEmpresa, onSelect, onImport, L }) {
+function ListaPedidos({ pedidos, almacenes, vehiculosEmpresa, onSelect, onImport, formatoFecha = "DD/MM/YYYY", L }) {
   const sorted = [...pedidos].sort((a, b) => {
     const fa = a.fecha_entrega || a.fecha_pedido || "";
     const fb = b.fecha_entrega || b.fecha_pedido || "";
@@ -236,6 +236,26 @@ function ListaPedidos({ pedidos, almacenes, vehiculosEmpresa, onSelect, onImport
                       ) : null;
                     })()}
                   </div>
+                </div>
+                {/* Creado por + vistos por */}
+                <div style={{ display:"flex", alignItems:"center", gap:3, flexShrink:0 }}>
+                  {p.creado_por_nombre && (
+                    <div title={`Creado por ${p.creado_por_nombre}`}
+                      style={{ width:26, height:26, borderRadius:999, background:"#6366f1",
+                        color:"#fff", display:"grid", placeItems:"center", fontSize:11,
+                        fontWeight:700, flexShrink:0, border:"2px solid var(--surface)" }}>
+                      {p.creado_por_nombre[0].toUpperCase()}
+                    </div>
+                  )}
+                  {(p.vistos_por || []).filter(v => v.id !== p.creado_por_id).slice(0, 3).map((v, i) => (
+                    <div key={v.id} title={`Visto por ${v.nombre}`}
+                      style={{ width:26, height:26, borderRadius:999, background:"#94a3b8",
+                        color:"#fff", display:"grid", placeItems:"center", fontSize:11,
+                        fontWeight:700, flexShrink:0, marginLeft:-6,
+                        border:"2px solid var(--surface)" }}>
+                      {(v.nombre || "?")[0].toUpperCase()}
+                    </div>
+                  ))}
                 </div>
                 <ChevronRight size={16} color={C.dim}/>
               </div>
@@ -1192,7 +1212,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
 /* ═══════════════════════════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
-export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY" }) {
+export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto }) {
   const L = useL();
   const fileRef = useRef(null);
 
@@ -1337,6 +1357,9 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
       fecha_pedido:   new Date().toISOString().slice(0, 10),
       vehiculo_id:    vehiculoDefault ? String(vehiculoDefault.id) : null,
       lineas:         nuevasLineas,
+      creado_por_id:     sesion?.user?.id ?? null,
+      creado_por_nombre: sesion?.user?.email ? sesion.user.email.split("@")[0].split(".")[0] : null,
+      vistos_por:        [],
     };
     let nuevo;
     if (modo === "demo") {
@@ -1434,8 +1457,9 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         pedidos={pedidos || []}
         almacenes={almacenes}
         vehiculosEmpresa={vehiculosEmpresa || []}
-        onSelect={setPedidoSel}
+        onSelect={p => { setPedidoSel(p); onRegistrarVisto?.(p.id); }}
         onImport={triggerImport}
+        formatoFecha={formatoFecha}
         L={L}/>
 
       {errMsg && (

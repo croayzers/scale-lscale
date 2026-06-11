@@ -7,7 +7,7 @@
  *  L83   SEED demo: EMPRESA_DEMO / PEDIDOS_DEMO / MATERIALES_DEMO
  * L155   cargarDatos              carga inicial (auth + empresa + datos)
  * L221   crearMaterial / actualizarMaterial / borrarMaterial / recargarMateriales
- * L252   guardarPedido / borrarPedido
+ * L252   guardarPedido / borrarPedido / registrarVistoPor
  * L269   guardarExpedicion / borrarExpedicion
  * L295   guardarTramos            upsert tramos en expediciones.datos.tramos
  * L316   cargarTodosTramos        → { [pedidoId]: tramos[] }
@@ -70,7 +70,10 @@ function mapPedido(r) {
   const d = r.datos && typeof r.datos === "object" ? r.datos : {};
   return { ...d, id: r.id, emp: r.company_id, codigo: r.codigo, nombre: r.nombre,
     fecha_pedido: r.fecha_pedido, fecha_entrega: r.fecha_entrega, estado: r.estado || "borrador",
-    destino: r.destino, notas: r.notas };
+    destino: r.destino, notas: r.notas,
+    creado_por_id: r.creado_por_id ?? null,
+    creado_por_nombre: r.creado_por_nombre ?? null,
+    vistos_por: Array.isArray(r.vistos_por) ? r.vistos_por : [] };
 }
 
 function pedidoToRow(p, companyId) {
@@ -80,6 +83,9 @@ function pedidoToRow(p, companyId) {
     codigo: p.codigo ?? null, nombre: p.nombre ?? null,
     fecha_pedido: p.fecha_pedido || null, fecha_entrega: p.fecha_entrega || null,
     estado: p.estado || "borrador", destino: p.destino ?? null, notas: p.notas ?? null,
+    creado_por_id: p.creado_por_id ?? null,
+    creado_por_nombre: p.creado_por_nombre ?? null,
+    vistos_por: p.vistos_por ?? [],
     datos: p,
   };
 }
@@ -274,6 +280,15 @@ export async function guardarPedido(p, companyId) {
 export async function borrarPedido(id) {
   const { error } = await lsc().from("pedidos").delete().eq("id", id);
   if (error) throw error;
+}
+
+// Añade userId/nombre a vistos_por si no estaba ya
+export async function registrarVistoPor(pedidoId, userId, nombre) {
+  const { data } = await lsc().from("pedidos").select("vistos_por").eq("id", pedidoId).single();
+  const actual = Array.isArray(data?.vistos_por) ? data.vistos_por : [];
+  if (actual.some(v => v.id === userId)) return;
+  const next = [...actual, { id: userId, nombre }];
+  await lsc().from("pedidos").update({ vistos_por: next }).eq("id", pedidoId);
 }
 
 // ── Expediciones ───────────────────────────────────────────────────────────
