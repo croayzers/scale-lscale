@@ -1574,14 +1574,21 @@ export default function ExcelConfigurador({ file, almacen, empresaId, onConfirm,
             const col  = tipo === "datos" ? C.warn : tipo === "materiales" ? C.ok : C.dim;
             return (
               <button key={i} onClick={() => setHojaActiva(i)}
-                style={{ display:"flex", alignItems:"center", gap:6, padding:"10px 16px",
-                  border:"none", background:"transparent", cursor:"pointer", fontFamily:"inherit",
+                style={{ display:"flex", flexDirection:"column", alignItems:"flex-start", gap:2,
+                  padding:"8px 16px", border:"none", background:"transparent", cursor:"pointer",
+                  fontFamily:"inherit",
                   borderBottom: hojaActiva === i ? `2.5px solid ${C.brand}` : "2.5px solid transparent",
                   color: hojaActiva === i ? C.brand : C.sub,
                   fontWeight: hojaActiva === i ? 600 : 400, fontSize:13.5,
                   whiteSpace:"nowrap", marginBottom:-1 }}>
-                <Icon size={13} color={hojaActiva === i ? C.brand : col}/>
-                {h.nombre}
+                <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                  <Icon size={13} color={col}/>
+                  {h.nombre}
+                </div>
+                <div style={{ fontSize:10, fontWeight:600, color:col, letterSpacing:"0.04em",
+                  textTransform:"uppercase", paddingLeft:1 }}>
+                  {tipo === "datos" ? "datos pedido" : tipo === "materiales" ? "materiales" : "ignorar"}
+                </div>
               </button>
             );
           })}
