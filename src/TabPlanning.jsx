@@ -455,13 +455,13 @@ function TramoModal({ tramo, veh, pedidoLabel, isNew, onSave, onDelete, onClose,
 /* ═══════════════════════════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
-export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, formatoFecha = "DD/MM/YYYY", onSavePedido }) {
+export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, formatoFecha = "DD/MM/YYYY", onSavePedido, onSaveTramos, tramosIniciales }) {
   const L = useL();
   const fmtD = iso => fmtFecha(iso, formatoFecha);
 
   const [fecha,          setFecha]          = useState(() => hoyMas(0));
   const [tramoModal,     setTramoModal]     = useState(null);
-  const [tramosOverride, setTramosOverride] = useState({});
+  const [tramosOverride, setTramosOverride] = useState(() => tramosIniciales ?? {});
   const [pedidoEdit,     setPedidoEdit]     = useState(null);
 
   const dragRef    = useRef(null);
@@ -474,6 +474,13 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, for
   const [isPanning,   setIsPanning]   = useState(false);
 
   useEffect(() => { pedidosRef.current = pedidos || []; }, [pedidos]);
+
+  // Sync tramosIniciales when loaded async (first non-empty value wins)
+  useEffect(() => {
+    if (tramosIniciales && Object.keys(tramosIniciales).length > 0) {
+      setTramosOverride(prev => Object.keys(prev).length === 0 ? tramosIniciales : prev);
+    }
+  }, [tramosIniciales]);
 
   /* ── Fecha ancla del canvas = día anterior al seleccionado ─────────────── */
   const anchorIso = useMemo(() => isoPlus(fecha, -1), [fecha]);
@@ -620,6 +627,10 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, for
             pedidoLabel: p?.codigo || `PED-${dr.pedidoId}`, isNew:false,
           }), 0);
         }
+      } else if (dr?.hasMoved && onSaveTramos) {
+        const pid = dr.pedidoId;
+        const tramos = tramosRef.current[pid] || [];
+        onSaveTramos(pid, tramos);
       }
       dragRef.current = null;
       setDragId(null);
@@ -707,15 +718,19 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, for
   /* ── Guardar / eliminar ─────────────────────────────────────────────────── */
   const onSaveTramo = form => {
     const pid = tramoModal.pedidoId;
-    if (tramoModal.isNew) {
-      setTramosForPedido(pid, prev => [...prev, { ...form, id:uid() }]);
-    } else {
-      setTramosForPedido(pid, prev => prev.map(t => t.id === form.id ? { ...t, ...form } : t));
-    }
+    const cur = tramosRef.current[pid] || [];
+    const next = tramoModal.isNew
+      ? [...cur, { ...form, id:uid() }]
+      : cur.map(t => t.id === form.id ? { ...t, ...form } : t);
+    setTramosForPedido(pid, next);
+    onSaveTramos?.(pid, next);
     setTramoModal(null);
   };
   const onDeleteTramo = id => {
-    setTramosForPedido(tramoModal.pedidoId, prev => prev.filter(t => t.id !== id));
+    const pid = tramoModal.pedidoId;
+    const next = (tramosRef.current[pid] || []).filter(t => t.id !== id);
+    setTramosForPedido(pid, next);
+    onSaveTramos?.(pid, next);
     setTramoModal(null);
   };
 

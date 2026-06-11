@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {
   Package, CalendarDays, RotateCcw, Warehouse, Settings,
@@ -11,7 +11,7 @@ import { LangContext, useL, useLang, IDIOMAS } from "./lib/i18n.js";
 import { sb, supabaseConfigurado } from "./lib/supabase.js";
 import {
   cargarDatos, crearMaterial, actualizarMaterial, borrarMaterial,
-  recargarMateriales, crearConfigInicial, cargarPrefs, guardarPrefs, guardarPedido,
+  recargarMateriales, crearConfigInicial, cargarPrefs, guardarPrefs, guardarPedido, guardarTramos,
 } from "./lib/data.js";
 import Login from "./Login.jsx";
 import TabPlanning from "./TabPlanning.jsx";
@@ -1092,6 +1092,14 @@ export default function App() {
   const [myRol,             setMyRol]             = useState("owner"); // owner en demo/error
   const [formatoFecha,      setFormatoFecha]      = useState("DD/MM/YYYY");
 
+  const tramosIniciales = useMemo(() => {
+    const r = {};
+    for (const e of expediciones) {
+      if (e.pedido_id && Array.isArray(e.tramos)) r[String(e.pedido_id)] = e.tramos;
+    }
+    return r;
+  }, [expediciones]);
+
   // Cargar preferencias de empresa (almacenes, vehículos, roles, formatoFecha)
   // En modo Supabase: desde empresa_config.datos_json. En demo: desde localStorage.
   useEffect(() => {
@@ -1262,7 +1270,7 @@ export default function App() {
         <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column", minHeight:0 }}>
           {tab === "almacen"  && <TabAlmacen  materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} L={L}/>}
           {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} setTramos={setTramosExp} rolesImport={rolesImport} formatoFecha={formatoFecha}/>}
-          {tab === "planning" && <TabPlanning pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha} onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }}/>}
+          {tab === "planning" && <TabPlanning pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha} onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} tramosIniciales={tramosIniciales} onSaveTramos={async (pid, tramos) => { if (modo === "supabase" && empresa?.id) await guardarTramos(pid, tramos, empresa.id); }}/>}
           {tab === "retorno"  && <TabRetorno  pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha} onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} L={L}/>}
           {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={myRol === "owner" || myRol === "admin"} L={L}/>}
         </div>

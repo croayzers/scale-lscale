@@ -31,6 +31,7 @@ function mapMaterial(r) {
     proveedor:    r.proveedor    || null,
     precio_coste: r.precio_coste ?? null,
     notas:        r.notas        || null,
+    almacen_id:   r.almacen_id   ?? null,
   };
 }
 
@@ -49,6 +50,7 @@ function materialToRow(m, companyId) {
     proveedor:    m.proveedor    ?? null,
     precio_coste: m.precio_coste != null ? Number(m.precio_coste) : null,
     notas:        m.notas        ?? null,
+    almacen_id:   m.almacen_id   ?? null,
   };
 }
 
@@ -172,6 +174,21 @@ export async function cargarDatos() {
       ? allEmpresas.filter(e => e.id === activeCompanyId)
       : allEmpresas.slice(0, 1);
 
+    // Membresía del usuario: rol + apps permitidas (una sola query)
+    let myRol = "owner";
+    if (empresas.length > 0) {
+      const { data: memb } = await sb().from("company_members")
+        .select("rol, apps")
+        .eq("company_id", empresas[0].id)
+        .eq("user_id", user.id)
+        .maybeSingle();
+      myRol = memb?.rol ?? "member";
+      const memberApps = memb?.apps ?? null;
+      if (myRol !== "owner" && memberApps !== null && !memberApps.includes("lscale")) {
+        return { modo: "sin_acceso", empresas, materiales: [], pedidos: [], expediciones: [], rol: myRol };
+      }
+    }
+
     const { data: mats, error: eMats } = await lsc().from("materiales").select("*");
     const materiales = (mats || []).map(mapMaterial);
 
@@ -188,11 +205,11 @@ export async function cargarDatos() {
     console.log("  pedidos:", peds?.length ?? 0, ePeds ? `❌ ${ePeds.message}` : "ok");
     console.log("  expediciones:", exps?.length ?? 0, eExps ? `❌ ${eExps.message}` : "ok");
 
-    if (!empresas.length) return { modo: "sin_empresa", empresas: [], materiales: [], pedidos: [], expediciones: [] };
+    if (!empresas.length) return { modo: "sin_empresa", empresas: [], materiales: [], pedidos: [], expediciones: [], rol: myRol };
     const tieneConfig = cfgs && cfgs.length > 0;
-    if (!tieneConfig) return { modo: "sin_config", empresas, materiales: [], pedidos: [], expediciones: [] };
+    if (!tieneConfig) return { modo: "sin_config", empresas, materiales: [], pedidos: [], expediciones: [], rol: myRol };
 
-    return { modo: "supabase", empresas, materiales, pedidos, expediciones };
+    return { modo: "supabase", empresas, materiales, pedidos, expediciones, rol: myRol };
   } catch (e) {
     console.warn("[L-Scale] Error cargando de Supabase, uso demo:", e?.message);
     return { modo: "demo", empresas: [EMPRESA_DEMO], materiales: MATERIALES_DEMO, pedidos: [], expediciones: [] };
@@ -271,6 +288,43 @@ export async function guardarExpedicion(exp, companyId) {
 export async function borrarExpedicion(id) {
   const { error } = await lsc().from("expediciones").delete().eq("id", id);
   if (error) throw error;
+}
+
+// ── Tramos de Planning ─────────────────────────────────────────────────────
+// Guarda los tramos de un pedido dentro de expediciones.datos (crea registro si no existe)
+export async function guardarTramos(pedidoId, tramos, companyId) {
+  const { data: existing } = await lsc().from("expediciones")
+    .select("id, datos")
+    .eq("company_id", companyId)
+    .eq("pedido_id", pedidoId)
+    .maybeSingle();
+
+  const datos = { ...(existing?.datos ?? {}), tramos };
+  if (existing?.id) {
+    const { error } = await lsc().from("expediciones")
+      .update({ datos })
+      .eq("id", existing.id);
+    if (error) throw error;
+  } else {
+    const { error } = await lsc().from("expediciones")
+      .insert({ company_id: companyId, pedido_id: pedidoId, datos, estado: "preparando" });
+    if (error) throw error;
+  }
+}
+
+// Devuelve { [pedidoId]: tramos[] } para todos los pedidos de una empresa
+export async function cargarTodosTramos(companyId) {
+  const { data, error } = await lsc().from("expediciones")
+    .select("pedido_id, datos")
+    .eq("company_id", companyId);
+  if (error) throw error;
+  const result = {};
+  for (const row of data ?? []) {
+    if (row.pedido_id && Array.isArray(row.datos?.tramos)) {
+      result[String(row.pedido_id)] = row.datos.tramos;
+    }
+  }
+  return result;
 }
 
 // ── Empresa config ─────────────────────────────────────────────────────────
