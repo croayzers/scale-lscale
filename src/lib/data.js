@@ -177,8 +177,6 @@ export async function cargarDatos() {
     console.log("  expediciones:", exps?.length ?? 0, eExps ? `❌ ${eExps.message}` : "ok");
 
     if (!empresas.length) return { modo: "sin_empresa", empresas: [], materiales: [], pedidos: [], expediciones: [] };
-    const tieneLscale = (empresas[0].apps || []).includes("lscale");
-    if (!tieneLscale) return { modo: "no_contratado", empresas, materiales: [], pedidos: [], expediciones: [] };
     const tieneConfig = cfgs && cfgs.length > 0;
     if (!tieneConfig) return { modo: "sin_config", empresas, materiales: [], pedidos: [], expediciones: [] };
 
