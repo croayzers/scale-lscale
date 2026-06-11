@@ -1145,7 +1145,8 @@ function PasoSeleccion({ hojasData, configs, setCfgHoja, ROL_COLS, onVolver, onC
   const [hojaSelIdx, setHojaSelIdx] = useState(0);
 
   const buildRows = ({ h, cfg }) => {
-    const { colNombre, colCantidad, colGrupo, colCategoria, startRow, excludedRows = [], decimalSep = "," } = cfg;
+    const { colNombre, colCantidad, colGrupo, colCategoria } = cfg.colMapping;
+    const { startRow, excludedRows = [], decimalSep = "," } = cfg;
     const startIdx = Math.max(0, (startRow || 1) - 1);
     const out = [];
     for (let ri = startIdx + 1; ri < h.rows.length; ri++) {
