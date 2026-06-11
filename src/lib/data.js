@@ -374,16 +374,14 @@ export async function cargarPrefs(companyId) {
 // Guarda un campo de preferencias en datos_json (merge parcial)
 export async function guardarPrefs(companyId, patch) {
   if (!supabaseConfigurado) return;
-  // Leer primero para hacer merge
   const { data } = await lsc().from("empresa_config")
     .select("datos_json")
     .eq("company_id", companyId)
-    .single();
+    .maybeSingle();
   const actual = data?.datos_json || {};
   const nuevo = { ...actual, ...patch };
   await lsc().from("empresa_config")
-    .update({ datos_json: nuevo })
-    .eq("company_id", companyId);
+    .upsert({ company_id: companyId, datos_json: nuevo }, { onConflict: "company_id" });
 }
 
 // MARK: - Notificaciones (cargarMiembrosEmpresa, enviarNotificacionPedido)
