@@ -1359,10 +1359,17 @@ export default function ExcelConfigurador({ file, almacen, empresaId, onConfirm,
     leerLibro(file).then(({ wb: libro, hojas }) => {
       setWb(libro);
       setHojasData(hojas);
-      setConfigs(hojas.map(() => configVacia(buildRolCols(rolesImport))));
+      const rolCols = buildRolCols(rolesImport);
+      // Cargar plantillas y auto-aplicar la primera si existe
+      const lista = cargarPlantillas(empresaId, almacen.id);
+      setPlantillas(lista);
+      if (lista.length > 0) {
+        setConfigs(aplicarPlantilla(hojas, lista[0], rolCols));
+        setPlantillaNom(lista[0].nombre);
+      } else {
+        setConfigs(hojas.map(() => configVacia(rolCols)));
+      }
       setCargando(false);
-      // Cargar plantillas guardadas para este almacén
-      setPlantillas(cargarPlantillas(empresaId, almacen.id));
     }).catch(err => {
       setErrMsg(`Error leyendo el archivo: ${err.message}`);
       setCargando(false);
@@ -1407,6 +1414,21 @@ export default function ExcelConfigurador({ file, almacen, empresaId, onConfirm,
   // Confirmar y procesar
   const confirmar = () => {
     if (!wb) return;
+    // Si no había plantillas para este almacén, crear "Plant. Auto" automáticamente
+    if (plantillas.length === 0) {
+      const autoPlantilla = {
+        nombre: "Plant. Auto",
+        hojas: configs.map(c => ({
+          tipo:         c.tipo,
+          campos:       c.campos.map(({ label, key, fila, col }) => ({ label, key, fila, col })),
+          startRow:     c.startRow,
+          colMapping:   c.colMapping,
+          decimalSep:   c.decimalSep,
+          excludedRows: c.excludedRows || [],
+        })),
+      };
+      guardarPlantillaLS(empresaId, almacen.id, autoPlantilla);
+    }
     const result = procesarLibro(wb, hojasData, configs, ROL_COLS);
     onConfirm(result);
   };
