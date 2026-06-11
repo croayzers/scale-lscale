@@ -615,34 +615,150 @@ function ModalField({ label, value, onChange, type = "text", placeholder = "", s
 
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   TAB RETORNO / CIERRE (scaffold)
+   TAB RETORNO / CIERRE
    ═══════════════════════════════════════════════════════════════════════════ */
-function TabRetorno({ expediciones, L }) {
-  const pendientes = expediciones.filter((e) => e.estado === "entregado" || e.estado === "en_ruta");
+const CHIP_ESTADO = {
+  borrador:   { bg:"#f1f5f9", ink:"#64748b" },
+  confirmado: { bg:"#dcfce7", ink:"#16a34a" },
+  planificado:{ bg:"#dbeafe", ink:"#2563eb" },
+  en_ruta:    { bg:"#fef3c7", ink:"#d97706" },
+  entregado:  { bg:"#dcfce7", ink:"#16a34a" },
+  cancelado:  { bg:"#fee2e2", ink:"#dc2626" },
+};
+
+function TabRetorno({ pedidos = [], setPedidos, vehiculosEmpresa = [], onSavePedido, formatoFecha = "DD/MM/YYYY", L }) {
+  const [filtro, setFiltro] = useState("activos"); // "activos" | "entregados" | "todos"
+  const [saving, setSaving] = useState(null);
+
+  const visibles = pedidos.filter(p => {
+    if (filtro === "activos")    return p.estado === "planificado" || p.estado === "en_ruta";
+    if (filtro === "entregados") return p.estado === "entregado";
+    return p.estado !== "cancelado" && p.estado !== "borrador";
+  }).sort((a, b) => (b.fecha_entrega || "").localeCompare(a.fecha_entrega || ""));
+
+  const vehById = Object.fromEntries((vehiculosEmpresa || []).map(v => [String(v.id), v]));
+
+  const cambiarEstado = async (pedido, nuevoEstado) => {
+    setSaving(pedido.id);
+    const hoy = new Date().toISOString().slice(0, 10);
+    const updated = {
+      ...pedido,
+      estado: nuevoEstado,
+      ...(nuevoEstado === "en_ruta" && !pedido.fecha_entrega ? { fecha_entrega: hoy } : {}),
+      ...(nuevoEstado === "entregado" && !pedido.fecha_retorno ? { fecha_retorno: hoy } : {}),
+    };
+    setPedidos(prev => prev.map(p => p.id === updated.id ? updated : p));
+    await onSavePedido?.(updated);
+    setSaving(null);
+  };
+
+  const fmtF = iso => { if (!iso) return "—"; const [y,m,d] = iso.split("-"); return formatoFecha === "MM/DD/YYYY" ? `${m}/${d}/${y}` : formatoFecha === "DD-MM-YYYY" ? `${d}-${m}-${y}` : `${d}/${m}/${y}`; };
+
+  const FILTROS = [
+    { id:"activos",    label: L("En curso","In progress") },
+    { id:"entregados", label: L("Entregados","Delivered") },
+    { id:"todos",      label: L("Todos","All") },
+  ];
+
   return (
-    <div style={{ padding:"16px 20px" }}>
+    <div style={{ padding:"16px 20px", maxWidth:900, margin:"0 auto" }}>
+      {/* Header */}
       <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:20 }}>
         <div style={{ background:"var(--warn-soft)", color:"var(--warn)", borderRadius:12, padding:10 }}><RotateCcw size={22}/></div>
-        <div>
-          <h2 style={{ fontSize:18 }}>{L("Retorno / Cierre","Return / Close")}</h2>
-          <p style={{ color:C.sub, fontSize:13 }}>{L("Expediciones pendientes de retorno y cierre.","Shipments pending return and closing.")}</p>
+        <div style={{ flex:1 }}>
+          <h2 style={{ fontSize:18, margin:0 }}>{L("Retorno / Cierre","Return / Close")}</h2>
+          <p style={{ color:C.sub, fontSize:13, margin:0 }}>{L("Seguimiento de pedidos en ruta y registro de retornos.","Track dispatched orders and log returns.")}</p>
+        </div>
+        <div style={{ display:"flex", gap:6 }}>
+          {FILTROS.map(ft => (
+            <button key={ft.id} onClick={() => setFiltro(ft.id)}
+              style={{ padding:"6px 14px", borderRadius:999, border:`1.5px solid ${filtro === ft.id ? C.brand : C.line}`,
+                background: filtro === ft.id ? C.brandSoft : C.s2, color: filtro === ft.id ? C.brand : C.sub,
+                fontWeight: filtro === ft.id ? 700 : 400, fontSize:12.5, cursor:"pointer", fontFamily:"inherit" }}>
+              {ft.label}
+            </button>
+          ))}
         </div>
       </div>
-      {pendientes.length === 0 ? (
-        <div style={{ background:C.surface, border:`1px solid ${C.line}`, borderRadius:14, padding:32, textAlign:"center" }}>
-          <Check size={28} color={C.ok} style={{ marginBottom:8 }}/><br/>
-          <p style={{ color:C.sub, fontSize:14 }}>{L("Todo al día — no hay expediciones pendientes de retorno.","All up to date — no shipments pending return.")}</p>
+
+      {visibles.length === 0 ? (
+        <div style={{ background:C.surface, border:`1px solid ${C.line}`, borderRadius:14, padding:40, textAlign:"center" }}>
+          <Check size={30} color={C.ok} style={{ marginBottom:10 }}/>
+          <p style={{ color:C.sub, fontSize:14, margin:0 }}>
+            {filtro === "activos"
+              ? L("No hay pedidos en ruta — todo al día.","No orders in transit — all clear.")
+              : L("Sin pedidos en este filtro.","No orders match this filter.")}
+          </p>
         </div>
       ) : (
-        pendientes.map((e) => (
-          <div key={e.id} style={{ background:C.surface, border:`1px solid ${C.line}`, borderRadius:12, padding:"14px 16px", marginBottom:10, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-            <div>
-              <div style={{ fontWeight:600, fontSize:15 }}>{e.codigo || `EXP-${e.id}`}</div>
-              <div style={{ color:C.sub, fontSize:12.5, marginTop:3 }}>{e.destino || "—"}</div>
-            </div>
-            <Btn color={C.warn} style={{ fontSize:12.5, padding:"6px 14px" }}><RotateCcw size={14}/>{L("Registrar retorno","Log return")}</Btn>
-          </div>
-        ))
+        <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+          {visibles.map(p => {
+            const chip = CHIP_ESTADO[p.estado] || CHIP_ESTADO.borrador;
+            const veh  = vehById[String(p.vehiculo_id)] || null;
+            const isSaving = saving === p.id;
+            return (
+              <div key={p.id} style={{ background:C.surface, border:`1px solid ${C.line}`, borderRadius:14,
+                padding:"14px 18px", display:"flex", gap:14, alignItems:"center", flexWrap:"wrap" }}>
+                {/* Estado chip */}
+                <span style={{ padding:"3px 10px", borderRadius:999, background:chip.bg, color:chip.ink,
+                  fontSize:11.5, fontWeight:700, flexShrink:0 }}>{p.estado}</span>
+
+                {/* Info */}
+                <div style={{ flex:1, minWidth:160 }}>
+                  <div style={{ fontWeight:700, fontSize:14.5 }}>{p.codigo || `PED-${p.id}`}</div>
+                  <div style={{ color:C.sub, fontSize:12.5, marginTop:2 }}>
+                    {p.nombre && <span>{p.nombre}</span>}
+                    {p.destino && <span> · 📍{p.destino}</span>}
+                  </div>
+                </div>
+
+                {/* Fechas */}
+                <div style={{ fontSize:12, color:C.sub, minWidth:120 }}>
+                  {p.fecha_entrega && <div>📅 {L("Salida","Out")}: <strong style={{ color:C.ink }}>{fmtF(p.fecha_entrega)}{p.hora_ida ? ` ${p.hora_ida}` : ""}</strong></div>}
+                  {p.fecha_retorno && <div>🏠 {L("Retorno","Return")}: <strong style={{ color:C.ink }}>{fmtF(p.fecha_retorno)}{p.hora_vuelta ? ` ${p.hora_vuelta}` : ""}</strong></div>}
+                </div>
+
+                {/* Vehículo */}
+                {veh && (
+                  <div style={{ display:"flex", alignItems:"center", gap:6, padding:"4px 10px",
+                    borderRadius:8, background:`${veh.color}18`, border:`1px solid ${veh.color}44`,
+                    fontSize:12.5, color:veh.color, fontWeight:600, flexShrink:0 }}>
+                    🚐 {veh.nombre}{veh.matricula ? ` · ${veh.matricula}` : ""}
+                  </div>
+                )}
+
+                {/* Acciones */}
+                <div style={{ display:"flex", gap:6, flexShrink:0 }}>
+                  {p.estado === "planificado" && (
+                    <Btn onClick={() => cambiarEstado(p, "en_ruta")} disabled={isSaving}
+                      color="#d97706" style={{ fontSize:12, padding:"6px 12px" }}>
+                      {isSaving ? <Loader size={13}/> : <ArrowRight size={13}/>}
+                      {L("Salida","Depart")}
+                    </Btn>
+                  )}
+                  {p.estado === "en_ruta" && (
+                    <Btn onClick={() => cambiarEstado(p, "entregado")} disabled={isSaving}
+                      color={C.ok} style={{ fontSize:12, padding:"6px 12px" }}>
+                      {isSaving ? <Loader size={13}/> : <RotateCcw size={13}/>}
+                      {L("Registrar retorno","Log return")}
+                    </Btn>
+                  )}
+                  {p.estado === "entregado" && (
+                    <span style={{ fontSize:12, color:C.ok, fontWeight:600, display:"flex", alignItems:"center", gap:4 }}>
+                      <Check size={13}/>{L("Cerrado","Closed")}
+                    </span>
+                  )}
+                  {(p.estado === "en_ruta" || p.estado === "entregado") && (
+                    <Btn onClick={() => cambiarEstado(p, "planificado")} disabled={isSaving} outline
+                      style={{ fontSize:12, padding:"6px 12px" }}>
+                      ↩ {L("Revertir","Undo")}
+                    </Btn>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -1147,7 +1263,7 @@ export default function App() {
           {tab === "almacen"  && <TabAlmacen  materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} L={L}/>}
           {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} setTramos={setTramosExp} rolesImport={rolesImport} formatoFecha={formatoFecha}/>}
           {tab === "planning" && <TabPlanning pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha} onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }}/>}
-          {tab === "retorno"  && <TabRetorno  expediciones={expediciones} L={L}/>}
+          {tab === "retorno"  && <TabRetorno  pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha} onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} L={L}/>}
           {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={myRol === "owner" || myRol === "admin"} L={L}/>}
         </div>
       </div>

@@ -267,7 +267,7 @@ function PedidoRow({ pedido, tramos, offsetH, vehById, vehiculosEmpresa,
 }
 
 /* ─── PedidoEditModal ────────────────────────────────────────────────────── */
-function PedidoEditModal({ pedido, onSave, onClose, L }) {
+function PedidoEditModal({ pedido, onSave, onClose, vehiculosEmpresa = [], L }) {
   const [form, setForm] = useState({ ...pedido });
   const f = k => v => setForm(p => ({ ...p, [k]: v }));
   const inp = (label, key, type = "text", ph = "") => (
@@ -278,7 +278,18 @@ function PedidoEditModal({ pedido, onSave, onClose, L }) {
           fontSize:13.5, fontFamily:"inherit", background:"var(--surface-2)", color:"var(--text)", outline:"none", boxSizing:"border-box" }}/>
     </div>
   );
+  const sel = (label, key, options) => (
+    <div>
+      <label style={{ fontSize:11, fontWeight:700, color:"var(--text-2)", letterSpacing:.5, display:"block", marginBottom:4 }}>{label}</label>
+      <select value={form[key] ?? ""} onChange={e => f(key)(e.target.value || null)}
+        style={{ width:"100%", padding:"8px 10px", border:"1px solid var(--border-strong)", borderRadius:9,
+          fontSize:13.5, fontFamily:"inherit", background:"var(--surface-2)", color:"var(--text)", outline:"none" }}>
+        {options}
+      </select>
+    </div>
+  );
   const ESTADOS = ["borrador","confirmado","planificado","en_ruta","entregado","cancelado"];
+  const vehSel = vehiculosEmpresa.find(v => String(v.id) === String(form.vehiculo_id));
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)", zIndex:1000,
       display:"grid", placeItems:"center", padding:16 }} onClick={onClose}>
@@ -290,14 +301,7 @@ function PedidoEditModal({ pedido, onSave, onClose, L }) {
         </div>
         <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
           {inp(L("CÓDIGO","CODE"), "codigo")}
-          <div>
-            <label style={{ fontSize:11, fontWeight:700, color:"var(--text-2)", letterSpacing:.5, display:"block", marginBottom:4 }}>ESTADO</label>
-            <select value={form.estado || "borrador"} onChange={e => f("estado")(e.target.value)}
-              style={{ width:"100%", padding:"8px 10px", border:"1px solid var(--border-strong)", borderRadius:9,
-                fontSize:13.5, fontFamily:"inherit", background:"var(--surface-2)", color:"var(--text)", outline:"none" }}>
-              {ESTADOS.map(s => <option key={s}>{s}</option>)}
-            </select>
-          </div>
+          {sel("ESTADO", "estado", ESTADOS.map(s => <option key={s}>{s}</option>))}
           <div style={{ gridColumn:"1/-1" }}>{inp(L("CLIENTE","CLIENT"), "nombre")}</div>
           {inp(L("FECHA EXPEDICIÓN","DISPATCH DATE"), "fecha_entrega", "date")}
           {inp(L("FECHA RETORNO","RETURN DATE"), "fecha_retorno", "date")}
@@ -305,7 +309,19 @@ function PedidoEditModal({ pedido, onSave, onClose, L }) {
           {inp(L("HORA VUELTA","RETURN TIME"), "hora_vuelta", "time")}
           {inp(L("DESTINO","DESTINATION"), "destino")}
           {inp("PAX", "pax_adults", "number")}
+          {vehiculosEmpresa.length > 0 && sel(L("VEHÍCULO","VEHICLE"), "vehiculo_id", [
+            <option key="" value="">{L("Sin vehículo","No vehicle")}</option>,
+            ...vehiculosEmpresa.map(v => (
+              <option key={v.id} value={String(v.id)}>{v.nombre || v.modelo || `Veh. ${v.id}`}</option>
+            ))
+          ])}
         </div>
+        {vehSel && (
+          <div style={{ marginTop:10, padding:"6px 10px", borderRadius:8, background:`${vehSel.color}18`,
+            border:`1px solid ${vehSel.color}44`, fontSize:12.5, color:vehSel.color, fontWeight:600 }}>
+            🚐 {vehSel.nombre}{vehSel.matricula ? ` · ${vehSel.matricula}` : ""}
+          </div>
+        )}
         <div style={{ display:"flex", justifyContent:"flex-end", gap:10, marginTop:18 }}>
           <button onClick={onClose} style={{ padding:"9px 18px", borderRadius:999, border:"1px solid var(--border-strong)", background:"var(--surface-2)", color:"var(--text)", fontSize:13.5, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>
             {L("Cancelar","Cancel")}
@@ -721,9 +737,14 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, for
   /* ── Cambiar vehículo ───────────────────────────────────────────────────── */
   const onCambiarVehiculo = useCallback((pedidoId, nuevoVehId) => {
     const pid = String(pedidoId);
-    setPedidos?.(prev => prev.map(p => String(p.id) === pid ? { ...p, vehiculo_id:nuevoVehId } : p));
+    setPedidos?.(prev => {
+      const next = prev.map(p => String(p.id) === pid ? { ...p, vehiculo_id:nuevoVehId } : p);
+      const updated = next.find(p => String(p.id) === pid);
+      if (updated) onSavePedido?.(updated);
+      return next;
+    });
     setTramosOverride(prev => { const n = { ...prev }; delete n[pid]; return n; });
-  }, [setPedidos]);
+  }, [setPedidos, onSavePedido]);
 
   const resetPedido = pid => {
     setTramosOverride(prev => { const n = { ...prev }; delete n[pid]; return n; });
@@ -1057,6 +1078,7 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, for
       {pedidoEdit && (
         <PedidoEditModal
           pedido={pedidoEdit}
+          vehiculosEmpresa={vehiculosEmpresa || []}
           onSave={p => {
             setPedidos(prev => prev.map(x => x.id === p.id ? p : x));
             onSavePedido?.(p);
