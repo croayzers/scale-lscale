@@ -1,6 +1,18 @@
 /* ===========================================================================
  * Capa de datos de L-Scale. Abstrae Supabase (schema lscale) o el SEED demo.
- * ======================================================================== */
+ * ===========================================================================
+ * ESQUEMA (323 líneas)
+ * ─────────────────────────────────────────────────────────────
+ *   L6   Mappers: mapEmpresa / mapMaterial / materialToRow / mapPedido / pedidoToRow / mapExpedicion
+ *  L83   SEED demo: EMPRESA_DEMO / PEDIDOS_DEMO / MATERIALES_DEMO
+ * L155   cargarDatos              carga inicial (auth + empresa + datos)
+ * L221   crearMaterial / actualizarMaterial / borrarMaterial / recargarMateriales
+ * L252   guardarPedido / borrarPedido
+ * L269   guardarExpedicion / borrarExpedicion
+ * L295   guardarTramos            upsert tramos en expediciones.datos.tramos
+ * L316   cargarTodosTramos        → { [pedidoId]: tramos[] }
+ * L332   crearConfigInicial / cargarPrefs / guardarPrefs
+ * ─────────────────────────────────────────────────────────────── */
 import { sb, lsc, supabaseConfigurado } from "./supabase.js";
 
 // ── Mappers ────────────────────────────────────────────────────────────────

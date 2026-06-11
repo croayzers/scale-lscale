@@ -2,7 +2,27 @@
    TabPlanning — Calendario de horas continuo, izquierda→derecha
    Canvas: 3 días (ayer · hoy · mañana). Scroll automático a hora_ida - 5h.
    Todos los pedidos en esos 3 días aparecen como filas.
-   ═══════════════════════════════════════════════════════════════════════════ */
+   ═══════════════════════════════════════════════════════════════════════════
+   ESQUEMA (1024 líneas)
+   ─────────────────────────────────────────────────────────────
+    L14   W_PX / ROW_H / LABEL_W / SNAP / TIPOS_*   constantes layout
+    L31   isoPlus / hoyMas / fmtHora / hToX / xToH  utilidades fecha/hora
+    L62   calcularTramos           genera tramos por defecto desde pedido
+    L99   TramoBar                 barra arrastrable de un tramo
+   L136   PedidoRow                fila completa de un pedido en el canvas
+   L270   PedidoEditModal          modal editar campos del pedido + vehículo
+   L339   TramoModal               modal editar/eliminar un tramo
+   L458   TabPlanning (default)    componente principal
+              L464  estado: fecha, tramosOverride, dragRef, scrollRef
+              L477  useEffect: sync pedidosRef / tramosIniciales
+              L488  useMemo: anchorIso, eventosDia, offsetForPedido, vehById, tramosDelDia
+              L555  setTramosForPedido     helper actualizar tramosOverride
+              L561  drag & drop (mousedown → mousemove rAF → onUp + onSaveTramos)
+              L638  pan-to-scroll (click+drag zona vacía)
+              L665  buildSnaps / onCambiarVehiculo
+              L718  onSaveTramo / onDeleteTramo (modal)
+              L737  render: header fecha, canvas scroll, PedidoRow × n, modales
+   ─────────────────────────────────────────────────────────────── */
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   ChevronLeft, ChevronRight, Package, Truck, Check, X, Trash2, ClipboardList,

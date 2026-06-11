@@ -1,3 +1,15 @@
+/* ESQUEMA TabExpediciones.jsx (816 líneas)
+ * ─────────────────────────────────────────────────────────────
+ *   L6   HORA_INICIO/FIN / H_PX / LANE_W / SNAP   constantes layout
+ *  L20   buildGrupo                helpers para construir grupos de tramos
+ *  L53   DEMO_VEHICULOS            datos demo
+ *  L66   TramoCard                 tarjeta arrastrable de tramo
+ * L114   EventoCol                 columna de un evento/pedido con sus tramos
+ * L225   COLORS / GRUPO_OPTS / DurRow
+ * L252   AddModal                  modal añadir vehículo con tramos
+ * L491   EditTramoModal            modal editar tramo existente
+ * L571   TabExpediciones (default) shell: estado, drag & drop vertical, modales
+ * ─────────────────────────────────────────────────────────────── */
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { Truck, ChevronLeft, ChevronRight, Package, Plus, X, Check, Trash2 } from "lucide-react";
 import { useL } from "./lib/i18n.js";

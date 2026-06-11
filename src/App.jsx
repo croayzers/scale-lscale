@@ -1,3 +1,15 @@
+/* ESQUEMA App.jsx (1184 líneas)
+ * ─────────────────────────────────────────────────────────────
+ *  L21   C / TODAS_COLS / DEFAULT_ALMACENES / TABS   constantes globales
+ *  L82   Badge / Btn / AvisoPortal                   helpers UI
+ * L128   SinConfig                                   onboarding activar L-Scale
+ * L156   UbicacionesModal                            modal cambiar ubicaciones almacén
+ * L277   TabAlmacen                                  tab inventario/almacén
+ * L604   ModalField
+ * L629   TabRetorno                                  tab retorno/cierre pedidos
+ * L773   TabConfig                                   tab configuración empresa
+ * L1076  App (default export)                        shell principal: auth, tabs, estado global
+ * ─────────────────────────────────────────────────────────────── */
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import * as XLSX from "xlsx";
 import {

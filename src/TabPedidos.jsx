@@ -1,3 +1,15 @@
+/* ESQUEMA TabPedidos.jsx (1660 líneas)
+ * ─────────────────────────────────────────────────────────────
+ *  L14   C / CHIP_ESTADO / ESTADOS          constantes UI
+ *  L36   Btn / Field                        helpers UI
+ *  L61   ExpedicionForm                     wizard: datos expedición
+ *  L89   MaterialesList                     wizard: lista materiales editable
+ *  L152  ListaPedidos                       tabla principal con filtros
+ *  L241  cfgExportDefecto / lineasParaExportar / exportarExcelCfg / exportarPDFCfg
+ *  L409  ExportConfigurador                 modal configurar columnas export
+ *  L749  DetallePedido                      vista detalle + edición pedido
+ * L1183  TabPedidos (default export)        shell con estado y navegación
+ * ─────────────────────────────────────────────────────────────── */
 import React, { useState, useRef, useMemo, Fragment } from "react";
 import * as XLSX from "xlsx";
 import {

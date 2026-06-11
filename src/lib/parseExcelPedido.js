@@ -2,7 +2,20 @@
    Parser de Excel para "Listado Chequeo Materiales"
    Hoja1: información de la expedición
    Hoja2: materiales agrupados por Timing y Categoría
-   ============================================================ */
+   ============================================================
+   ESQUEMA (404 líneas)
+   ─────────────────────────────────────────────────────────
+    L9   parseFecha / parseHora / esEnteroPositivo   helpers
+   L45   parsearHoja1           extrae datos expedición de Hoja1
+  L152   parsearHoja2           extrae materiales de Hoja2
+  L276   parsearCabecera        lee cabecera para parser checklist
+  L318   detectarHeaderIdx      detecta fila de cabecera automáticamente
+  L330   extraerColumnas / parseCantidad
+  L356   checklistPreview       preview sin importar (export)
+  L398   parsearChecklistConCols
+  L439   parsearChecklist
+  L447   parsearExcelPedido     entry point principal (export)
+   ─────────────────────────────────────────────────────────── */
 import * as XLSX from "xlsx";
 
 // DD/MM/YY(YY) o YYYY-MM-DD → YYYY-MM-DD
