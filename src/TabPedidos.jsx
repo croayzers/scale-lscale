@@ -784,7 +784,7 @@ function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato
    DETALLE / EDICIÓN DE PEDIDO
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - DetallePedido
-function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, rolesImport, empresaId, L }) {
+function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, rolesImport, empresaId, formatoFecha = "DD/MM/YYYY", L }) {
   const [exportModal, setExportModal] = useState(null); // null | "pdf" | "excel"
   const [p, setP] = useState({ ...pedido });
   const [editando, setEditando] = useState(false);
@@ -1630,6 +1630,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         onCambiarVehiculo={cambiarVehiculoPedido}
         rolesImport={rolesImport}
         empresaId={empresa?.id}
+        formatoFecha={formatoFecha}
         L={L}/>
     );
   }

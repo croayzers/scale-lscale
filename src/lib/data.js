@@ -177,18 +177,11 @@ export async function cargarDatos() {
     console.log("%c[L-Scale] Auth getUser", "color:#2563eb;font-weight:bold", user?.id ?? "null", eUser?.message ?? "ok");
     if (!user) return { modo: "sin_sesion", empresas: [], materiales: [], pedidos: [], expediciones: [] };
 
-    // Empresa activa del usuario
-    const { data: profile } = await sb().from("user_profiles")
-      .select("active_company_id").eq("user_id", user.id).maybeSingle();
-    const activeCompanyId = profile?.active_company_id ?? null;
-
     const { data: comps, error: eComps } = await sb().from("companies").select("*");
     const { data: cfgs,  error: eCfgs  } = await lsc().from("empresa_config").select("*");
     const cfgBy  = Object.fromEntries((cfgs  || []).map((c) => [c.company_id, c]));
     const allEmpresas = (comps || []).map((co) => mapEmpresa(co, cfgBy[co.id]));
-    const empresas = activeCompanyId
-      ? allEmpresas.filter(e => e.id === activeCompanyId)
-      : allEmpresas.slice(0, 1);
+    const empresas = allEmpresas.slice(0, 1);
 
     // Membresía del usuario: rol + apps permitidas (una sola query)
     let myRol = "owner";
