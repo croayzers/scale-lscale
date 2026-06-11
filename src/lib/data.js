@@ -7,6 +7,7 @@
 // MARK: - Expediciones CRUD (guardarExpedicion, borrarExpedicion)
 // MARK: - Tramos Planning (guardarTramos, cargarTodosTramos)
 // MARK: - Empresa config (crearConfigInicial, cargarPrefs, guardarPrefs)
+// MARK: - Notificaciones (cargarMiembrosEmpresa, enviarNotificacionPedido)
 import { sb, lsc, supabaseConfigurado } from "./supabase.js";
 
 // MARK: - Mappers (mapEmpresa, mapMaterial, materialToRow, mapPedido, pedidoToRow, mapExpedicion)
@@ -390,4 +391,38 @@ export async function guardarPrefs(companyId, patch) {
   await lsc().from("empresa_config")
     .update({ datos_json: nuevo })
     .eq("company_id", companyId);
+}
+
+// MARK: - Notificaciones (cargarMiembrosEmpresa, enviarNotificacionPedido)
+export async function cargarMiembrosEmpresa(companyId) {
+  if (!supabaseConfigurado || !companyId) return [];
+  const { data, error } = await sb().rpc("get_company_member_emails", { p_company_id: companyId });
+  if (error) { console.error("cargarMiembrosEmpresa:", error.message); return []; }
+  return data || [];
+}
+
+export async function enviarNotificacionPedido(pedido, destinatarios) {
+  const WORKER_URL = import.meta.env?.VITE_NOTIFICATIONS_URL;
+  const WORKER_SECRET = import.meta.env?.VITE_NOTIFICATIONS_SECRET;
+  if (!WORKER_URL || !destinatarios?.length) return;
+  await fetch(WORKER_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(WORKER_SECRET ? { "x-webhook-secret": WORKER_SECRET } : {}),
+    },
+    body: JSON.stringify({
+      tipo: "pedido_nuevo",
+      app: "lscale",
+      destinatarios,
+      datos: {
+        codigo:        pedido.codigo || `PED-${pedido.id}`,
+        nombre:        pedido.nombre || "",
+        destino:       pedido.destino || "",
+        fecha_entrega: pedido.fecha_entrega || "",
+        almacen:       pedido.almacen_nombre || "",
+        lineas:        pedido.lineas?.length ?? 0,
+      },
+    }),
+  });
 }

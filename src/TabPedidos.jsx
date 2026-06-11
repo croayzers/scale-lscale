@@ -6,18 +6,19 @@
 // MARK: - cfgExportDefecto / lineasParaExportar / exportarExcelCfg / exportarPDFCfg
 // MARK: - ExportConfigurador
 // MARK: - DetallePedido
+// MARK: - ModalNotificaciones
 // MARK: - TabPedidos [export default]
-import React, { useState, useRef, useMemo, Fragment } from "react";
+import React, { useState, useEffect, useRef, useMemo, Fragment } from "react";
 import * as XLSX from "xlsx";
 import {
   Upload, Loader, X, Check, AlertTriangle, Plus, Trash2,
   Warehouse, ArrowLeft, FileSpreadsheet, Pencil, ClipboardList,
-  ChevronRight, ArrowRight, Download, FileDown, Save,
+  ChevronRight, ArrowRight, Download, FileDown, Save, Bell, BellOff,
 } from "lucide-react";
 import { useL } from "./lib/i18n.js";
 import { parsearExcelPedido } from "./lib/parseExcelPedido.js";
 import ExcelConfigurador from "./ExcelConfigurador.jsx";
-import { guardarPedido, borrarPedido } from "./lib/data.js";
+import { guardarPedido, borrarPedido, cargarMiembrosEmpresa, enviarNotificacionPedido } from "./lib/data.js";
 import { fmtFecha, siguienteCodigo } from "./lib/fechas.js";
 
 // MARK: - Constantes UI (C, CHIP_ESTADO, ESTADOS)
@@ -1215,6 +1216,161 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   MODAL NOTIFICACIONES
+   ═══════════════════════════════════════════════════════════════════════════ */
+// MARK: - ModalNotificaciones
+function ModalNotificaciones({ pedido, companyId, onClose }) {
+  const [miembros,     setMiembros]     = useState([]);
+  const [cargando,     setCargando]     = useState(true);
+  const [seleccionados,setSeleccionados]= useState({});   // { email: true/false }
+  const [externos,     setExternos]     = useState("");   // emails externos separados por coma
+  const [enviando,     setEnviando]     = useState(false);
+  const [enviado,      setEnviado]      = useState(false);
+
+  useEffect(() => {
+    cargarMiembrosEmpresa(companyId).then(lista => {
+      setMiembros(lista);
+      // Seleccionar todos por defecto
+      const ini = {};
+      lista.forEach(m => { ini[m.email] = true; });
+      setSeleccionados(ini);
+      setCargando(false);
+    });
+  }, [companyId]);
+
+  const toggleMiembro = (email) =>
+    setSeleccionados(p => ({ ...p, [email]: !p[email] }));
+
+  const destinatarios = [
+    ...miembros.filter(m => seleccionados[m.email]).map(m => m.email),
+    ...externos.split(",").map(e => e.trim()).filter(e => e.includes("@")),
+  ];
+
+  const enviar = async () => {
+    if (!destinatarios.length) { onClose(); return; }
+    setEnviando(true);
+    await enviarNotificacionPedido(pedido, destinatarios);
+    setEnviando(false);
+    setEnviado(true);
+    setTimeout(onClose, 1200);
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.55)", zIndex:700,
+      display:"grid", placeItems:"center", padding:16 }}>
+      <div style={{ background:C.surface, borderRadius:16, width:"100%", maxWidth:480,
+        boxShadow:"var(--shadow-lg)", display:"flex", flexDirection:"column" }}
+        onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{ padding:"16px 20px", borderBottom:`1px solid ${C.line}`,
+          display:"flex", alignItems:"center", gap:10 }}>
+          <Bell size={18} color={C.brand}/>
+          <div style={{ flex:1 }}>
+            <div style={{ fontWeight:700, fontSize:15 }}>Notificar pedido</div>
+            <div style={{ fontSize:12, color:C.sub, marginTop:1 }}>
+              {pedido.codigo || `PED-${pedido.id}`} · {pedido.nombre || ""}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, display:"flex" }}>
+            <X size={18}/>
+          </button>
+        </div>
+
+        {/* Cuerpo */}
+        <div style={{ padding:"16px 20px", display:"flex", flexDirection:"column", gap:14 }}>
+
+          {/* Miembros de la empresa */}
+          <div>
+            <div style={{ fontSize:11.5, fontWeight:700, color:C.sub, letterSpacing:.5, marginBottom:8 }}>
+              MIEMBROS DE LA ORGANIZACIÓN
+            </div>
+            {cargando ? (
+              <div style={{ display:"flex", alignItems:"center", gap:8, color:C.sub, fontSize:13 }}>
+                <Loader size={14} className="spin"/> Cargando…
+              </div>
+            ) : miembros.length === 0 ? (
+              <div style={{ fontSize:13, color:C.dim }}>Sin miembros encontrados.</div>
+            ) : (
+              <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                {miembros.map(m => (
+                  <label key={m.email} style={{ display:"flex", alignItems:"center", gap:10,
+                    padding:"8px 12px", borderRadius:10, cursor:"pointer",
+                    background: seleccionados[m.email] ? C.brandSoft : C.s2,
+                    border: `1px solid ${seleccionados[m.email] ? C.brand + "44" : C.line}`,
+                    transition:"background .12s" }}>
+                    <input type="checkbox" checked={!!seleccionados[m.email]}
+                      onChange={() => toggleMiembro(m.email)}
+                      style={{ width:15, height:15, accentColor:C.brand, cursor:"pointer" }}/>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:13.5, fontWeight:600, color:C.ink,
+                        overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                        {m.email}
+                      </div>
+                    </div>
+                    {seleccionados[m.email] && <Check size={14} color={C.brand}/>}
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Externos */}
+          <div>
+            <div style={{ fontSize:11.5, fontWeight:700, color:C.sub, letterSpacing:.5, marginBottom:6 }}>
+              EMAILS EXTERNOS (separados por coma)
+            </div>
+            <input
+              value={externos}
+              onChange={e => setExternos(e.target.value)}
+              placeholder="cliente@empresa.com, proveedor@ejemplo.com…"
+              style={{ width:"100%", padding:"9px 12px", border:`1px solid ${C.strong}`,
+                borderRadius:10, fontSize:13.5, fontFamily:"inherit",
+                background:C.s2, color:C.ink, outline:"none",
+                boxSizing:"border-box" }}
+            />
+          </div>
+
+          {/* Resumen destinatarios */}
+          {destinatarios.length > 0 && (
+            <div style={{ fontSize:12, color:C.sub, background:C.s2, borderRadius:8,
+              padding:"8px 12px", lineHeight:1.6 }}>
+              Se notificará a {destinatarios.length} {destinatarios.length === 1 ? "persona" : "personas"}:
+              {" "}<span style={{ color:C.ink }}>{destinatarios.join(", ")}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding:"12px 20px", borderTop:`1px solid ${C.line}`,
+          display:"flex", gap:10, justifyContent:"flex-end" }}>
+          <button onClick={onClose}
+            style={{ padding:"8px 16px", borderRadius:999, border:`1px solid ${C.strong}`,
+              background:"none", color:C.sub, fontWeight:600, fontSize:13.5,
+              cursor:"pointer", fontFamily:"inherit",
+              display:"flex", alignItems:"center", gap:6 }}>
+            <BellOff size={14}/> No notificar
+          </button>
+          <button onClick={enviar} disabled={enviando || enviado}
+            style={{ padding:"8px 18px", borderRadius:999, border:"none",
+              background: enviado ? C.ok : C.brand, color:"#fff",
+              fontWeight:700, fontSize:13.5, cursor:"pointer", fontFamily:"inherit",
+              display:"flex", alignItems:"center", gap:6,
+              opacity: (enviando || enviado) ? 0.85 : 1 }}>
+            {enviado
+              ? <><Check size={14}/> Enviado</>
+              : enviando
+              ? <><Loader size={14} className="spin"/> Enviando…</>
+              : <><Bell size={14}/> Enviar notificación</>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - TabPedidos [export default]
@@ -1235,6 +1391,8 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
   const [adjuntarA,    setAdjuntarA]    = useState(null);
   // { file, almacen } — cuando está abierto el ExcelConfigurador
   const [configurador, setConfigurador] = useState(null);
+  // { pedido } — modal de notificaciones post-confirmación
+  const [notifModal,   setNotifModal]   = useState(null);
 
   /* ── Auto-crear materiales en almacén desde pedido ─────────────────────── */
   const autoCrearMateriales = (lineas, almacenId) => {
@@ -1403,6 +1561,10 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
     setSaving(false);
     setParsed(null);
     setPedidoSel(nuevo);
+    // Abrir modal de notificaciones solo en modo supabase
+    if (modo === "supabase" && empresa?.id) {
+      setNotifModal({ pedido: nuevo, companyId: empresa.id });
+    }
   };
 
   /* ── Guardar cambios de pedido existente ─────────────────────────────── */
@@ -1817,6 +1979,15 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
             )}
           </div>
         </div>
+      )}
+
+      {/* Modal notificaciones post-confirmación */}
+      {notifModal && (
+        <ModalNotificaciones
+          pedido={notifModal.pedido}
+          companyId={notifModal.companyId}
+          onClose={() => setNotifModal(null)}
+        />
       )}
     </div>
   );
