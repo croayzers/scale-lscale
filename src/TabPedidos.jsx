@@ -1470,7 +1470,7 @@ function ModalNotificaciones({ pedido, companyId, onClose }) {
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - TabPedidos [export default]
-export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, highlightedPedidoId, highlightedCategoria }) {
+export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, onNotificarStock, highlightedPedidoId, highlightedCategoria }) {
   const L = useL();
   const fileRef = useRef(null);
 
@@ -1682,6 +1682,10 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
     const pNorm = { ...p, fecha_entrega: normF(p.fecha_entrega), fecha_retorno: normF(p.fecha_retorno) };
     setPedidos(prev => prev.map(x => x.id === pNorm.id ? pNorm : x));
     setPedidoSel(pNorm);
+    // Notificar solo si hay líneas de material (reserva de stock)
+    if (onNotificarStock && (pNorm.lineas || []).length > 0) {
+      onNotificarStock(pNorm, materiales, "pedido");
+    }
   };
 
   /* ── Cambiar vehículo asignado → propagar a tramos de expediciones ──── */

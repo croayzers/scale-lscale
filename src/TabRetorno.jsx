@@ -196,7 +196,7 @@ function RetornoModal({ pedido, materiales, onConfirm, onCancel, saving }) {
 /* ─── TabRetorno ──────────────────────────────────────────────────────────── */
 export default function TabRetorno({ pedidos = [], setPedidos, vehiculosEmpresa = [],
     materiales = [], setMateriales, modo = "demo", empresa,
-    onSavePedido, formatoFecha = "DD/MM/YYYY", L }) {
+    onSavePedido, onNotificarStock, formatoFecha = "DD/MM/YYYY", L }) {
   const [filtro,       setFiltro]      = useState("activos");
   const [saving,       setSaving]      = useState(null);
   const [retornoModal, setRetornoModal]= useState(null); // pedido a registrar
@@ -269,6 +269,11 @@ export default function TabRetorno({ pedidos = [], setPedidos, vehiculosEmpresa 
     };
     setPedidos(prev => prev.map(p => p.id === updated.id ? updated : p));
     await onSavePedido?.(updated);
+
+    // Notificar retorno de materiales al almacén
+    if (onNotificarStock) {
+      onNotificarStock(updated, nuevosMateriales, "retorno");
+    }
 
     setSaving(null);
     setRetornoModal(null);

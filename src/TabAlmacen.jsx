@@ -167,7 +167,7 @@ function UbicacionesModal({ materiales, setMateriales, empresaId, almacenId, alm
 }
 
 // MARK: - TabAlmacen
-export default function TabAlmacen({ materiales, setMateriales, empresa, modo, almacenes, L }) {
+export default function TabAlmacen({ materiales, setMateriales, empresa, modo, almacenes, silenciados, L }) {
   const EMP_ID = `lscale.cols.${empresa?.id}`;
   const defCols = TODAS_COLS.filter((c) => c.def).map((c) => c.id);
   const [colsVis, setColsVis]       = useState(() => { try { return JSON.parse(localStorage.getItem(EMP_ID)) || defCols; } catch { return defCols; } });
@@ -369,29 +369,44 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
             {busqueda ? L("Sin resultados","No results") : L("Sin materiales. Pulsa «Nuevo» para añadir.","No materials yet. Press «New» to add one.")}
           </div>
         )}
-        {filtrados.map((m) => (
-          <div key={m.id} style={{ display:"grid", gridTemplateColumns:gtc, gap:0, padding:"0 20px", borderBottom:`1px solid ${C.line}`, alignItems:"center", transition:"background .12s" }}
-            onMouseEnter={(e) => e.currentTarget.style.background = C.s2}
-            onMouseLeave={(e) => e.currentTarget.style.background = ""}>
-            {colsActivas.map((c) => (
-              <div key={c.id} style={{ padding:"10px 8px", fontSize:13.5, overflow:"hidden" }}>{renderCel(m, c.id)}</div>
-            ))}
-            <div style={{ padding:"10px 4px" }}>
-              {m.stock_actual <= m.stock_minimo && m.stock_minimo > 0 &&
-                <span title={L("Stock bajo el mínimo","Stock below minimum")} style={{ fontSize:10, fontWeight:700, background:C.warnSoft, color:C.warn, borderRadius:6, padding:"2px 6px" }}>⚠</span>}
+        {filtrados.map((m) => {
+          const bajoPorDebajo = m.stock_minimo > 0 && m.stock_actual < m.stock_minimo;
+          const alertaActiva  = bajoPorDebajo && !(silenciados?.has(String(m.id)));
+          return (
+            <div key={m.id}
+              style={{ display:"grid", gridTemplateColumns:gtc, gap:0, padding:"0 20px",
+                borderBottom: alertaActiva ? `1px solid #fca5a5` : `1px solid ${C.line}`,
+                alignItems:"center", transition:"background .12s",
+                background: alertaActiva ? "#fff5f5" : "" }}
+              onMouseEnter={(e) => { e.currentTarget.style.background = alertaActiva ? "#fee2e2" : C.s2; }}
+              onMouseLeave={(e) => { e.currentTarget.style.background = alertaActiva ? "#fff5f5" : ""; }}>
+              {colsActivas.map((c) => (
+                <div key={c.id} style={{ padding:"10px 8px", fontSize:13.5, overflow:"hidden" }}>
+                  {renderCel(m, c.id)}
+                </div>
+              ))}
+              <div style={{ padding:"10px 4px" }}>
+                {alertaActiva &&
+                  <span title={L("Stock bajo el mínimo","Stock below minimum")}
+                    style={{ fontSize:10, fontWeight:700, background:"#fee2e2", color:"#dc2626",
+                      borderRadius:6, padding:"2px 6px", border:"1px solid #fca5a5" }}>⚠</span>}
+                {bajoPorDebajo && !alertaActiva &&
+                  <span title={L("Advertencia silenciada","Warning silenced")}
+                    style={{ fontSize:10, color:C.dim, borderRadius:6, padding:"2px 4px" }}>🔇</span>}
+              </div>
+              <div style={{ display:"flex", gap:4, padding:"10px 4px", justifyContent:"flex-end" }}>
+                <button title={L("Editar","Edit")} onClick={() => setEditObj({ ...m })}
+                  style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, borderRadius:8, padding:5, display:"flex" }}>
+                  <Pencil size={15}/>
+                </button>
+                <button title={L("Eliminar","Delete")} onClick={() => setDelConf(m.id)}
+                  style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, borderRadius:8, padding:5, display:"flex" }}>
+                  <Trash2 size={15}/>
+                </button>
+              </div>
             </div>
-            <div style={{ display:"flex", gap:4, padding:"10px 4px", justifyContent:"flex-end" }}>
-              <button title={L("Editar","Edit")} onClick={() => setEditObj({ ...m })}
-                style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, borderRadius:8, padding:5, display:"flex" }}>
-                <Pencil size={15}/>
-              </button>
-              <button title={L("Eliminar","Delete")} onClick={() => setDelConf(m.id)}
-                style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, borderRadius:8, padding:5, display:"flex" }}>
-                <Trash2 size={15}/>
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {editObj && (

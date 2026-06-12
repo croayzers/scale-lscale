@@ -23,6 +23,7 @@ import TabConfig from "./TabConfig.jsx";
 import TabInventario from "./TabInventario.jsx";
 import ChatFloat from "./ChatFloat.jsx";
 import { Package, Shield, ClipboardCheck } from "lucide-react";
+import { ToastContainer, PanelAlertasStock, crearNotificacion } from "./StockNotificaciones.jsx";
 
 // MARK: - Constantes (ROLES_DEFECTO, DEFAULT_VEHICULOS_EMPRESA, TABS)
 export const ROLES_DEFECTO = [
@@ -132,7 +133,26 @@ export default function App() {
   const [miembros,          setMiembros]          = useState([]);
   const [chatUnread,        setChatUnread]        = useState(0);
   const [highlightedPedido, setHighlightedPedido] = useState(null);
+  const [toasts,       setToasts]       = useState([]);
+  const [silenciados,  setSilenciados]  = useState(() => {
+    try { return new Set(JSON.parse(localStorage.getItem("lscale.silenciados") || "[]")); }
+    catch { return new Set(); }
+  });
   const chatRef = useRef();
+
+  const notificarStock = useCallback((pedido, matSnapshot, tipo = "pedido") => {
+    const n = crearNotificacion(pedido, matSnapshot, tipo);
+    setToasts(prev => [...prev.slice(-4), n]); // max 5 toasts
+  }, []);
+
+  const silenciarAlerta = useCallback((matId) => {
+    setSilenciados(prev => {
+      const next = new Set(prev);
+      next.add(String(matId));
+      localStorage.setItem("lscale.silenciados", JSON.stringify([...next]));
+      return next;
+    });
+  }, []);
 
   const handlePedidoRef = useCallback((codigo, categoria) => {
     // codigo puede ser "OA_00200", categoria puede ser "Cristalería" o null
@@ -332,12 +352,21 @@ export default function App() {
           </div>
         </div>
 
+        {/* Panel alertas stock bajo mínimo — visible en tab almacén */}
+        {tab === "almacen" && (
+          <PanelAlertasStock
+            materiales={materiales}
+            silenciados={silenciados}
+            onSilenciar={silenciarAlerta}/>
+        )}
+
         {/* Contenido */}
         <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column", minHeight:0 }}>
-          {tab === "almacen"  && <TabAlmacen  materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} L={L}/>}
+          {tab === "almacen"  && <TabAlmacen  materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} silenciados={silenciados} L={L}/>}
           {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} rolesImport={rolesImport} formatoFecha={formatoFecha} sesion={sesion} highlightedPedidoId={highlightedPedido?.id ?? highlightedPedido}
             highlightedCategoria={highlightedPedido?.categoria ?? null}
             onPlanning={() => setTab("planning")}
+            onNotificarStock={notificarStock}
             onRegistrarVisto={async (pid) => {
               if (modo === "supabase" && sesion?.user) {
                 const nombre = sesion.user.email.split("@")[0].split(".")[0];
@@ -352,6 +381,7 @@ export default function App() {
           {tab === "inventario" && <TabInventario materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} sesion={sesion} L={L}/>}
           {tab === "retorno"  && <TabRetorno  pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha}
             materiales={materiales} setMateriales={setMateriales} modo={modo} empresa={empresa}
+            onNotificarStock={notificarStock}
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} L={L}/>}
           {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={myRol === "owner" || myRol === "admin"} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} L={L}/>}
         </div>
@@ -369,6 +399,11 @@ export default function App() {
             onPedidoRef={handlePedidoRef}
           />
         )}
+
+        {/* Toasts de stock */}
+        <ToastContainer
+          notificaciones={toasts}
+          onDismiss={id => setToasts(prev => prev.filter(n => n.id !== id))}/>
       </div>
     </LangContext.Provider>
   );
