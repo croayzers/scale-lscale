@@ -167,7 +167,7 @@ function UbicacionesModal({ materiales, setMateriales, empresaId, almacenId, alm
 }
 
 // MARK: - TabAlmacen
-export default function TabAlmacen({ materiales, setMateriales, empresa, modo, almacenes, silenciados, L }) {
+export default function TabAlmacen({ materiales, setMateriales, empresa, modo, almacenes, silenciados, guardarPlantillaConf, cargarPlantillasConf, L }) {
   const EMP_ID = `lscale.cols.${empresa?.id}`;
   const defCols = TODAS_COLS.filter((c) => c.def).map((c) => c.id);
   const [colsVis, setColsVis]       = useState(() => { try { return JSON.parse(localStorage.getItem(EMP_ID)) || defCols; } catch { return defCols; } });
@@ -495,6 +495,8 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
           empresaId={empresa?.id}
           onConfirm={handleConfirmImport}
           onCancel={() => setImportFile(null)}
+          guardarPlantillaConf={guardarPlantillaConf ? (almId, pl) => guardarPlantillaConf(almId, pl) : undefined}
+          cargarPlantillasConf={cargarPlantillasConf ? (almId) => cargarPlantillasConf(almId) : undefined}
         />
       )}
     </div>

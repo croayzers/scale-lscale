@@ -566,7 +566,7 @@ function PasoSeleccion({ hojasData, configs, setCfgHoja, onVolver, onConfirmar }
 /* ═══════════════════════════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
-export default function AlmacenConfigurador({ file, almacen, empresaId, onConfirm, onCancel }) {
+export default function AlmacenConfigurador({ file, almacen, empresaId, onConfirm, onCancel, guardarPlantillaConf, cargarPlantillasConf }) {
   const [cargando,       setCargando]      = useState(true);
   const [errMsg,         setErrMsg]        = useState(null);
   const [hojasData,      setHojasData]     = useState([]);
@@ -583,7 +583,8 @@ export default function AlmacenConfigurador({ file, almacen, empresaId, onConfir
     setCargando(true);
     leerLibro(file).then(({ hojas }) => {
       setHojasData(hojas);
-      const lista = cargarPlantillas(empresaId, almacen.id);
+      const lista = (cargarPlantillasConf ? cargarPlantillasConf(almacen.id) : null)
+        ?? cargarPlantillas(empresaId, almacen.id);
       setPlantillas(lista);
       if (lista.length > 0) {
         setConfigs(aplicarPlantilla(hojas, lista[0]));
@@ -604,20 +605,26 @@ export default function AlmacenConfigurador({ file, almacen, empresaId, onConfir
 
   const aplicar = (pl) => { setConfigs(aplicarPlantilla(hojasData, pl)); setPlantillaNom(pl.nombre); setShowPlantillas(false); };
 
-  const guardarPlantilla = () => {
+  const guardarPlantilla = async () => {
     const nombre = plantillaNom.trim();
     if (!nombre) return;
     const pl = { nombre, hojas: configs.map(c => ({ tipo:c.tipo, startRow:c.startRow, colMapping:c.colMapping, decimalSep:c.decimalSep, excludedRows:c.excludedRows||[] })) };
-    guardarPlantillaLS(empresaId, almacen.id, pl);
-    setPlantillas(cargarPlantillas(empresaId, almacen.id));
+    if (guardarPlantillaConf) {
+      const lista = await guardarPlantillaConf(almacen.id, pl);
+      setPlantillas(lista);
+    } else {
+      guardarPlantillaLS(empresaId, almacen.id, pl);
+      setPlantillas(cargarPlantillas(empresaId, almacen.id));
+    }
     setGuardadoOk(true);
     setTimeout(() => setGuardadoOk(false), 2000);
   };
 
-  const confirmar = () => {
+  const confirmar = async () => {
     if (plantillas.length === 0) {
       const autoPl = { nombre:"Plant. Auto", hojas: configs.map(c => ({ tipo:c.tipo, startRow:c.startRow, colMapping:c.colMapping, decimalSep:c.decimalSep, excludedRows:c.excludedRows||[] })) };
-      guardarPlantillaLS(empresaId, almacen.id, autoPl);
+      if (guardarPlantillaConf) await guardarPlantillaConf(almacen.id, autoPl);
+      else guardarPlantillaLS(empresaId, almacen.id, autoPl);
     }
     const materiales = procesarLibro(null, hojasData, configs);
     onConfirm(materiales);

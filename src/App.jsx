@@ -216,6 +216,51 @@ export default function App() {
     else localStorage.setItem(`lscale.formatoFecha.${empresa.id}`, fmt);
   };
 
+  // Plantillas de configurador de importación — se guardan en Supabase o localStorage
+  const lsKeyPlant = (tipo, almacenId) => `lscale.${tipo}.${empresa?.id}.${almacenId}`;
+  const cargarPlantillasConf = useCallback((tipo, almacenId) => {
+    try { return JSON.parse(localStorage.getItem(lsKeyPlant(tipo, almacenId))) || []; }
+    catch { return []; }
+  }, [empresa?.id]);
+
+  const guardarPlantillaConf = useCallback(async (tipo, almacenId, plantilla) => {
+    const key   = lsKeyPlant(tipo, almacenId);
+    const lista = (() => { try { return JSON.parse(localStorage.getItem(key)) || []; } catch { return []; } })();
+    const idx   = lista.findIndex(p => p.nombre === plantilla.nombre);
+    if (idx >= 0) lista[idx] = plantilla; else lista.push(plantilla);
+    localStorage.setItem(key, JSON.stringify(lista));
+    if (modo === "supabase" && empresa?.id) {
+      const patchKey = `plantillas_${tipo}_${almacenId}`;
+      try { await guardarPrefs(empresa.id, { [patchKey]: lista }); }
+      catch (e) { console.warn("[L-Scale] guardarPlantillaConf supabase:", e?.message); }
+    }
+    return lista;
+  }, [modo, empresa?.id]);
+
+  // Cargar plantillas desde Supabase al iniciar (hidrata localStorage)
+  useEffect(() => {
+    if (modo !== "supabase" || !empresa?.id) return;
+    // Las prefs ya fueron cargadas en cargarDatos(); extraer plantillas de prefs y
+    // sincronizar localStorage para que los configuradores las lean al abrir.
+    const sincronizar = async () => {
+      try {
+        const { cargarPrefs: _cp } = await import("./lib/data.js");
+        const prefs = await _cp(empresa.id);
+        if (!prefs) return;
+        for (const [k, v] of Object.entries(prefs)) {
+          if (k.startsWith("plantillas_") && Array.isArray(v)) {
+            // k = plantillas_pedconf_1  o  plantillas_almconf_1
+            const parts = k.split("_"); // ['plantillas', tipo, almacenId]
+            const tipo = parts[1]; const almId = parts[2];
+            const lsKey = `lscale.${tipo}.${empresa.id}.${almId}`;
+            localStorage.setItem(lsKey, JSON.stringify(v));
+          }
+        }
+      } catch (e) { console.warn("[L-Scale] sincronizar plantillas:", e?.message); }
+    };
+    sincronizar();
+  }, [modo, empresa?.id]);
+
   useEffect(() => { document.documentElement.setAttribute("data-theme", tema); }, [tema]);
 
   const toggleTema = () => {
@@ -362,11 +407,15 @@ export default function App() {
 
         {/* Contenido */}
         <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column", minHeight:0 }}>
-          {tab === "almacen"  && <TabAlmacen  materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} silenciados={silenciados} L={L}/>}
+          {tab === "almacen"  && <TabAlmacen  materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} silenciados={silenciados}
+            guardarPlantillaConf={(almId, pl) => guardarPlantillaConf("almconf", almId, pl)}
+            cargarPlantillasConf={(almId) => cargarPlantillasConf("almconf", almId)} L={L}/>}
           {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} rolesImport={rolesImport} formatoFecha={formatoFecha} sesion={sesion} highlightedPedidoId={highlightedPedido?.id ?? highlightedPedido}
             highlightedCategoria={highlightedPedido?.categoria ?? null}
             onPlanning={() => setTab("planning")}
             onNotificarStock={notificarStock}
+            guardarPlantillaConf={(almId, pl) => guardarPlantillaConf("pedconf", almId, pl)}
+            cargarPlantillasConf={(almId) => cargarPlantillasConf("pedconf", almId)}
             onRegistrarVisto={async (pid) => {
               if (modo === "supabase" && sesion?.user) {
                 const nombre = sesion.user.email.split("@")[0].split(".")[0];
@@ -374,7 +423,7 @@ export default function App() {
               }
             }}/>}
           {tab === "planning" && <TabPlanning pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha}
-            materiales={materiales}
+            materiales={materiales} almacenes={almacenes}
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }}
             tramosIniciales={tramosIniciales}
             onSaveTramos={async (pid, tramos) => { if (modo === "supabase" && empresa?.id) await guardarTramos(pid, tramos, empresa.id); }}/>}

@@ -916,19 +916,171 @@ function VistaMes({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha, on
   );
 }
 
+/* ─── ConflictoPopover ───────────────────────────────────────────────────── */
+// Muestra materiales faltantes de un pedido, agrupados por almacén de origen,
+// con botón "Comprobar" que refresca si ya hay stock suficiente.
+function ConflictoPopover({ pedido, conflictoItems, materiales, almacenes, onClose }) {
+  const [comprobados, setComprobados] = React.useState({}); // almacenId → {ok, ts}
+
+  // Agrupar items por almacén
+  const porAlmacen = React.useMemo(() => {
+    const grupos = {};
+    for (const item of conflictoItems) {
+      // Buscar el material en stock para obtener almacen_id
+      const mat = materiales.find(m =>
+        m.nombre?.trim().toLowerCase() === item.nombre?.trim().toLowerCase()
+      );
+      const almId = mat?.almacen_id ?? "__sin__";
+      if (!grupos[almId]) grupos[almId] = { almId, items: [], mat };
+      grupos[almId].items.push({ ...item, mat });
+    }
+    return Object.values(grupos);
+  }, [conflictoItems, materiales]);
+
+  const nombreAlm = (almId) => {
+    if (almId === "__sin__") return "Sin almacén asignado";
+    const a = almacenes.find(a => String(a.id) === String(almId));
+    return a?.nombre || `Almacén ${almId}`;
+  };
+
+  const comprobar = (almId, items) => {
+    // Re-leer stock actual de cada material de este almacén
+    let todoBien = true;
+    for (const item of items) {
+      const mat = materiales.find(m =>
+        m.nombre?.trim().toLowerCase() === item.nombre?.trim().toLowerCase()
+      );
+      // Calcular cuánto se necesita en total de todos los pedidos activos
+      // (aproximación: si el stock actual es >= faltante que falta, hay suficiente)
+      if (!mat || mat.stock_actual < item.faltante) { todoBien = false; break; }
+    }
+    setComprobados(prev => ({ ...prev, [almId]: { ok: todoBien, ts: Date.now() } }));
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:700 }} onClick={onClose}>
+      <div style={{
+        position:"fixed", top:"50%", left:"50%", transform:"translate(-50%, -50%)",
+        background:"var(--surface)", borderRadius:16, boxShadow:"0 20px 60px rgba(0,0,0,.25)",
+        border:"1px solid var(--border-strong)", padding:0, maxWidth:480, width:"calc(100vw - 32px)",
+        maxHeight:"80vh", display:"flex", flexDirection:"column", overflow:"hidden",
+      }} onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{ padding:"14px 18px 12px", borderBottom:"1px solid var(--border)",
+          display:"flex", alignItems:"flex-start", gap:10 }}>
+          <AlertTriangle size={18} color="#dc2626" style={{ flexShrink:0, marginTop:1 }}/>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontWeight:700, fontSize:14, color:"var(--text)" }}>
+              Stock insuficiente
+            </div>
+            <div style={{ fontSize:12, color:"var(--text-2)", marginTop:2,
+              overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+              {pedido.codigo || `PED-${pedido.id}`}{pedido.nombre ? ` · ${pedido.nombre}` : ""}
+            </div>
+          </div>
+          <button onClick={onClose}
+            style={{ background:"none", border:"none", cursor:"pointer",
+              color:"var(--text-3)", padding:4, display:"flex" }}>
+            <X size={16}/>
+          </button>
+        </div>
+
+        {/* Grupos por almacén */}
+        <div style={{ flex:1, overflowY:"auto", padding:"8px 18px 16px" }}>
+          {porAlmacen.map(({ almId, items }) => {
+            const comp = comprobados[almId];
+            return (
+              <div key={almId} style={{ marginTop:12 }}>
+                {/* Cabecera almacén */}
+                <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:6 }}>
+                  <div style={{ fontSize:10.5, fontWeight:700, color:"var(--text-3)",
+                    textTransform:"uppercase", letterSpacing:.6, flex:1 }}>
+                    {nombreAlm(almId)}
+                  </div>
+                  <button
+                    onClick={() => comprobar(almId, items)}
+                    style={{
+                      padding:"3px 10px", borderRadius:999, fontSize:11, fontWeight:600,
+                      fontFamily:"inherit", cursor:"pointer",
+                      border: comp ? `1px solid ${comp.ok ? "var(--ok)" : "#dc2626"}` : "1px solid var(--border-strong)",
+                      background: comp ? (comp.ok ? "var(--ok-soft)" : "#fee2e2") : "var(--surface-2)",
+                      color: comp ? (comp.ok ? "var(--ok)" : "#dc2626") : "var(--text-2)",
+                    }}>
+                    {comp ? (comp.ok ? "✓ Stock OK" : "✗ Sigue faltando") : "Comprobar"}
+                  </button>
+                </div>
+
+                {/* Lista de materiales */}
+                <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+                  {items.map((item, i) => {
+                    const mat = materiales.find(m =>
+                      m.nombre?.trim().toLowerCase() === item.nombre?.trim().toLowerCase()
+                    );
+                    const stockActual = mat?.stock_actual ?? "—";
+                    return (
+                      <div key={i} style={{ display:"grid", gridTemplateColumns:"1fr auto auto",
+                        gap:8, alignItems:"center", padding:"6px 10px",
+                        background:"#fff5f5", border:"1px solid #fca5a5",
+                        borderRadius:8 }}>
+                        <div style={{ minWidth:0 }}>
+                          <div style={{ fontSize:12.5, fontWeight:600, color:"var(--text)",
+                            overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                            {item.nombre}
+                          </div>
+                          {mat?.ubicacion && (
+                            <div style={{ fontSize:10.5, color:"var(--text-3)" }}>
+                              📍 {mat.ubicacion}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ fontSize:11, color:"var(--text-2)", whiteSpace:"nowrap", textAlign:"right" }}>
+                          Stock: <strong style={{ color: stockActual < item.faltante ? "#dc2626" : "var(--ok)" }}>
+                            {stockActual}
+                          </strong>
+                        </div>
+                        <div style={{ fontSize:11, fontWeight:700, color:"#dc2626",
+                          background:"#fee2e2", borderRadius:999, padding:"1px 8px",
+                          whiteSpace:"nowrap" }}>
+                          −{item.faltante} uds
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        <div style={{ padding:"10px 18px", borderTop:"1px solid var(--border)",
+          display:"flex", justifyContent:"flex-end" }}>
+          <button onClick={onClose}
+            style={{ padding:"7px 18px", borderRadius:999, border:"1px solid var(--border-strong)",
+              background:"var(--surface-2)", color:"var(--text-2)", fontSize:13,
+              fontFamily:"inherit", cursor:"pointer", fontWeight:600 }}>
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - TabPlanning [export default]
-export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, materiales = [], formatoFecha = "DD/MM/YYYY", onSavePedido, onSaveTramos, tramosIniciales }) {
+export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, materiales = [], almacenes = [], formatoFecha = "DD/MM/YYYY", onSavePedido, onSaveTramos, tramosIniciales }) {
   const L = useL();
   const fmtD = iso => fmtFecha(iso, formatoFecha);
 
-  const [fecha,          setFecha]          = useState(() => hoyMas(0));
-  const [vista,          setVista]          = useState("dia"); // "dia" | "semana" | "mes"
-  const [tramoModal,     setTramoModal]     = useState(null);
-  const [tramosOverride, setTramosOverride] = useState(() => tramosIniciales ?? {});
-  const [pedidoEdit,     setPedidoEdit]     = useState(null);
+  const [fecha,            setFecha]            = useState(() => hoyMas(0));
+  const [vista,            setVista]            = useState("dia"); // "dia" | "semana" | "mes"
+  const [tramoModal,       setTramoModal]       = useState(null);
+  const [tramosOverride,   setTramosOverride]   = useState(() => tramosIniciales ?? {});
+  const [pedidoEdit,       setPedidoEdit]       = useState(null);
+  const [conflictoPopover, setConflictoPopover] = useState(null); // { pedido, items }
 
   const dragRef    = useRef(null);
   const tramosRef  = useRef({});
@@ -1395,16 +1547,20 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, mat
                       </button>
                     )}
                     {conflictos[pid]?.length > 0 && (
-                      <span title={conflictos[pid].map(c => `⚠ ${c.nombre}: faltan ${c.faltante} uds`).join("\n")}
-                        style={{ flexShrink:0, display:"flex", alignItems:"center", cursor:"help" }}>
+                      <span
+                        onClick={e => { e.stopPropagation(); setConflictoPopover({ pedido: p, items: conflictos[pid] }); }}
+                        title="Ver materiales faltantes"
+                        style={{ flexShrink:0, display:"flex", alignItems:"center", cursor:"pointer" }}>
                         <AlertTriangle size={12} color="#dc2626"/>
                       </span>
                     )}
                   </div>
                   {conflictos[pid]?.length > 0 && (
-                    <div style={{ fontSize:8.5, color:"#dc2626", fontWeight:700,
-                      overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
-                      background:"#fee2e2", borderRadius:3, padding:"0 3px" }}>
+                    <div
+                      onClick={e => { e.stopPropagation(); setConflictoPopover({ pedido: p, items: conflictos[pid] }); }}
+                      style={{ fontSize:8.5, color:"#dc2626", fontWeight:700,
+                        overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+                        background:"#fee2e2", borderRadius:3, padding:"0 3px", cursor:"pointer" }}>
                       ⚠ {conflictos[pid].map(c => `${c.nombre} -${c.faltante}`).join(", ")}
                     </div>
                   )}
@@ -1635,6 +1791,17 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, mat
             setPedidoEdit(null);
           }}
           onClose={() => setPedidoEdit(null)} L={L}/>
+      )}
+
+      {/* Popover conflictos de stock */}
+      {conflictoPopover && (
+        <ConflictoPopover
+          pedido={conflictoPopover.pedido}
+          conflictoItems={conflictoPopover.items}
+          materiales={materiales}
+          almacenes={almacenes}
+          onClose={() => setConflictoPopover(null)}
+        />
       )}
     </div>
   );

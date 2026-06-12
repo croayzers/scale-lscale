@@ -1470,7 +1470,7 @@ function ModalNotificaciones({ pedido, companyId, onClose }) {
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - TabPedidos [export default]
-export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, onNotificarStock, highlightedPedidoId, highlightedCategoria }) {
+export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, onNotificarStock, guardarPlantillaConf, cargarPlantillasConf, highlightedPedidoId, highlightedCategoria }) {
   const L = useL();
   const fileRef = useRef(null);
 
@@ -1778,6 +1778,8 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
           onConfirm={onConfiguradorConfirm}
           onCancel={() => setConfigurador(null)}
           rolesImport={rolesImport}
+          guardarPlantillaConf={guardarPlantillaConf}
+          cargarPlantillasConf={cargarPlantillasConf}
         />
       )}
 

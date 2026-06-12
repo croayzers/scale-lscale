@@ -1369,7 +1369,7 @@ function PasoSeleccion({ hojasData, configs, setCfgHoja, ROL_COLS, onVolver, onC
 /* ═══════════════════════════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
-export default function ExcelConfigurador({ file, almacen, empresaId, onConfirm, onCancel, rolesImport = [] }) {
+export default function ExcelConfigurador({ file, almacen, empresaId, onConfirm, onCancel, rolesImport = [], guardarPlantillaConf, cargarPlantillasConf }) {
   const [cargando,      setCargando]     = useState(true);
   const [errMsg,        setErrMsg]       = useState(null);
   const [wb,            setWb]           = useState(null);
@@ -1394,7 +1394,8 @@ export default function ExcelConfigurador({ file, almacen, empresaId, onConfirm,
       setHojasData(hojas);
       const rolCols = buildRolCols(rolesImport);
       // Cargar plantillas y auto-aplicar la primera si existe
-      const lista = cargarPlantillas(empresaId, almacen.id);
+      const lista = (cargarPlantillasConf ? cargarPlantillasConf(almacen.id) : null)
+        ?? cargarPlantillas(empresaId, almacen.id);
       setPlantillas(lista);
       if (lista.length > 0) {
         setConfigs(aplicarPlantilla(hojas, lista[0], rolCols));
@@ -1421,7 +1422,7 @@ export default function ExcelConfigurador({ file, almacen, empresaId, onConfirm,
   };
 
   // Guardar plantilla
-  const guardarPlantilla = () => {
+  const guardarPlantilla = async () => {
     const nombre = plantillaNom.trim();
     if (!nombre) return;
     setGuardando(true);
@@ -1434,20 +1435,23 @@ export default function ExcelConfigurador({ file, almacen, empresaId, onConfirm,
         colMapping:   c.colMapping,
         decimalSep:   c.decimalSep,
         excludedRows: c.excludedRows || [],
-        // fase no se guarda; se recalcula al cargar
       })),
     };
-    guardarPlantillaLS(empresaId, almacen.id, plantilla);
-    setPlantillas(cargarPlantillas(empresaId, almacen.id));
+    if (guardarPlantillaConf) {
+      const lista = await guardarPlantillaConf(almacen.id, plantilla);
+      setPlantillas(lista);
+    } else {
+      guardarPlantillaLS(empresaId, almacen.id, plantilla);
+      setPlantillas(cargarPlantillas(empresaId, almacen.id));
+    }
     setGuardando(false);
     setGuardadoOk(true);
     setTimeout(() => setGuardadoOk(false), 2000);
   };
 
   // Confirmar y procesar
-  const confirmar = () => {
+  const confirmar = async () => {
     if (!wb) return;
-    // Si no había plantillas para este almacén, crear "Plant. Auto" automáticamente
     if (plantillas.length === 0) {
       const autoPlantilla = {
         nombre: "Plant. Auto",
@@ -1460,7 +1464,8 @@ export default function ExcelConfigurador({ file, almacen, empresaId, onConfirm,
           excludedRows: c.excludedRows || [],
         })),
       };
-      guardarPlantillaLS(empresaId, almacen.id, autoPlantilla);
+      if (guardarPlantillaConf) await guardarPlantillaConf(almacen.id, autoPlantilla);
+      else guardarPlantillaLS(empresaId, almacen.id, autoPlantilla);
     }
     const result = procesarLibro(wb, hojasData, configs, ROL_COLS);
     onConfirm(result);
