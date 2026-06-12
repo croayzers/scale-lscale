@@ -239,29 +239,6 @@ export default function App() {
     return lista;
   }, [modo, empresa?.id]);
 
-  // Cargar plantillas desde Supabase al iniciar (hidrata localStorage)
-  useEffect(() => {
-    if (modo !== "supabase" || !empresa?.id) return;
-    // Las prefs ya fueron cargadas en cargarDatos(); extraer plantillas de prefs y
-    // sincronizar localStorage para que los configuradores las lean al abrir.
-    const sincronizar = async () => {
-      try {
-        const { cargarPrefs: _cp } = await import("./lib/data.js");
-        const prefs = await _cp(empresa.id);
-        if (!prefs) return;
-        for (const [k, v] of Object.entries(prefs)) {
-          if (k.startsWith("plantillas_") && Array.isArray(v)) {
-            // k = plantillas_pedconf_1  o  plantillas_almconf_1
-            const parts = k.split("_"); // ['plantillas', tipo, almacenId]
-            const tipo = parts[1]; const almId = parts[2];
-            const lsKey = `lscale.${tipo}.${empresa.id}.${almId}`;
-            localStorage.setItem(lsKey, JSON.stringify(v));
-          }
-        }
-      } catch (e) { console.warn("[L-Scale] sincronizar plantillas:", e?.message); }
-    };
-    sincronizar();
-  }, [modo, empresa?.id]);
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", tema); }, [tema]);
 
@@ -298,6 +275,17 @@ export default function App() {
       if (Array.isArray(res.prefs.vehiculos) && res.prefs.vehiculos.length) setVehiculosEmpresa(res.prefs.vehiculos);
       if (Array.isArray(res.prefs.roles)     && res.prefs.roles.length)     setRolesImport(res.prefs.roles);
       if (res.prefs.formatoFecha) setFormatoFecha(res.prefs.formatoFecha);
+      // Hidratar plantillas en localStorage para que los configuradores las lean al abrir
+      const empId = res.empresas?.[0]?.id;
+      if (empId) {
+        for (const [k, v] of Object.entries(res.prefs)) {
+          if (k.startsWith("plantillas_") && Array.isArray(v)) {
+            const parts = k.split("_"); // plantillas_pedconf_<almId> o plantillas_almconf_<almId>
+            const tipo = parts[1]; const almId = parts.slice(2).join("_");
+            localStorage.setItem(`lscale.${tipo}.${empId}.${almId}`, JSON.stringify(v));
+          }
+        }
+      }
     }
     setCarga(false);
   }, []);
