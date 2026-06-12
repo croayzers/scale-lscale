@@ -203,23 +203,31 @@ export function PanelAlertasStock({ materiales, silenciados, onSilenciar }) {
 }
 
 /* ─── Utilidad: construir objeto de notificación ─────────────────────────── */
-export function crearNotificacion(pedido, materiales, tipo = "pedido") {
+// matSnapshot: snapshot de materiales DESPUÉS de aplicar la operación (retorno ya sumó, pedido no resta)
+// Para pedido: bajosMinimo = materiales que estarían bajo mínimo si se descontara el pedido (aviso preventivo)
+// Para retorno: matSnapshot ya tiene el stock actualizado → comparar directamente con stock_minimo
+export function crearNotificacion(pedido, matSnapshot, tipo = "pedido") {
   const lineas = (pedido.lineas || []).filter(l => (Number(l.cantidad) || 0) > 0);
 
-  // Materiales que quedan bajo mínimo tras esta operación
   const bajosMinimo = lineas
     .map(l => {
-      const mat = materiales.find(m =>
+      const mat = matSnapshot.find(m =>
         (l.material_id && m.id === l.material_id) ||
         m.nombre?.trim().toLowerCase() === l.nombre?.trim().toLowerCase()
       );
       if (!mat) return null;
-      // Para retorno el stock sube; solo alertar si sigue bajo mínimo
-      const stockResultante = tipo === "retorno"
-        ? (Number(mat.stock_actual) || 0) + (Number(l._retorno ?? l.cantidad) || 0)
-        : (Number(mat.stock_actual) || 0) - (Number(l.cantidad) || 0);
-      if (mat.stock_minimo > 0 && stockResultante < mat.stock_minimo) {
-        return { nombre: mat.nombre, stock_actual: Math.max(0, stockResultante), stock_minimo: mat.stock_minimo, unidad: mat.unidad || "ud" };
+
+      let stockMostrar;
+      if (tipo === "retorno") {
+        // El stock ya fue incrementado en matSnapshot — comparar directamente
+        stockMostrar = Number(mat.stock_actual) || 0;
+      } else {
+        // Pedido: stock no se descuenta aún, simular el descuento para aviso preventivo
+        stockMostrar = (Number(mat.stock_actual) || 0) - (Number(l.cantidad) || 0);
+      }
+
+      if (mat.stock_minimo > 0 && stockMostrar < mat.stock_minimo) {
+        return { nombre: mat.nombre, stock_actual: Math.max(0, stockMostrar), stock_minimo: mat.stock_minimo, unidad: mat.unidad || "ud" };
       }
       return null;
     })
