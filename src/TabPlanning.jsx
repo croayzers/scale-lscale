@@ -535,10 +535,29 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
   const CHIP = { reservado:"#94a3b8", confirmado:"#16a34a", retorno:"#d97706",
                  finalizado:"#2563eb", cancelado:"#dc2626" };
 
-  const pedidosDia = iso =>
-    (pedidos||[])
-      .filter(p => p.fecha_entrega === iso || p.fecha_retorno === iso)
-      .sort((a,b) => (dec2hm(a.hora_ida)??99) - (dec2hm(b.hora_ida)??99));
+  // Entries per day: { p, rol } where rol = "salida"|"retorno"|"mismo"
+  const pedidosDia = iso => {
+    const entries = [];
+    (pedidos||[]).forEach(p => {
+      const esSalida  = p.fecha_entrega === iso;
+      const esRetorno = p.fecha_retorno === iso;
+      if (!esSalida && !esRetorno) return;
+      const mismodia = p.fecha_entrega === p.fecha_retorno;
+      const rol = mismodia ? "mismo" : esSalida ? "salida" : "retorno";
+      // Avoid duplicating when both match (same-day case already covered by mismodia)
+      if (!mismodia && esSalida && esRetorno) {
+        entries.push({ p, rol:"mismo" });
+      } else {
+        entries.push({ p, rol });
+      }
+    });
+    entries.sort((a,b) => {
+      const ha = a.rol === "retorno" ? 0 : (dec2hm(a.p.hora_ida)??99);
+      const hb = b.rol === "retorno" ? 0 : (dec2hm(b.p.hora_ida)??99);
+      return ha - hb;
+    });
+    return entries;
+  };
 
   // Tramos para cada pedido de la semana (anchor = día anterior al de la semana)
   const tramosForPedido = (p, iso) => {
@@ -549,14 +568,14 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
     return (tramosOverride||{})[pid] ?? (p.vehiculo_id ? calcularTramos(p, p.vehiculo_id, off, offV) : []);
   };
 
-  // Filas: { iso, pedido, primeroDia, nFils }
+  // Filas: { iso, pedido, rol, primeroDia, nFils }
   const filas = [];
   dias.forEach(iso => {
-    const ps = pedidosDia(iso);
-    if (ps.length === 0) {
-      filas.push({ iso, pedido: null, primeroDia: true, nFils: 1 });
+    const entries = pedidosDia(iso);
+    if (entries.length === 0) {
+      filas.push({ iso, pedido: null, rol: null, primeroDia: true, nFils: 1 });
     } else {
-      ps.forEach((p, i) => filas.push({ iso, pedido: p, primeroDia: i===0, nFils: ps.length }));
+      entries.forEach(({ p, rol }, i) => filas.push({ iso, pedido: p, rol, primeroDia: i===0, nFils: entries.length }));
     }
   });
 
@@ -598,9 +617,13 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
             </tr>
           </thead>
           <tbody>
-            {filas.map(({ iso, pedido: p, primeroDia, nFils }, idx) => {
-              const hi  = p ? dec2hm(p.hora_ida)    : null;
-              const hv  = p ? dec2hm(p.hora_vuelta) : null;
+            {filas.map(({ iso, pedido: p, rol, primeroDia, nFils }, idx) => {
+              const hiRaw = p ? dec2hm(p.hora_ida)    : null;
+              const hvRaw = p ? dec2hm(p.hora_vuelta) : null;
+              // Clip block to this day's slice
+              const overnight = hiRaw != null && hvRaw != null && hvRaw < hiRaw;
+              const hi = rol === "retorno" ? 0    : hiRaw;
+              const hv = rol === "salida"  ? (overnight ? 24 : hvRaw) : hvRaw;
               const veh = p ? (vehById[String(p.vehiculo_id)] || null) : null;
               const cc  = p ? (CHIP[p.estado] || CHIP.reservado) : "#ccc";
               const esUltimoDia = idx === filas.length-1 || filas[idx+1]?.iso !== iso;
@@ -652,17 +675,20 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
                         zIndex:0, pointerEvents:"none" }}/>
                     ))}
 
-                    {/* Bloque duración evento */}
-                    {hi!=null && hv!=null && (
+                    {/* Bloque duración evento — clippeado al día */}
+                    {hi!=null && hv!=null && hv > hi && (
                       <div style={{ position:"absolute", top:4, bottom:4,
-                        left:hi*W_PX_S, width:Math.max((hv-hi)*W_PX_S,3),
+                        left:hi*W_PX_S, width:Math.max((hv-hi)*W_PX_S, 3),
                         background:"rgba(220,38,38,.07)", border:"1px solid rgba(220,38,38,.22)",
-                        borderRadius:4, pointerEvents:"none", zIndex:1 }}/>
+                        borderRadius: rol==="salida" && overnight ? "4px 0 0 4px"
+                                    : rol==="retorno"             ? "0 4px 4px 0"
+                                    : 4,
+                        pointerEvents:"none", zIndex:1 }}/>
                     )}
 
-                    {/* Marcador hora ida */}
-                    {hi!=null && (
-                      <div style={{ position:"absolute", top:0, bottom:0, left:hi*W_PX_S,
+                    {/* Marcador hora ida (solo en día de salida o mismo día) */}
+                    {hiRaw!=null && rol !== "retorno" && (
+                      <div style={{ position:"absolute", top:0, bottom:0, left:hiRaw*W_PX_S,
                         width:2, background:"#2563eb55", zIndex:3, pointerEvents:"none" }}>
                         <span style={{ position:"absolute", top:2, left:3, fontSize:7.5,
                           color:"#2563eb", fontWeight:700, background:"var(--surface)",
@@ -672,15 +698,36 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
                       </div>
                     )}
 
-                    {/* Marcador hora vuelta */}
-                    {hv!=null && (
-                      <div style={{ position:"absolute", top:0, bottom:0, left:hv*W_PX_S,
+                    {/* Marcador hora vuelta (solo en día de retorno o mismo día) */}
+                    {hvRaw!=null && rol !== "salida" && (
+                      <div style={{ position:"absolute", top:0, bottom:0, left:hvRaw*W_PX_S,
                         width:2, background:"#d9770655", zIndex:3, pointerEvents:"none" }}>
                         <span style={{ position:"absolute", top:2, left:3, fontSize:7.5,
                           color:"#d97706", fontWeight:700, background:"var(--surface)",
                           padding:"0 2px", borderRadius:2, whiteSpace:"nowrap" }}>
                           {p.hora_vuelta}
                         </span>
+                      </div>
+                    )}
+
+                    {/* Flecha continuación → al borde derecho (día salida overnight) */}
+                    {rol === "salida" && overnight && (
+                      <div style={{ position:"absolute", top:"50%", right:0,
+                        transform:"translateY(-50%)", zIndex:4, pointerEvents:"none",
+                        fontSize:9, color:"rgba(220,38,38,.6)", fontWeight:700,
+                        background:"rgba(220,38,38,.07)", padding:"1px 4px",
+                        borderRadius:"4px 0 0 4px", borderLeft:"1px solid rgba(220,38,38,.22)" }}>
+                        →
+                      </div>
+                    )}
+                    {/* Flecha continuación ← al borde izquierdo (día retorno overnight) */}
+                    {rol === "retorno" && overnight && (
+                      <div style={{ position:"absolute", top:"50%", left:0,
+                        transform:"translateY(-50%)", zIndex:4, pointerEvents:"none",
+                        fontSize:9, color:"rgba(220,38,38,.6)", fontWeight:700,
+                        background:"rgba(220,38,38,.07)", padding:"1px 4px",
+                        borderRadius:"0 4px 4px 0", borderRight:"1px solid rgba(220,38,38,.22)" }}>
+                        ←
                       </div>
                     )}
 
@@ -695,7 +742,9 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
                     {/* Chip pedido + vehículo */}
                     {p && (
                       <div onClick={() => onEditPedido(p)}
-                        style={{ position:"absolute", left:8, top:"50%", transform:"translateY(-50%)",
+                        style={{ position:"absolute",
+                          left: rol === "retorno" ? Math.max(8, (hvRaw||0)*W_PX_S + 6) : 8,
+                          top:"50%", transform:"translateY(-50%)",
                           zIndex:4, cursor:"pointer", display:"flex", flexDirection:"column", gap:1,
                           background:"var(--surface)", borderRadius:6, padding:"3px 8px",
                           border:`1.5px solid ${veh ? veh.color+"66" : cc+"55"}`,
