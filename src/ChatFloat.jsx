@@ -118,9 +118,10 @@ function ListView({ otros, allMessages, myId, onSelect }) {
   );
 }
 
-// Renderiza texto con @menciones y /CODIGO como chips interactivos
+// Renderiza texto con @menciones y /CODIGO [#categoria] como chips interactivos
 function renderMsgText(text, miembros, onPedidoRef, esPropio) {
-  const regex = /@[\w.]+|\/[A-Z0-9][A-Z0-9-]*/g;
+  // Captura /CODIGO opcionalmente seguido de espacio+#categoria
+  const regex = /@[\w.]+|\/[A-Z0-9][A-Z0-9_-]*(?:\s+#[\w\sáéíóúüñÁÉÍÓÚÜÑ]+)?/g;
   const parts = [];
   let last = 0, m;
   while ((m = regex.exec(text)) !== null) {
@@ -138,16 +139,20 @@ function renderMsgText(text, miembros, onPedidoRef, esPropio) {
         }}>{tok}</span>
       );
     } else {
-      const ref = tok.slice(1);
+      // Separar código de categoría: "/OA_00200 #Cristalería"
+      const spaceIdx = tok.indexOf(' #');
+      const codigo   = spaceIdx >= 0 ? tok.slice(1, spaceIdx) : tok.slice(1);
+      const categoria = spaceIdx >= 0 ? tok.slice(spaceIdx + 2).trim() : null;
+      const label    = categoria ? `/${codigo} #${categoria}` : `/${codigo}`;
       parts.push(
         <span key={m.index}
-          onClick={e => { e.stopPropagation(); onPedidoRef?.(ref); }}
+          onClick={e => { e.stopPropagation(); onPedidoRef?.(codigo, categoria); }}
           style={{
             background: esPropio ? 'rgba(255,255,255,0.22)' : 'rgba(99,102,241,0.13)',
             color: esPropio ? '#fff' : '#6366f1',
             borderRadius: 4, padding: '1px 6px', fontWeight: 700, fontSize: 12,
             cursor: 'pointer', textDecoration: 'underline dotted',
-          }}>{tok}</span>
+          }}>{label}</span>
       );
     }
     last = m.index + tok.length;

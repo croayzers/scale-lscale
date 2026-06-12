@@ -394,6 +394,17 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
               <ModalField label={L("Proveedor","Supplier")}      value={editObj.proveedor}   onChange={(v) => setEditObj((p) => ({ ...p, proveedor:v }))}/>
               <ModalField label={L("Coste (€)","Cost (€)")}      value={editObj.precio_coste} onChange={(v) => setEditObj((p) => ({ ...p, precio_coste:v }))} type="number" placeholder="0.00"/>
               <div style={{ gridColumn:"1 / -1" }}>
+                <label style={{ fontSize:11.5, fontWeight:600, color:C.sub, letterSpacing:.5 }}>{L("ALMACÉN","WAREHOUSE")}</label>
+                <div style={{ display:"flex", gap:8, marginTop:6, flexWrap:"wrap" }}>
+                  {almacenes.map((a) => (
+                    <button key={a.id} onClick={() => setEditObj((p) => ({ ...p, almacen_id: a.id }))}
+                      style={{ padding:"5px 14px", borderRadius:999, border:`1.5px solid ${editObj.almacen_id === a.id ? C.brand : C.strong}`, background: editObj.almacen_id === a.id ? C.brandSoft : "transparent", color: editObj.almacen_id === a.id ? C.brand : C.sub, fontWeight:600, fontSize:12.5, cursor:"pointer", fontFamily:"inherit" }}>
+                      {a.nombre}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ gridColumn:"1 / -1" }}>
                 <label style={{ fontSize:11.5, fontWeight:600, color:C.sub, letterSpacing:.5 }}>{L("ESTADO","STATUS")}</label>
                 <div style={{ display:"flex", gap:8, marginTop:6 }}>
                   {ESTADOS_MATERIAL.map((e) => (

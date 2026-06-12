@@ -785,13 +785,23 @@ function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato
    DETALLE / EDICIÓN DE PEDIDO
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - DetallePedido
-function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, rolesImport, empresaId, formatoFecha = "DD/MM/YYYY", L }) {
+function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, rolesImport, empresaId, formatoFecha = "DD/MM/YYYY", highlightedCategoria, L }) {
   const [exportModal, setExportModal] = useState(null); // null | "pdf" | "excel"
   const [p, setP] = useState({ ...pedido });
   const [editando, setEditando] = useState(false);
   const [delConf, setDelConf]   = useState(false);
   const [addLinea, setAddLinea] = useState(null); // { categoria, nombre, cantidad }
   const [editLinea, setEditLinea] = useState(null); // { idx, ...linea }
+
+  // Scroll a categoría si se abre desde un link de chat con #categoria
+  useEffect(() => {
+    if (!highlightedCategoria) return;
+    const t = setTimeout(() => {
+      const el = document.querySelector(`[data-categoria="${highlightedCategoria}"]`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 120);
+    return () => clearTimeout(t);
+  }, [highlightedCategoria]);
 
   const f = (k) => (v) => setP(prev => ({ ...prev, [k]: v }));
 
@@ -1031,8 +1041,10 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
             {alm.cats.map((cat) => (
               <React.Fragment key={cat.categoria}>
                 {/* Cabecera de categoría */}
-                <div style={{ display:"flex", alignItems:"center", padding:"6px 28px",
-                  background:C.s2, borderBottom:`1px solid ${C.line}`, borderTop:`1px solid ${C.line}` }}>
+                <div data-categoria={cat.categoria}
+                  style={{ display:"flex", alignItems:"center", padding:"6px 28px",
+                  background: highlightedCategoria && cat.categoria.toLowerCase() === highlightedCategoria.toLowerCase() ? "var(--brand-soft)" : C.s2,
+                  borderBottom:`1px solid ${C.line}`, borderTop:`1px solid ${C.line}` }}>
                   <span style={{ flex:1, fontSize:12, fontWeight:800, color:C.brand, letterSpacing:1, textTransform:"uppercase" }}>
                     {cat.categoria}
                   </span>
@@ -1375,7 +1387,7 @@ function ModalNotificaciones({ pedido, companyId, onClose }) {
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - TabPedidos [export default]
-export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, highlightedPedidoId }) {
+export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, highlightedPedidoId, highlightedCategoria }) {
   const L = useL();
   const fileRef = useRef(null);
 
@@ -1394,6 +1406,13 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
   const [configurador, setConfigurador] = useState(null);
   // { pedido } — modal de notificaciones post-confirmación
   const [notifModal,   setNotifModal]   = useState(null);
+
+  // Auto-abrir pedido cuando llega desde un link de chat
+  useEffect(() => {
+    if (!highlightedPedidoId || !pedidos) return;
+    const p = pedidos.find(p => p.id === highlightedPedidoId);
+    if (p) { setPedidoSel(p); onRegistrarVisto?.(p.id); }
+  }, [highlightedPedidoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Auto-crear materiales en almacén desde pedido ─────────────────────── */
   const autoCrearMateriales = (lineas, almacenId) => {
@@ -1632,6 +1651,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         rolesImport={rolesImport}
         empresaId={empresa?.id}
         formatoFecha={formatoFecha}
+        highlightedCategoria={highlightedCategoria}
         L={L}/>
     );
   }

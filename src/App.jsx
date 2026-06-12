@@ -46,9 +46,9 @@ const DEFAULT_VEHICULOS_EMPRESA = [
 
 const TABS = [
   { id: "almacen",    label: "Almacén",        Icon: Warehouse      },
+  { id: "inventario", label: "Inventario",      Icon: ClipboardCheck },
   { id: "pedido",     label: "Pedidos",         Icon: ClipboardList  },
   { id: "planning",   label: "Planning",        Icon: CalendarDays   },
-  { id: "inventario", label: "Inventario",      Icon: ClipboardCheck },
   { id: "retorno",    label: "Retorno/Cierre",  Icon: RotateCcw      },
   { id: "config",     label: "Config",          Icon: Settings       },
 ];
@@ -134,12 +134,13 @@ export default function App() {
   const [highlightedPedido, setHighlightedPedido] = useState(null);
   const chatRef = useRef();
 
-  const handlePedidoRef = useCallback((codigo) => {
+  const handlePedidoRef = useCallback((codigo, categoria) => {
+    // codigo puede ser "OA_00200", categoria puede ser "Cristalería" o null
     const p = pedidos.find(p => (p.codigo || p.referencia || "").toUpperCase() === codigo.toUpperCase());
     setTab("pedido");
     if (p) {
-      setHighlightedPedido(p.id);
-      setTimeout(() => setHighlightedPedido(null), 6000);
+      setHighlightedPedido({ id: p.id, categoria: categoria || null });
+      setTimeout(() => setHighlightedPedido(null), 8000);
     }
   }, [pedidos]);
 
@@ -334,7 +335,8 @@ export default function App() {
         {/* Contenido */}
         <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column", minHeight:0 }}>
           {tab === "almacen"  && <TabAlmacen  materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} L={L}/>}
-          {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} rolesImport={rolesImport} formatoFecha={formatoFecha} sesion={sesion} highlightedPedidoId={highlightedPedido}
+          {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} rolesImport={rolesImport} formatoFecha={formatoFecha} sesion={sesion} highlightedPedidoId={highlightedPedido?.id ?? highlightedPedido}
+            highlightedCategoria={highlightedPedido?.categoria ?? null}
             onRegistrarVisto={async (pid) => {
               if (modo === "supabase" && sesion?.user) {
                 const nombre = sesion.user.email.split("@")[0].split(".")[0];
