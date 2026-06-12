@@ -20,8 +20,9 @@ import TabPedidos from "./TabPedidos.jsx";
 import TabPlanning from "./TabPlanning.jsx";
 import TabRetorno from "./TabRetorno.jsx";
 import TabConfig from "./TabConfig.jsx";
+import TabInventario from "./TabInventario.jsx";
 import ChatFloat from "./ChatFloat.jsx";
-import { Package, Shield } from "lucide-react";
+import { Package, Shield, ClipboardCheck } from "lucide-react";
 
 // MARK: - Constantes (ROLES_DEFECTO, DEFAULT_VEHICULOS_EMPRESA, TABS)
 export const ROLES_DEFECTO = [
@@ -44,11 +45,12 @@ const DEFAULT_VEHICULOS_EMPRESA = [
 ];
 
 const TABS = [
-  { id: "almacen",   label: "Almacén",        Icon: Warehouse     },
-  { id: "pedido",    label: "Pedidos",         Icon: ClipboardList },
-  { id: "planning",  label: "Planning",        Icon: CalendarDays  },
-  { id: "retorno",   label: "Retorno/Cierre",  Icon: RotateCcw     },
-  { id: "config",    label: "Config",          Icon: Settings      },
+  { id: "almacen",    label: "Almacén",        Icon: Warehouse      },
+  { id: "pedido",     label: "Pedidos",         Icon: ClipboardList  },
+  { id: "planning",   label: "Planning",        Icon: CalendarDays   },
+  { id: "inventario", label: "Inventario",      Icon: ClipboardCheck },
+  { id: "retorno",    label: "Retorno/Cierre",  Icon: RotateCcw      },
+  { id: "config",     label: "Config",          Icon: Settings       },
 ];
 
 // MARK: - AvisoPortal
@@ -343,6 +345,7 @@ export default function App() {
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }}
             tramosIniciales={tramosIniciales}
             onSaveTramos={async (pid, tramos) => { if (modo === "supabase" && empresa?.id) await guardarTramos(pid, tramos, empresa.id); }}/>}
+          {tab === "inventario" && <TabInventario materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} sesion={sesion} L={L}/>}
           {tab === "retorno"  && <TabRetorno  pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha}
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} L={L}/>}
           {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={myRol === "owner" || myRol === "admin"} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} L={L}/>}
