@@ -390,7 +390,8 @@ const ChatFloat = forwardRef(function ChatFloat({ empresa, miembros = [], curren
     if (!companyId || !myId) return;
     cargarTodosMensajes(companyId).then(setAllMessages);
     const unsub = suscribirMensajes(companyId, (msg) => {
-      setAllMessages(prev => [...prev, msg]);
+      // Dedup: el mensaje propio ya fue añadido optimistamente por handleSend
+      setAllMessages(prev => prev.some(m => m.id === msg.id) ? prev : [...prev, msg]);
     });
     return unsub;
   }, [companyId, myId]);
@@ -424,6 +425,8 @@ const ChatFloat = forwardRef(function ChatFloat({ empresa, miembros = [], curren
   // Notificar al padre del conteo de no-leídos
   useEffect(() => { onUnreadChange?.(totalUnread); }, [totalUnread]);
 
+  const otros = useMemo(() => miembros.filter(m => m.user_id !== myId), [miembros, myId]);
+
   const handleSend = async (msg) => {
     // Envío principal al interlocutor
     const sent = await enviarMensaje(companyId, myId, partner.user_id, msg);
@@ -451,8 +454,6 @@ const ChatFloat = forwardRef(function ChatFloat({ empresa, miembros = [], curren
     setView("list");
     setPartner(null);
   };
-
-  const otros = useMemo(() => miembros.filter(m => m.user_id !== myId), [miembros, myId]);
 
   if (!companyId || !myId) return null;
 
