@@ -362,6 +362,7 @@ export default function App() {
             currentUser={sesion.user}
             onUnreadChange={setChatUnread}
             pedidos={pedidos}
+            materiales={materiales}
             onPedidoRef={handlePedidoRef}
           />
         )}

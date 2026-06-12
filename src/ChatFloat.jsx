@@ -195,6 +195,13 @@ function ConvView({ partner, messages, myId, onBack, onSend, miembros, pedidos, 
       }).slice(0, 5);
       if (items.length) { setAc({ type: 'pedido', items, startIdx: cursor - mPed[0].length }); setAcIdx(0); return; }
     }
+    const mCat = before.match(/#([\wáéíóúüñÁÉÍÓÚÜÑ ]*)$/);
+    if (mCat) {
+      const q = mCat[1].toLowerCase();
+      const cats = [...new Set((materiales||[]).map(m => (m.categoria||'').trim()).filter(Boolean))].sort();
+      const items = cats.filter(c => c.toLowerCase().includes(q)).slice(0, 8);
+      if (items.length) { setAc({ type: 'categoria', items, startIdx: cursor - mCat[0].length }); setAcIdx(0); return; }
+    }
     setAc(null);
   };
 
@@ -204,7 +211,9 @@ function ConvView({ partner, messages, myId, onBack, onSend, miembros, pedidos, 
     const cursor = taRef.current?.selectionStart ?? texto.length;
     const insert = ac.type === 'mention'
       ? `@${item.email?.split('@')[0] || item.nombre} `
-      : `/${item.codigo || item.referencia} `;
+      : ac.type === 'categoria'
+        ? `#${item} `
+        : `/${item.codigo || item.referencia} `;
     const newText = texto.slice(0, ac.startIdx) + insert + texto.slice(cursor);
     setTexto(newText);
     setAc(null);
@@ -301,7 +310,7 @@ function ConvView({ partner, messages, myId, onBack, onSend, miembros, pedidos, 
       {ac && (
         <div style={{ borderTop: `1px solid ${C.line}`, background: C.surface, flexShrink: 0, maxHeight: 160, overflowY: "auto" }}>
           <div style={{ padding: "4px 10px 2px", fontSize: 10.5, fontWeight: 700, color: C.sub, letterSpacing: 0.5 }}>
-            {ac.type === 'mention' ? '@ Mencionar usuario' : '/ Referencia pedido'}
+            {ac.type === 'mention' ? '@ Mencionar usuario' : ac.type === 'categoria' ? '# Categoría' : '/ Referencia pedido'}
           </div>
           {ac.items.map((item, idx) => (
             <button key={idx} onMouseDown={e => { e.preventDefault(); applyAc(item); }}
@@ -315,6 +324,12 @@ function ConvView({ partner, messages, myId, onBack, onSend, miembros, pedidos, 
                     <div style={{ fontSize: 12.5, fontWeight: 600, color: C.ink }}>{item.nombre || item.email}</div>
                     <div style={{ fontSize: 11, color: C.sub }}>@{item.email?.split('@')[0]}</div>
                   </div>
+                </>
+              ) : ac.type === 'categoria' ? (
+                <>
+                  <div style={{ width: 22, height: 22, borderRadius: 6, background: 'rgba(16,185,129,0.12)', color: '#059669',
+                    display: 'grid', placeItems: 'center', fontSize: 13, flexShrink: 0 }}>#</div>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: C.ink }}>{item}</div>
                 </>
               ) : (
                 <>
@@ -371,7 +386,7 @@ function formatHora(iso) {
 // ─── ChatFloat ─────────────────────────────────────────────────────────────
 // Componente principal: panel flotante de chat + gestión de estado
 // Exporta también la campana de notificaciones via ref
-const ChatFloat = forwardRef(function ChatFloat({ empresa, miembros = [], currentUser, onUnreadChange, pedidos = [], onPedidoRef }, ref) {
+const ChatFloat = forwardRef(function ChatFloat({ empresa, miembros = [], currentUser, onUnreadChange, pedidos = [], materiales = [], onPedidoRef }, ref) {
   const [open, setOpen]           = useState(false);
   const [view, setView]           = useState("list");
   const [partner, setPartner]     = useState(null);
