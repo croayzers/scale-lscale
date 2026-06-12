@@ -153,31 +153,31 @@ export default function App() {
     }
   }, [empresa?.id, modo]);
 
-  const guardarAlmacenes = (list) => {
+  const guardarAlmacenes = async (list) => {
     setAlmacenes(list);
     if (!empresa?.id) return;
-    if (modo === "supabase") guardarPrefs(empresa.id, { almacenes: list });
+    if (modo === "supabase") await guardarPrefs(empresa.id, { almacenes: list });
     else localStorage.setItem(`lscale.almacenes.${empresa.id}`, JSON.stringify(list));
   };
 
-  const guardarVehiculos = (list) => {
+  const guardarVehiculos = async (list) => {
     setVehiculosEmpresa(list);
     if (!empresa?.id) return;
-    if (modo === "supabase") guardarPrefs(empresa.id, { vehiculos: list });
+    if (modo === "supabase") await guardarPrefs(empresa.id, { vehiculos: list });
     else localStorage.setItem(`lscale.vehiculos.${empresa.id}`, JSON.stringify(list));
   };
 
-  const guardarRoles = (list) => {
+  const guardarRoles = async (list) => {
     setRolesImport(list);
     if (!empresa?.id) return;
-    if (modo === "supabase") guardarPrefs(empresa.id, { roles: list });
+    if (modo === "supabase") await guardarPrefs(empresa.id, { roles: list });
     else localStorage.setItem(`lscale.roles.${empresa.id}`, JSON.stringify(list));
   };
 
-  const guardarFormatoFecha = (fmt) => {
+  const guardarFormatoFecha = async (fmt) => {
     setFormatoFecha(fmt);
     if (!empresa?.id) return;
-    if (modo === "supabase") guardarPrefs(empresa.id, { formatoFecha: fmt });
+    if (modo === "supabase") await guardarPrefs(empresa.id, { formatoFecha: fmt });
     else localStorage.setItem(`lscale.formatoFecha.${empresa.id}`, fmt);
   };
 

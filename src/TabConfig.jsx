@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Settings, Plus, Trash2, Check, Shield } from "lucide-react";
 import { C, Badge, Btn } from "./lib/ui.jsx";
 
@@ -8,9 +8,17 @@ export default function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, 
   const [alms, setAlms] = useState(almacenes);
   const [vehs, setVehs] = useState(vehiculosEmpresa || []);
   const [roles, setRoles] = useState(rolesImport || []);
-  const [saved, setSaved] = useState(false);
+  const [saved,  setSaved]  = useState(false);
   const [savedV, setSavedV] = useState(false);
   const [savedR, setSavedR] = useState(false);
+  const [errA,   setErrA]   = useState(null);
+  const [errV,   setErrV]   = useState(null);
+  const [errR,   setErrR]   = useState(null);
+
+  // Sincronizar estado local cuando los props cambian (ej: cargarPrefs resuelve después de montar)
+  useEffect(() => { setAlms(almacenes); }, [almacenes]);
+  useEffect(() => { setVehs(vehiculosEmpresa || []); }, [vehiculosEmpresa]);
+  useEffect(() => { setRoles(rolesImport || []); }, [rolesImport]);
 
   const addRol = () => setRoles(p => [...p, {
     key: `col_custom_${Date.now()}`, label: "",
@@ -18,17 +26,29 @@ export default function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, 
   }]);
   const removeRol = (key) => setRoles(p => p.filter(r => r.key !== key));
   const updateRol = (key, field, value) => setRoles(p => p.map(r => r.key === key ? { ...r, [field]: value } : r));
-  const guardarR = () => { guardarRoles(roles); setSavedR(true); setTimeout(() => setSavedR(false), 2000); };
+  const guardarR = async () => {
+    setErrR(null);
+    try { await guardarRoles(roles); setSavedR(true); setTimeout(() => setSavedR(false), 2000); }
+    catch (e) { setErrR(e?.message || "Error al guardar"); }
+  };
 
   const addAlm = () => setAlms(p => [...p, { id: Date.now(), nombre: `Almacén ${p.length + 1}`, startRow: 6, parser: "hoja1hoja2" }]);
   const removeAlm = (id) => { if (alms.length > 1) setAlms(p => p.filter(a => a.id !== id)); };
   const updateAlm = (id, field, value) => setAlms(p => p.map(a => a.id === id ? { ...a, [field]: value } : a));
-  const guardar = () => { guardarAlmacenes(alms); setSaved(true); setTimeout(() => setSaved(false), 2000); };
+  const guardar = async () => {
+    setErrA(null);
+    try { await guardarAlmacenes(alms); setSaved(true); setTimeout(() => setSaved(false), 2000); }
+    catch (e) { setErrA(e?.message || "Error al guardar"); }
+  };
 
   const addVeh = () => setVehs(p => [...p, { id: Date.now(), nombre:"", dni:"", modelo:"", tipo:"Furgoneta", matricula:"", color:"#3b82f6" }]);
   const removeVeh = (id) => setVehs(p => p.filter(v => v.id !== id));
   const updateVeh = (id, field, value) => setVehs(p => p.map(v => v.id === id ? { ...v, [field]: value } : v));
-  const guardarV = () => { guardarVehiculos(vehs); setSavedV(true); setTimeout(() => setSavedV(false), 2000); };
+  const guardarV = async () => {
+    setErrV(null);
+    try { await guardarVehiculos(vehs); setSavedV(true); setTimeout(() => setSavedV(false), 2000); }
+    catch (e) { setErrV(e?.message || "Error al guardar"); }
+  };
 
   return (
     <div style={{ padding:28, maxWidth:580, overflowY:"auto" }}>
@@ -104,9 +124,10 @@ export default function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, 
           </div>
         ))}
         {isAdmin && (
-          <div style={{ padding:"12px 18px", display:"flex", justifyContent:"flex-end" }}>
+          <div style={{ padding:"12px 18px", display:"flex", justifyContent:"flex-end", alignItems:"center", gap:10 }}>
+            {errA && <span style={{ fontSize:12, color:C.danger }}>{errA}</span>}
             <Btn onClick={guardar} color={saved ? C.ok : C.brand}>
-              {saved ? <Check size={14}/> : <Check size={14}/>}
+              <Check size={14}/>
               {saved ? L("¡Guardado!","Saved!") : L("Guardar almacenes","Save warehouses")}
             </Btn>
           </div>
@@ -188,9 +209,11 @@ export default function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, 
         </div>
 
         {isAdmin && (
-          <div style={{ padding:"12px 18px", display:"flex", justifyContent:"flex-end" }}>
+          <div style={{ padding:"12px 18px", display:"flex", justifyContent:"flex-end", alignItems:"center", gap:10 }}>
+            {errR && <span style={{ fontSize:12, color:C.danger }}>{errR}</span>}
             <Btn onClick={guardarR} color={savedR ? C.ok : C.brand}>
-              {savedR ? <><Check size={14}/> ¡Guardado!</> : <><Check size={14}/> Guardar roles</>}
+              <Check size={14}/>
+              {savedR ? "¡Guardado!" : "Guardar roles"}
             </Btn>
           </div>
         )}
@@ -246,9 +269,10 @@ export default function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, 
             {L("Sin vehículos. Pulsa «Añadir» para crear uno.","No vehicles. Click «Add» to create one.")}
           </div>
         )}
-        {isAdmin && <div style={{ padding:"12px 18px", display:"flex", justifyContent:"flex-end" }}>
+        {isAdmin && <div style={{ padding:"12px 18px", display:"flex", justifyContent:"flex-end", alignItems:"center", gap:10 }}>
+          {errV && <span style={{ fontSize:12, color:C.danger }}>{errV}</span>}
           <Btn onClick={guardarV} color={savedV ? C.ok : C.brand}>
-            {savedV ? <Check size={14}/> : <Check size={14}/>}
+            <Check size={14}/>
             {savedV ? L("¡Guardado!","Saved!") : L("Guardar vehículos","Save vehicles")}
           </Btn>
         </div>}

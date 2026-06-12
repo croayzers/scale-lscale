@@ -366,8 +366,8 @@ export async function cargarPrefs(companyId) {
   const { data, error } = await lsc().from("empresa_config")
     .select("datos_json")
     .eq("company_id", companyId)
-    .single();
-  if (error) return null;
+    .maybeSingle();
+  if (error) { console.warn("[L-Scale] cargarPrefs error:", error.message); return null; }
   return data?.datos_json || {};
 }
 
@@ -380,8 +380,9 @@ export async function guardarPrefs(companyId, patch) {
     .maybeSingle();
   const actual = data?.datos_json || {};
   const nuevo = { ...actual, ...patch };
-  await lsc().from("empresa_config")
+  const { error } = await lsc().from("empresa_config")
     .upsert({ company_id: companyId, datos_json: nuevo }, { onConflict: "company_id" });
+  if (error) throw error;
 }
 
 // MARK: - Notificaciones (cargarMiembrosEmpresa, enviarNotificacionPedido)
