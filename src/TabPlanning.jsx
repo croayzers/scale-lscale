@@ -518,7 +518,9 @@ function rango(start, n) {
 /* ─── VistaSemana ─────────────────────────────────────────────────────────── */
 // MARK: - VistaSemana
 // Layout: tabla con columna izquierda inline por fila — etiqueta del día con rowSpan CSS via grid
-function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha, onEditPedido, tramosOverride, L }) {
+function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha, onEditPedido,
+    tramosOverride, setTramosOverride, tramosRef, dragId, grupoActivo,
+    startTramoDn, startResizeDn, onSaveTramos, L }) {
   const fmtD    = iso => fmtFecha(iso, formatoFecha);
   const vehById = Object.fromEntries((vehiculosEmpresa||[]).map(v=>[String(v.id),v]));
   const hoy     = new Date().toISOString().slice(0,10);
@@ -731,12 +733,34 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
                       </div>
                     )}
 
-                    {/* Tramos (igual que vista día, sin drag) */}
+                    {/* Tramos — arrastrables igual que en vista día */}
                     {p && tramosForPedido(p, iso).map(t => (
                       <TramoBar key={t.id} tramo={t}
-                        isDragging={false} isGroupDrag={false}
+                        isDragging={dragId === t.id}
+                        isGroupDrag={!!(grupoActivo && t.grupo_id === grupoActivo && dragId !== t.id)}
                         vehColor={vehById[t.vehiculo_id]?.color}
-                        onMD={() => {}} onResizeMD={() => {}}/>
+                        onMD={e => {
+                          if (e.button !== 0) return;
+                          const pid = String(p.id);
+                          // Materializar tramos antes de arrastrar (sync)
+                          if (!tramosRef?.current[pid]) {
+                            const ts = tramosForPedido(p, iso);
+                            if (tramosRef) tramosRef.current = { ...tramosRef.current, [pid]: ts };
+                            setTramosOverride(prev => ({ ...prev, [pid]: ts }));
+                          }
+                          startTramoDn?.(e, t.id);
+                        }}
+                        onResizeMD={e => {
+                          e.stopPropagation();
+                          if (e.button !== 0) return;
+                          const pid = String(p.id);
+                          if (!tramosRef?.current[pid]) {
+                            const ts = tramosForPedido(p, iso);
+                            if (tramosRef) tramosRef.current = { ...tramosRef.current, [pid]: ts };
+                            setTramosOverride(prev => ({ ...prev, [pid]: ts }));
+                          }
+                          startResizeDn?.(e, t.id);
+                        }}/>
                     ))}
 
                     {/* Chip pedido + vehículo */}
@@ -1268,7 +1292,11 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, for
       {vista === "semana" && (
         <VistaSemana pedidos={pedidos} fecha={fecha} setFecha={d=>{setFecha(d);setVista("dia");}}
           vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha}
-          tramosOverride={tramosOverride}
+          tramosOverride={tramosOverride} setTramosOverride={setTramosOverride}
+          tramosRef={tramosRef}
+          dragId={dragId} grupoActivo={grupoActivo}
+          startTramoDn={startTramoDn} startResizeDn={startResizeDn}
+          onSaveTramos={onSaveTramos}
           onEditPedido={setPedidoEdit} L={L}/>
       )}
 
