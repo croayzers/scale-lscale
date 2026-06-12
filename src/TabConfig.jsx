@@ -305,10 +305,6 @@ export default function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, 
         </div>
       </div>
 
-      <div style={{ background:"var(--warn-soft)", border:"1px solid var(--warn)", borderRadius:12, padding:"12px 16px", fontSize:13, color:"var(--warn)" }}>
-        ⚠ {L("Recuerda ejecutar la migración SQL en Supabase (supabase/01_lscale.sql) antes de usar con datos reales.",
-             "Remember to run the SQL migration in Supabase (supabase/01_lscale.sql) before using with real data.")}
-      </div>
     </div>
   );
 }
