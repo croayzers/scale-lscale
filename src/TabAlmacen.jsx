@@ -43,9 +43,16 @@ function UbicacionesModal({ materiales, setMateriales, empresaId, almacenId, alm
   )].sort();
 
   const [mapa, setMapa] = useState(() => {
-    try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; }
+    try {
+      const saved = JSON.parse(localStorage.getItem(KEY)) || {};
+      // Rellenar con el nombre de la categoría si no hay valor guardado
+      const base = {};
+      categorias.forEach(cat => { base[cat] = saved[cat] ?? cat; });
+      return base;
+    } catch { return {}; }
   });
   const [aplicado, setAplicado] = useState(false);
+  const [confLimpiar, setConfLimpiar] = useState(false);
 
   const set = (cat, val) => setMapa(p => ({ ...p, [cat]: val }));
 
@@ -61,7 +68,12 @@ function UbicacionesModal({ materiales, setMateriales, empresaId, almacenId, alm
     setTimeout(() => setAplicado(false), 2000);
   };
 
-  const limpiar = () => { localStorage.removeItem(KEY); setMapa({}); };
+  const limpiar = () => {
+    localStorage.removeItem(KEY);
+    const base = {};
+    categorias.forEach(cat => { base[cat] = cat; });
+    setMapa(base);
+  };
 
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.5)", display:"grid",
@@ -114,11 +126,27 @@ function UbicacionesModal({ materiales, setMateriales, empresaId, almacenId, alm
 
         <div style={{ padding:"12px 20px", borderTop:`1px solid ${C.line}`, flexShrink:0,
           display:"flex", alignItems:"center", gap:8 }}>
-          <button onClick={limpiar}
-            style={{ background:"none", border:`1px solid ${C.strong}`, cursor:"pointer",
-              color:C.sub, borderRadius:8, padding:"7px 14px", fontSize:13, fontFamily:"inherit" }}>
-            Limpiar plantilla
-          </button>
+          {confLimpiar ? (
+            <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+              <span style={{ fontSize:12.5, color:C.danger }}>¿Restablecer ubicaciones al nombre de cada categoría?</span>
+              <button onClick={() => { limpiar(); setConfLimpiar(false); }}
+                style={{ background:C.danger, border:"none", cursor:"pointer", color:"#fff",
+                  borderRadius:8, padding:"5px 12px", fontSize:12.5, fontFamily:"inherit", fontWeight:600 }}>
+                Sí, restablecer
+              </button>
+              <button onClick={() => setConfLimpiar(false)}
+                style={{ background:"none", border:`1px solid ${C.strong}`, cursor:"pointer",
+                  color:C.sub, borderRadius:8, padding:"5px 10px", fontSize:12.5, fontFamily:"inherit" }}>
+                Cancelar
+              </button>
+            </div>
+          ) : (
+            <button onClick={() => setConfLimpiar(true)}
+              style={{ background:"none", border:`1px solid ${C.strong}`, cursor:"pointer",
+                color:C.sub, borderRadius:8, padding:"7px 14px", fontSize:13, fontFamily:"inherit" }}>
+              Limpiar plantilla
+            </button>
+          )}
           <div style={{ flex:1 }}/>
           <button onClick={onClose}
             style={{ background:"none", border:`1px solid ${C.strong}`, cursor:"pointer",

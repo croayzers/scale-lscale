@@ -226,7 +226,7 @@ function PedidoRow({ pedido, tramos, offsetH, vehById, vehiculosEmpresa,
         {xIda != null && xVuelta != null && (
           <div style={{ position:"absolute", top:4, bottom:4,
             left:xIda, width:Math.max(xVuelta - xIda, 3),
-            background:"rgba(22,163,74,.07)", border:"1px solid rgba(22,163,74,.2)",
+            background:"rgba(220,38,38,.07)", border:"1px solid rgba(220,38,38,.22)",
             borderRadius:4, pointerEvents:"none", zIndex:1 }}/>
         )}
 
@@ -462,6 +462,248 @@ function TramoModal({ tramo, veh, pedidoLabel, isNew, onSave, onDelete, onClose,
   );
 }
 
+/* ─── Utilidades semana/mes ───────────────────────────────────────────────── */
+const DIAS_ES  = ["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+const DIAS_EN  = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const MESES_ES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+// Lunes de la semana que contiene `iso`
+function lunesDe(iso) {
+  const d = new Date(iso + "T00:00:00");
+  const dow = d.getDay(); // 0=Dom
+  d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
+  return d.toISOString().slice(0,10);
+}
+// Primer día del mes
+function primerDelMes(iso) {
+  return iso.slice(0,7) + "-01";
+}
+// Array de N isos a partir de uno
+function rango(start, n) {
+  return Array.from({length:n}, (_,i) => isoPlus(start, i));
+}
+
+/* ─── VistaSemana ─────────────────────────────────────────────────────────── */
+// MARK: - VistaSemana
+function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha, onEditPedido, L }) {
+  const fmtD   = iso => fmtFecha(iso, formatoFecha);
+  const vehById = Object.fromEntries((vehiculosEmpresa||[]).map(v=>[String(v.id),v]));
+  const lunes   = lunesDe(fecha);
+  const dias    = rango(lunes, 7);
+  const W_PX_S  = 80;   // px por hora en semana
+  const H_ROW   = 56;
+  const LABEL_W_S = 90;
+  const totalW  = 24 * W_PX_S;
+
+  const ticksH = Array.from({length:25},(_,i)=>i);
+
+  const pedidosDia = iso =>
+    (pedidos||[]).filter(p => p.fecha_entrega === iso || p.fecha_retorno === iso);
+
+  const CHIP = { confirmado:"#16a34a", borrador:"#94a3b8", planificado:"#2563eb",
+                 en_ruta:"#d97706", entregado:"#16a34a", cancelado:"#dc2626" };
+
+  return (
+    <div style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0, overflow:"hidden" }}>
+      <div style={{ overflowX:"auto", overflowY:"auto", flex:1, minHeight:0 }}>
+        <div style={{ display:"flex", minWidth: LABEL_W_S + totalW }}>
+
+          {/* Columna izquierda sticky */}
+          <div style={{ width:LABEL_W_S, flexShrink:0, position:"sticky", left:0, zIndex:15,
+            background:"var(--surface)", borderRight:"1px solid var(--border)" }}>
+            <div style={{ height:32, borderBottom:"2px solid var(--border)" }}/>
+            {dias.map(iso => {
+              const d   = new Date(iso + "T00:00:00");
+              const dow = d.getDay();
+              const esFecha = iso === fecha;
+              const esHoy   = iso === new Date().toISOString().slice(0,10);
+              return (
+                <div key={iso} onClick={() => setFecha(iso)}
+                  style={{ height:H_ROW, borderBottom:"1px solid var(--border)",
+                    display:"flex", flexDirection:"column", justifyContent:"center",
+                    padding:"0 10px", cursor:"pointer",
+                    background: esFecha ? "var(--brand-soft)" : esHoy ? "var(--warn-soft)" : "var(--surface)" }}>
+                  <span style={{ fontSize:13, fontWeight:800,
+                    color: esFecha ? "var(--brand)" : esHoy ? "var(--warn)" : "var(--text-2)" }}>
+                    {DIAS_ES[dow]}
+                  </span>
+                  <span style={{ fontSize:10, color: esFecha ? "var(--brand)" : "var(--text-3)" }}>
+                    {fmtD(iso)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Canvas derecho */}
+          <div style={{ position:"relative", flexShrink:0, width:totalW }}>
+
+            {/* Eje de horas sticky-top */}
+            <div style={{ position:"sticky", top:0, zIndex:12, height:32,
+              background:"var(--surface)", borderBottom:"2px solid var(--border)",
+              display:"flex", alignItems:"flex-end" }}>
+              {ticksH.map(h => (
+                <div key={h} style={{ position:"absolute", left:h * W_PX_S,
+                  bottom:0, display:"flex", flexDirection:"column", alignItems:"flex-start" }}>
+                  <div style={{ width:1, height:10, background:"var(--border-strong)" }}/>
+                  {h < 24 && <span style={{ fontSize:9, color:"var(--text-3)", position:"absolute",
+                    bottom:12, left:2, whiteSpace:"nowrap", fontWeight:600 }}>
+                    {String(h).padStart(2,"0")}:00
+                  </span>}
+                </div>
+              ))}
+            </div>
+
+            {/* Líneas verticales */}
+            {ticksH.map(h => (
+              <div key={h} style={{ position:"absolute", top:32, bottom:0,
+                left:h*W_PX_S, width:1,
+                background: h%6===0 ? "var(--border-strong)" : "var(--border)",
+                zIndex:0, pointerEvents:"none" }}/>
+            ))}
+
+            {/* Filas de días */}
+            {dias.map(iso => {
+              const ps = pedidosDia(iso);
+              return (
+                <div key={iso} style={{ height:H_ROW, position:"relative",
+                  borderBottom:"1px solid var(--border)",
+                  background: iso === fecha ? "rgba(99,102,241,.03)" : "transparent" }}>
+                  {ps.map((p,i) => {
+                    const hi = dec2hm(p.hora_ida);
+                    const hv = dec2hm(p.hora_vuelta);
+                    const x1 = hi != null ? hi * W_PX_S : null;
+                    const x2 = hv != null ? hv * W_PX_S : null;
+                    const veh = vehById[String(p.vehiculo_id)] || null;
+                    const cc  = CHIP[p.estado] || CHIP.borrador;
+                    const top = 4 + i * 0;
+                    if (x1 == null && x2 == null) return null;
+                    const left  = x1 ?? x2;
+                    const width = x1 != null && x2 != null ? Math.max(x2-x1, 40) : 60;
+                    return (
+                      <div key={p.id} onClick={() => onEditPedido(p)}
+                        title={`${p.codigo||""} ${p.nombre||""}`}
+                        style={{ position:"absolute", top:top+4, height:H_ROW-12,
+                          left, width, borderRadius:6, cursor:"pointer",
+                          background: veh ? `${veh.color}22` : `${cc}18`,
+                          border:`1.5px solid ${veh ? veh.color+"66" : cc+"55"}`,
+                          overflow:"hidden", padding:"2px 5px", zIndex:2,
+                          display:"flex", flexDirection:"column", justifyContent:"center" }}>
+                        <span style={{ fontSize:9, fontWeight:800,
+                          color: veh ? veh.color : cc,
+                          overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                          {p.codigo || `PED-${p.id}`}
+                        </span>
+                        {(H_ROW-12) > 28 && <span style={{ fontSize:8, color:"var(--text-2)",
+                          overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                          {p.nombre}
+                        </span>}
+                      </div>
+                    );
+                  })}
+                  {ps.length === 0 && (
+                    <div style={{ position:"absolute", inset:0, display:"flex",
+                      alignItems:"center", paddingLeft:8,
+                      color:"var(--text-3)", pointerEvents:"none", fontSize:9 }}>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── VistaMes ────────────────────────────────────────────────────────────── */
+// MARK: - VistaMes
+function VistaMes({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha, onEditPedido, L }) {
+  const fmtD   = iso => fmtFecha(iso, formatoFecha);
+  const vehById = Object.fromEntries((vehiculosEmpresa||[]).map(v=>[String(v.id),v]));
+  const hoy     = new Date().toISOString().slice(0,10);
+
+  // Calcular el grid: desde el lunes de la primera semana que contiene el día 1 del mes
+  const primero = primerDelMes(fecha);
+  const inicio  = lunesDe(primero);
+  // Cuántas semanas necesitamos para cubrir todo el mes
+  const [year, month] = fecha.slice(0,7).split("-").map(Number);
+  const diasEnMes = new Date(year, month, 0).getDate();
+  const ultimo    = `${fecha.slice(0,7)}-${String(diasEnMes).padStart(2,"0")}`;
+  // Filas: desde `inicio` hasta el domingo de la semana de `ultimo`
+  const finGrid = isoPlus(lunesDe(ultimo), 6);
+  const totalDias = Math.round((new Date(finGrid+"T00:00:00") - new Date(inicio+"T00:00:00")) / 86400000) + 1;
+  const dias = rango(inicio, totalDias);
+  const semanas = [];
+  for (let i=0; i < dias.length; i+=7) semanas.push(dias.slice(i,i+7));
+
+  const CHIP = { confirmado:"#16a34a", borrador:"#94a3b8", planificado:"#2563eb",
+                 en_ruta:"#d97706", entregado:"#16a34a", cancelado:"#dc2626" };
+
+  return (
+    <div style={{ flex:1, overflowY:"auto", minHeight:0 }}>
+      {/* Cabecera días de la semana */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)",
+        borderBottom:"2px solid var(--border)", background:"var(--surface)",
+        position:"sticky", top:0, zIndex:10 }}>
+        {DIAS_ES.slice(1).concat(DIAS_ES[0]).map(d => (
+          <div key={d} style={{ padding:"6px 0", textAlign:"center",
+            fontSize:11, fontWeight:700, color:"var(--text-2)" }}>{d}</div>
+        ))}
+      </div>
+      {/* Semanas */}
+      {semanas.map((sem, si) => (
+        <div key={si} style={{ display:"grid", gridTemplateColumns:"repeat(7,1fr)",
+          borderBottom:"1px solid var(--border)", minHeight:90 }}>
+          {sem.map(iso => {
+            const esMes    = iso.slice(0,7) === fecha.slice(0,7);
+            const esHoy    = iso === hoy;
+            const esSel    = iso === fecha;
+            const psDia    = (pedidos||[]).filter(p =>
+              p.fecha_entrega === iso || p.fecha_retorno === iso
+            );
+            return (
+              <div key={iso} onClick={() => setFecha(iso)}
+                style={{ borderRight:"1px solid var(--border)", padding:"4px 5px",
+                  cursor:"pointer", minHeight:90,
+                  background: esSel ? "var(--brand-soft)" : esHoy ? "var(--warn-soft)" : esMes ? "var(--surface)" : "var(--surface-2)",
+                  opacity: esMes ? 1 : 0.5 }}>
+                <div style={{ fontSize:12, fontWeight:800, marginBottom:3,
+                  color: esSel ? "var(--brand)" : esHoy ? "var(--warn)" : esMes ? "var(--text)" : "var(--text-3)" }}>
+                  {Number(iso.slice(8))}
+                </div>
+                {psDia.slice(0,3).map(p => {
+                  const veh = vehById[String(p.vehiculo_id)] || null;
+                  const cc  = CHIP[p.estado] || CHIP.borrador;
+                  return (
+                    <div key={p.id}
+                      onClick={e => { e.stopPropagation(); onEditPedido(p); }}
+                      style={{ fontSize:9.5, fontWeight:700, borderRadius:4,
+                        padding:"1px 5px", marginBottom:2, cursor:"pointer",
+                        background: veh ? `${veh.color}22` : `${cc}18`,
+                        color: veh ? veh.color : cc,
+                        border:`1px solid ${veh ? veh.color+"44" : cc+"44"}`,
+                        overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                      {p.codigo || `PED-${p.id}`}
+                      {p.hora_ida ? ` ${p.hora_ida}` : ""}
+                    </div>
+                  );
+                })}
+                {psDia.length > 3 && (
+                  <div style={{ fontSize:9, color:"var(--text-3)", paddingLeft:2 }}>
+                    +{psDia.length - 3} más
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ═══════════════════════════════════════════════════════════════════════════
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
@@ -471,6 +713,7 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, for
   const fmtD = iso => fmtFecha(iso, formatoFecha);
 
   const [fecha,          setFecha]          = useState(() => hoyMas(0));
+  const [vista,          setVista]          = useState("dia"); // "dia" | "semana" | "mes"
   const [tramoModal,     setTramoModal]     = useState(null);
   const [tramosOverride, setTramosOverride] = useState(() => tramosIniciales ?? {});
   const [pedidoEdit,     setPedidoEdit]     = useState(null);
@@ -794,7 +1037,10 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, for
 
   /* ── Render ─────────────────────────────────────────────────────────────── */
   const navegar = d => {
-    const dt = new Date(fecha); dt.setDate(dt.getDate() + d);
+    const dt = new Date(fecha);
+    if (vista === "semana") dt.setDate(dt.getDate() + d * 7);
+    else if (vista === "mes") dt.setMonth(dt.getMonth() + d);
+    else dt.setDate(dt.getDate() + d);
     setFecha(dt.toISOString().slice(0,10));
   };
 
@@ -820,23 +1066,56 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, for
           <ChevronRight size={15}/>
         </button>
         <span style={{ fontSize:12, color:"var(--text-2)" }}>
-          {fmtD(anchorIso)} → {fmtD(fechasCanvas[2])} · {eventosDia.length} {L("evento(s)","event(s)")}
+          {vista === "dia" && `${fmtD(anchorIso)} → ${fmtD(fechasCanvas[2])} · ${eventosDia.length} ${L("evento(s)","event(s)")}`}
+          {vista === "semana" && (() => { const l=lunesDe(fecha); return `${fmtD(l)} – ${fmtD(isoPlus(l,6))}`; })()}
+          {vista === "mes" && (() => { const [y,m]=fecha.slice(0,7).split("-"); return `${MESES_ES[Number(m)-1]} ${y}`; })()}
         </span>
 
-        {/* Leyenda tipos */}
-        <div style={{ display:"flex", gap:5, marginLeft:"auto", flexWrap:"wrap", alignItems:"center" }}>
-          {Object.entries(TIPOS).map(([key, t]) => (
-            <span key={key} style={{ fontSize:8.5, fontWeight:700, background:`${t.color}20`,
-              color:t.color, borderRadius:4, padding:"1px 5px", border:`1px solid ${t.color}33` }}>
-              {t.short}
-            </span>
+        {/* Selector de vista */}
+        <div style={{ display:"flex", gap:0, marginLeft:"auto", borderRadius:8,
+          overflow:"hidden", border:"1px solid var(--border-strong)" }}>
+          {[["dia",L("Día","Day")],["semana",L("Semana","Week")],["mes",L("Mes","Month")]].map(([v,label]) => (
+            <button key={v} onClick={() => setVista(v)}
+              style={{ padding:"5px 13px", border:"none", cursor:"pointer", fontFamily:"inherit",
+                fontSize:12, fontWeight:600,
+                background: vista===v ? "var(--brand)" : "var(--surface-2)",
+                color: vista===v ? "#fff" : "var(--text-2)" }}>
+              {label}
+            </button>
           ))}
         </div>
+
+        {/* Leyenda tipos — solo en vista día */}
+        {vista === "dia" && (
+          <div style={{ display:"flex", gap:5, flexWrap:"wrap", alignItems:"center" }}>
+            {Object.entries(TIPOS).map(([key, t]) => (
+              <span key={key} style={{ fontSize:8.5, fontWeight:700, background:`${t.color}20`,
+                color:t.color, borderRadius:4, padding:"1px 5px", border:`1px solid ${t.color}33` }}>
+                {t.short}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
-      {/* Scroll horizontal */}
+      {/* Vista semana */}
+      {vista === "semana" && (
+        <VistaSemana pedidos={pedidos} fecha={fecha} setFecha={d=>{setFecha(d);setVista("dia");}}
+          vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha}
+          onEditPedido={setPedidoEdit} L={L}/>
+      )}
+
+      {/* Vista mes */}
+      {vista === "mes" && (
+        <VistaMes pedidos={pedidos} fecha={fecha} setFecha={d=>{setFecha(d);setVista("dia");}}
+          vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha}
+          onEditPedido={setPedidoEdit} L={L}/>
+      )}
+
+      {/* Scroll horizontal — vista día */}
       <div ref={scrollRef} onMouseDown={onScrollAreaMD}
-        style={{ flex:1, overflowX:"auto", overflowY:"auto", minHeight:0,
+        style={{ display: vista === "dia" ? "block" : "none",
+          flex:1, overflowX:"auto", overflowY:"auto", minHeight:0,
           cursor: isPanning ? "grabbing" : dragId ? "grabbing" : "grab",
           userSelect:"none" }}>
         <div style={{ display:"flex", minWidth: LABEL_W + totalW, position:"relative" }}>
