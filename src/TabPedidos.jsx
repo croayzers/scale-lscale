@@ -20,6 +20,7 @@ import { parsearExcelPedido } from "./lib/parseExcelPedido.js";
 import ExcelConfigurador from "./ExcelConfigurador.jsx";
 import { guardarPedido, borrarPedido, cargarMiembrosEmpresa, enviarNotificacionPedido } from "./lib/data.js";
 import { fmtFecha, siguienteCodigo } from "./lib/fechas.js";
+import { conflictosPedido } from "./lib/stockConflictos.js";
 
 // MARK: - Constantes UI (C, CHIP_ESTADO, ESTADOS)
 /* ─── Paleta ──────────────────────────────────────────────────────────────── */
@@ -785,13 +786,14 @@ function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato
    DETALLE / EDICIÓN DE PEDIDO
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - DetallePedido
-function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, rolesImport, empresaId, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, L }) {
+function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, rolesImport, empresaId, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, L }) {
   const [exportModal, setExportModal] = useState(null); // null | "pdf" | "excel"
   const [p, setP] = useState({ ...pedido });
   const [editando, setEditando] = useState(false);
   const [delConf, setDelConf]   = useState(false);
   const [addLinea, setAddLinea] = useState(null); // { categoria, nombre, cantidad }
   const [editLinea, setEditLinea] = useState(null); // { idx, ...linea }
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   // Scroll a categoría si se abre desde un link de chat con #categoria
   useEffect(() => {
@@ -953,6 +955,36 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
           <Trash2 size={13}/>{L("Eliminar","Delete")}
         </Btn>
       </div>
+
+      {/* Banner de conflicto de stock */}
+      {!bannerDismissed && materiales && pedidos && (() => {
+        const conflictos = conflictosPedido(p.id, pedidos, materiales);
+        if (!conflictos.length) return null;
+        return (
+          <div style={{ background:"#fef2f2", borderBottom:`2px solid #fca5a5`, padding:"10px 20px",
+            display:"flex", alignItems:"flex-start", gap:10, flexShrink:0 }}>
+            <AlertTriangle size={18} color="#dc2626" style={{ flexShrink:0, marginTop:1 }}/>
+            <div style={{ flex:1, minWidth:0 }}>
+              <div style={{ fontSize:13, fontWeight:700, color:"#dc2626", marginBottom:4 }}>
+                Stock insuficiente para este pedido
+              </div>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+                {conflictos.map((c, i) => (
+                  <span key={i} style={{ fontSize:11.5, background:"#fee2e2", color:"#dc2626",
+                    border:"1px solid #fca5a5", borderRadius:999, padding:"2px 10px", fontWeight:600 }}>
+                    {c.nombre}: faltan <strong>{c.faltante}</strong> uds
+                  </span>
+                ))}
+              </div>
+            </div>
+            <button onClick={() => setBannerDismissed(true)}
+              style={{ background:"none", border:"none", cursor:"pointer", color:"#dc2626",
+                padding:4, display:"flex", flexShrink:0 }}>
+              <X size={16}/>
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Cabecera del pedido */}
       <div style={{ padding:"14px 20px", background:C.brandSoft, borderBottom:`2px solid ${C.brand}`, flexShrink:0 }}>
@@ -1705,6 +1737,8 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         formatoFecha={formatoFecha}
         highlightedCategoria={highlightedCategoria}
         sesion={sesion}
+        materiales={materiales}
+        pedidos={pedidos}
         L={L}/>
     );
   }

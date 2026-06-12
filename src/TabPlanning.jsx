@@ -10,10 +10,12 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import {
   ChevronLeft, ChevronRight, Package, Truck, Check, X, Trash2, ClipboardList,
+  AlertTriangle,
 } from "lucide-react";
 import { useL } from "./lib/i18n.js";
 import { TIPOS, DEFAULT_DURS } from "./lib/expedicionesConst.js";
 import { fmtFecha } from "./lib/fechas.js";
+import { calcularConflictosStock } from "./lib/stockConflictos.js";
 
 /* ─── Layout ─────────────────────────────────────────────────────────────── */
 // MARK: - Constantes layout (W_PX, ROW_H, LABEL_W, SNAP, TIPOS_*)
@@ -144,7 +146,7 @@ function TramoBar({ tramo, isDragging, isGroupDrag, vehColor, onMD, onResizeMD }
 // MARK: - PedidoRow
 function PedidoRow({ pedido, tramos, offsetH, vehById, vehiculosEmpresa,
     dragId, grupoActivo, onTramoDn, onResizeDn, onGridClick, onCambiarVehiculo,
-    totalW, anchorIso, L }) {
+    totalW, anchorIso, conflictos, L }) {
 
   const horaIda    = dec2hm(pedido.hora_ida);
   const horaVuelta = dec2hm(pedido.hora_vuelta);
@@ -179,7 +181,20 @@ function PedidoRow({ pedido, tramos, offsetH, vehById, vehiculosEmpresa,
             background:`${chipColor}18`, color:chipColor, fontWeight:700, flexShrink:0 }}>
             {pedido.estado}
           </span>
+          {conflictos?.[String(pedido.id)]?.length > 0 && (
+            <span title={conflictos[String(pedido.id)].map(c => `⚠ ${c.nombre}: faltan ${c.faltante} uds`).join("\n")}
+              style={{ flexShrink:0, display:"flex", alignItems:"center", cursor:"help" }}>
+              <AlertTriangle size={13} color="#dc2626"/>
+            </span>
+          )}
         </div>
+        {conflictos?.[String(pedido.id)]?.length > 0 && (
+          <div style={{ fontSize:9, color:"#dc2626", fontWeight:700,
+            overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+            background:"#fee2e2", borderRadius:3, padding:"0 4px", marginTop:1 }}>
+            ⚠ Stock insuf.: {conflictos[String(pedido.id)].map(c => `${c.nombre} -${c.faltante}`).join(", ")}
+          </div>
+        )}
 
         <div style={{ fontSize:10, color:"var(--text-2)",
           overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
@@ -520,7 +535,7 @@ function rango(start, n) {
 // Layout: tabla con columna izquierda inline por fila — etiqueta del día con rowSpan CSS via grid
 function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha, onEditPedido,
     tramosOverride, setTramosOverride, tramosRef, dragId, grupoActivo,
-    startTramoDn, startResizeDn, onSaveTramos, L }) {
+    startTramoDn, startResizeDn, onSaveTramos, conflictos, L }) {
   const fmtD    = iso => fmtFecha(iso, formatoFecha);
   const vehById = Object.fromEntries((vehiculosEmpresa||[]).map(v=>[String(v.id),v]));
   const hoy     = new Date().toISOString().slice(0,10);
@@ -773,9 +788,16 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
                           background:"var(--surface)", borderRadius:6, padding:"3px 8px",
                           border:`1.5px solid ${veh ? veh.color+"66" : cc+"55"}`,
                           boxShadow:"0 1px 4px rgba(0,0,0,.08)", maxWidth:170 }}>
-                        <span style={{ fontSize:10.5, fontWeight:800, color: veh ? veh.color : cc,
-                          whiteSpace:"nowrap" }}>
-                          {p.codigo || `PED-${p.id}`}
+                        <span style={{ display:"flex", alignItems:"center", gap:3 }}>
+                          <span style={{ fontSize:10.5, fontWeight:800, color: veh ? veh.color : cc,
+                            whiteSpace:"nowrap" }}>
+                            {p.codigo || `PED-${p.id}`}
+                          </span>
+                          {conflictos?.[String(p.id)]?.length > 0 && (
+                            <AlertTriangle size={11} color="#dc2626"
+                              title={conflictos[String(p.id)].map(c=>`⚠ ${c.nombre}: -${c.faltante}`).join("\n")}
+                              style={{ flexShrink:0 }}/>
+                          )}
                         </span>
                         <span style={{ fontSize:9, color:"var(--text-2)",
                           overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
@@ -898,7 +920,7 @@ function VistaMes({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha, on
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - TabPlanning [export default]
-export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, formatoFecha = "DD/MM/YYYY", onSavePedido, onSaveTramos, tramosIniciales }) {
+export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, materiales = [], formatoFecha = "DD/MM/YYYY", onSavePedido, onSaveTramos, tramosIniciales }) {
   const L = useL();
   const fmtD = iso => fmtFecha(iso, formatoFecha);
 
@@ -953,6 +975,12 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, for
   const vehById = useMemo(() => Object.fromEntries(
     (vehiculosEmpresa || []).map(v => [String(v.id), v])
   ), [vehiculosEmpresa]);
+
+  /* ── Conflictos de stock ────────────────────────────────────────────────── */
+  const conflictos = useMemo(() =>
+    calcularConflictosStock(pedidos, materiales),
+    [pedidos, materiales]
+  );
 
   /* ── Offset canvas para cada pedido ────────────────────────────────────── */
   const offsetForPedido = useCallback((p) =>
@@ -1297,6 +1325,7 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, for
           dragId={dragId} grupoActivo={grupoActivo}
           startTramoDn={startTramoDn} startResizeDn={startResizeDn}
           onSaveTramos={onSaveTramos}
+          conflictos={conflictos}
           onEditPedido={setPedidoEdit} L={L}/>
       )}
 
@@ -1365,7 +1394,20 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, for
                         ↺
                       </button>
                     )}
+                    {conflictos[pid]?.length > 0 && (
+                      <span title={conflictos[pid].map(c => `⚠ ${c.nombre}: faltan ${c.faltante} uds`).join("\n")}
+                        style={{ flexShrink:0, display:"flex", alignItems:"center", cursor:"help" }}>
+                        <AlertTriangle size={12} color="#dc2626"/>
+                      </span>
+                    )}
                   </div>
+                  {conflictos[pid]?.length > 0 && (
+                    <div style={{ fontSize:8.5, color:"#dc2626", fontWeight:700,
+                      overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
+                      background:"#fee2e2", borderRadius:3, padding:"0 3px" }}>
+                      ⚠ {conflictos[pid].map(c => `${c.nombre} -${c.faltante}`).join(", ")}
+                    </div>
+                  )}
                   <div style={{ fontSize:9.5, color:"var(--text-2)",
                     overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
                     {p.nombre || "—"}
