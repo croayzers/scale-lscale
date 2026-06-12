@@ -155,22 +155,14 @@ export default function App() {
     cargarMiembros(empresa.id).then(setMiembros);
   }, [empresa?.id, modo]);
 
+  // Prefs en modo supabase: ya se cargan en cargar() desde cargarDatos().
+  // En modo demo/local: cargamos desde localStorage.
   useEffect(() => {
-    if (!empresa?.id) return;
-    if (modo === "supabase") {
-      cargarPrefs(empresa.id).then(prefs => {
-        if (!prefs) return;
-        if (Array.isArray(prefs.almacenes) && prefs.almacenes.length) setAlmacenes(prefs.almacenes);
-        if (Array.isArray(prefs.vehiculos) && prefs.vehiculos.length) setVehiculosEmpresa(prefs.vehiculos);
-        if (Array.isArray(prefs.roles) && prefs.roles.length) setRolesImport(prefs.roles);
-        if (prefs.formatoFecha) setFormatoFecha(prefs.formatoFecha);
-      });
-    } else {
-      try { const v = JSON.parse(localStorage.getItem(`lscale.almacenes.${empresa.id}`)); if (Array.isArray(v) && v.length) setAlmacenes(v); } catch {}
-      try { const v = JSON.parse(localStorage.getItem(`lscale.vehiculos.${empresa.id}`)); if (Array.isArray(v) && v.length) setVehiculosEmpresa(v); } catch {}
-      try { const v = JSON.parse(localStorage.getItem(`lscale.roles.${empresa.id}`)); if (Array.isArray(v) && v.length) setRolesImport(v); } catch {}
-      try { const v = localStorage.getItem(`lscale.formatoFecha.${empresa.id}`); if (v) setFormatoFecha(v); } catch {}
-    }
+    if (!empresa?.id || modo === "supabase") return;
+    try { const v = JSON.parse(localStorage.getItem(`lscale.almacenes.${empresa.id}`)); if (Array.isArray(v) && v.length) setAlmacenes(v); } catch {}
+    try { const v = JSON.parse(localStorage.getItem(`lscale.vehiculos.${empresa.id}`)); if (Array.isArray(v) && v.length) setVehiculosEmpresa(v); } catch {}
+    try { const v = JSON.parse(localStorage.getItem(`lscale.roles.${empresa.id}`)); if (Array.isArray(v) && v.length) setRolesImport(v); } catch {}
+    try { const v = localStorage.getItem(`lscale.formatoFecha.${empresa.id}`); if (v) setFormatoFecha(v); } catch {}
   }, [empresa?.id, modo]);
 
   const guardarAlmacenes = async (list) => {
@@ -230,6 +222,13 @@ export default function App() {
     setPedidos(res.pedidos || []);
     setExpediciones(res.expediciones || []);
     setMyRol(res.rol ?? "owner");
+    // Aplicar prefs ya cargadas (evita segundo round-trip a Supabase)
+    if (res.prefs) {
+      if (Array.isArray(res.prefs.almacenes) && res.prefs.almacenes.length) setAlmacenes(res.prefs.almacenes);
+      if (Array.isArray(res.prefs.vehiculos) && res.prefs.vehiculos.length) setVehiculosEmpresa(res.prefs.vehiculos);
+      if (Array.isArray(res.prefs.roles)     && res.prefs.roles.length)     setRolesImport(res.prefs.roles);
+      if (res.prefs.formatoFecha) setFormatoFecha(res.prefs.formatoFecha);
+    }
     setCarga(false);
   }, []);
 

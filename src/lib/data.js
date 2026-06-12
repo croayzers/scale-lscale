@@ -222,7 +222,15 @@ export async function cargarDatos() {
     const tieneConfig = cfgs && cfgs.length > 0;
     if (!tieneConfig) return { modo: "sin_config", empresas, materiales: [], pedidos: [], expediciones: [], rol: myRol };
 
-    return { modo: "supabase", empresas, materiales, pedidos, expediciones, rol: myRol };
+    // Extraer prefs del registro de config ya cargado (evita un segundo round-trip)
+    const cfgRow = cfgBy[empresas[0]?.id];
+    const dj = cfgRow?.datos_json;
+    const cc = cfgRow?.col_config;
+    const prefs = (dj && Object.keys(dj).length ? dj : null)
+               ?? (cc && (cc.almacenes || cc.vehiculos || cc.roles) ? cc : null)
+               ?? dj ?? cc ?? {};
+
+    return { modo: "supabase", empresas, materiales, pedidos, expediciones, rol: myRol, prefs };
   } catch (e) {
     console.warn("[L-Scale] Error cargando de Supabase, uso demo:", e?.message);
     return { modo: "demo", empresas: [EMPRESA_DEMO], materiales: MATERIALES_DEMO, pedidos: [], expediciones: [] };
@@ -364,28 +372,41 @@ export async function crearConfigInicial(companyId) {
   return cfg;
 }
 
-// Carga preferencias de empresa desde datos_json (almacenes, vehículos, roles)
+// Carga preferencias de empresa.
+// Usa datos_json (schema nuevo) o col_config (schema original 01_lscale.sql).
 export async function cargarPrefs(companyId) {
   if (!supabaseConfigurado) return null;
   const { data, error } = await lsc().from("empresa_config")
-    .select("datos_json")
+    .select("*")
     .eq("company_id", companyId)
     .maybeSingle();
   if (error) { console.warn("[L-Scale] cargarPrefs error:", error.message); return null; }
-  return data?.datos_json || {};
+  if (!data) return {};
+  // datos_json es la columna actual; col_config era la del schema original
+  const dj = data.datos_json;
+  const cc = data.col_config;
+  if (dj && typeof dj === "object" && Object.keys(dj).length > 0) return dj;
+  if (cc && typeof cc === "object" && (cc.almacenes || cc.vehiculos || cc.roles)) return cc;
+  return dj ?? cc ?? {};
 }
 
-// Guarda un campo de preferencias en datos_json (merge parcial)
+// Guarda un campo de preferencias (merge parcial).
+// Detecta automáticamente si usar datos_json (nuevo) o col_config (viejo).
 export async function guardarPrefs(companyId, patch) {
   if (!supabaseConfigurado) return;
   const { data } = await lsc().from("empresa_config")
-    .select("datos_json")
+    .select("*")
     .eq("company_id", companyId)
     .maybeSingle();
-  const actual = data?.datos_json || {};
+  // Detectar qué columna tiene las prefs según el schema en producción
+  const usaDatosJson = !data || "datos_json" in data;
+  const actual = usaDatosJson
+    ? (data?.datos_json ?? {})
+    : (data?.col_config ?? {});
   const nuevo = { ...actual, ...patch };
+  const colPrefs = usaDatosJson ? "datos_json" : "col_config";
   const { error } = await lsc().from("empresa_config")
-    .upsert({ company_id: companyId, datos_json: nuevo }, { onConflict: "company_id" });
+    .upsert({ company_id: companyId, [colPrefs]: nuevo }, { onConflict: "company_id" });
   if (error) throw error;
 }
 
