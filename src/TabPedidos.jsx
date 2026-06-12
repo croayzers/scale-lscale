@@ -164,7 +164,7 @@ function MaterialesList({ grouped, updateMaterial, L }) {
    LISTA DE PEDIDOS
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - ListaPedidos
-function ListaPedidos({ pedidos, almacenes, vehiculosEmpresa, onSelect, onImport, formatoFecha = "DD/MM/YYYY", L }) {
+function ListaPedidos({ pedidos, almacenes, vehiculosEmpresa, onSelect, onImport, formatoFecha = "DD/MM/YYYY", highlightedPedidoId, L }) {
   const sorted = [...pedidos].sort((a, b) => {
     const fa = a.fecha_entrega || a.fecha_pedido || "";
     const fb = b.fecha_entrega || b.fecha_pedido || "";
@@ -205,10 +205,11 @@ function ListaPedidos({ pedidos, almacenes, vehiculosEmpresa, onSelect, onImport
             const almNombre = almacenes.find(a => a.id === p.almacen_id)?.nombre || p.almacen_nombre || "—";
             return (
               <div key={p.id} onClick={() => onSelect(p)}
+                className={highlightedPedidoId === p.id ? "pedido-rainbow" : ""}
                 style={{ display:"flex", alignItems:"center", gap:14, padding:"13px 20px",
                   borderBottom:`1px solid ${C.line}`, cursor:"pointer", transition:"background .1s" }}
-                onMouseEnter={e => e.currentTarget.style.background = C.s2}
-                onMouseLeave={e => e.currentTarget.style.background = ""}>
+                onMouseEnter={e => { if (highlightedPedidoId !== p.id) e.currentTarget.style.background = C.s2; }}
+                onMouseLeave={e => { if (highlightedPedidoId !== p.id) e.currentTarget.style.background = ""; }}>
                 <div style={{ width:36, height:36, borderRadius:10, background:C.brandSoft,
                   color:C.brand, display:"grid", placeItems:"center", flexShrink:0 }}>
                   <ClipboardList size={17}/>
@@ -1374,7 +1375,7 @@ function ModalNotificaciones({ pedido, companyId, onClose }) {
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - TabPedidos [export default]
-export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto }) {
+export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, highlightedPedidoId }) {
   const L = useL();
   const fileRef = useRef(null);
 
@@ -1647,6 +1648,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         onSelect={p => { setPedidoSel(p); onRegistrarVisto?.(p.id); }}
         onImport={triggerImport}
         formatoFecha={formatoFecha}
+        highlightedPedidoId={highlightedPedidoId}
         L={L}/>
 
       {errMsg && (

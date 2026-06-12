@@ -118,47 +118,125 @@ function ListView({ otros, allMessages, myId, onSelect }) {
   );
 }
 
+// Renderiza texto con @menciones y /CODIGO como chips interactivos
+function renderMsgText(text, miembros, onPedidoRef, esPropio) {
+  const regex = /@[\w.]+|\/[A-Z0-9][A-Z0-9-]*/g;
+  const parts = [];
+  let last = 0, m;
+  while ((m = regex.exec(text)) !== null) {
+    if (m.index > last) parts.push(text.slice(last, m.index));
+    const tok = m[0];
+    if (tok.startsWith('@')) {
+      const handle = tok.slice(1);
+      const member = miembros.find(mb => mb.email?.split('@')[0] === handle);
+      const color = member ? avatarColor(member.user_id) : '#6366f1';
+      parts.push(
+        <span key={m.index} style={{
+          background: esPropio ? 'rgba(255,255,255,0.22)' : color + '1a',
+          color: esPropio ? '#fff' : color,
+          borderRadius: 4, padding: '1px 5px', fontWeight: 700, fontSize: 12,
+        }}>{tok}</span>
+      );
+    } else {
+      const ref = tok.slice(1);
+      parts.push(
+        <span key={m.index}
+          onClick={e => { e.stopPropagation(); onPedidoRef?.(ref); }}
+          style={{
+            background: esPropio ? 'rgba(255,255,255,0.22)' : 'rgba(99,102,241,0.13)',
+            color: esPropio ? '#fff' : '#6366f1',
+            borderRadius: 4, padding: '1px 6px', fontWeight: 700, fontSize: 12,
+            cursor: 'pointer', textDecoration: 'underline dotted',
+          }}>{tok}</span>
+      );
+    }
+    last = m.index + tok.length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts.length ? parts : text;
+}
+
 // Vista: conversación con un miembro
-function ConvView({ partner, messages, myId, onBack, onSend }) {
+function ConvView({ partner, messages, myId, onBack, onSend, miembros, pedidos, onPedidoRef }) {
   const [texto, setTexto] = useState("");
   const [sending, setSending] = useState(false);
   const [sendErr, setSendErr] = useState(null);
+  const [ac, setAc]     = useState(null);  // { type, items, startIdx }
+  const [acIdx, setAcIdx] = useState(0);
   const endRef = useRef(null);
+  const taRef  = useRef(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages.length]);
 
+  const checkAc = (val, cursor) => {
+    const before = val.slice(0, cursor);
+    const mMention = before.match(/@([\w.]*)$/);
+    if (mMention) {
+      const q = mMention[1].toLowerCase();
+      const items = (miembros || []).filter(m =>
+        (m.email?.split('@')[0] || '').toLowerCase().includes(q) ||
+        (m.nombre || '').toLowerCase().includes(q)
+      ).slice(0, 5);
+      if (items.length) { setAc({ type: 'mention', items, startIdx: cursor - mMention[0].length }); setAcIdx(0); return; }
+    }
+    const mPed = before.match(/\/([\w-]*)$/);
+    if (mPed && pedidos?.length) {
+      const q = mPed[1].toUpperCase();
+      const items = pedidos.filter(p => {
+        const cod = (p.codigo || p.referencia || '').toUpperCase();
+        return q ? cod.startsWith(q) : !!cod;
+      }).slice(0, 5);
+      if (items.length) { setAc({ type: 'pedido', items, startIdx: cursor - mPed[0].length }); setAcIdx(0); return; }
+    }
+    setAc(null);
+  };
+
+  const handleChange = (e) => { setTexto(e.target.value); checkAc(e.target.value, e.target.selectionStart); };
+
+  const applyAc = (item) => {
+    const cursor = taRef.current?.selectionStart ?? texto.length;
+    const insert = ac.type === 'mention'
+      ? `@${item.email?.split('@')[0] || item.nombre} `
+      : `/${item.codigo || item.referencia} `;
+    const newText = texto.slice(0, ac.startIdx) + insert + texto.slice(cursor);
+    setTexto(newText);
+    setAc(null);
+    setTimeout(() => {
+      const ta = taRef.current;
+      if (ta) { ta.focus(); const p = ac.startIdx + insert.length; ta.setSelectionRange(p, p); }
+    }, 0);
+  };
+
+  const onKey = (e) => {
+    if (ac) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); setAcIdx(i => Math.min(i + 1, ac.items.length - 1)); return; }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); setAcIdx(i => Math.max(i - 1, 0)); return; }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); applyAc(ac.items[acIdx]); return; }
+      if (e.key === 'Escape') { setAc(null); return; }
+    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); }
+  };
+
   const enviar = async (e) => {
     e?.preventDefault();
     const msg = texto.trim();
     if (!msg || sending) return;
-    setTexto("");
-    setSendErr(null);
-    setSending(true);
+    setTexto(""); setSendErr(null); setAc(null); setSending(true);
     try { await onSend(msg); }
-    catch (err) {
-      console.error("[chat] enviar error:", err);
-      setTexto(msg);
-      setSendErr(err?.message || "Error al enviar");
-    }
+    catch (err) { console.error("[chat] enviar error:", err); setTexto(msg); setSendErr(err?.message || "Error al enviar"); }
     finally { setSending(false); }
   };
 
-  const onKey = (e) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); }
-  };
-
   function groupDate(iso) {
-    const d = new Date(iso);
-    const hoy = new Date();
+    const d = new Date(iso), hoy = new Date();
     if (d.toDateString() === hoy.toDateString()) return "Hoy";
     const ayer = new Date(hoy); ayer.setDate(hoy.getDate() - 1);
     if (d.toDateString() === ayer.toDateString()) return "Ayer";
     return d.toLocaleDateString("es-ES", { day: "numeric", month: "short" });
   }
 
-  // Group messages by date
   const groups = [];
   let lastDate = null;
   for (const msg of messages) {
@@ -170,23 +248,16 @@ function ConvView({ partner, messages, myId, onBack, onSend }) {
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
       {/* Mini header */}
-      <div style={{
-        display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
-        borderBottom: `1px solid ${C.line}`, flexShrink: 0,
-      }}>
-        <button onClick={onBack}
-          style={{ background: "none", border: "none", cursor: "pointer", color: C.sub, padding: 4, display: "flex", borderRadius: 6 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: `1px solid ${C.line}`, flexShrink: 0 }}>
+        <button onClick={onBack} style={{ background: "none", border: "none", cursor: "pointer", color: C.sub, padding: 4, display: "flex", borderRadius: 6 }}>
           <ArrowLeft size={16} />
         </button>
         <Avatar member={partner} size={28} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 600, color: C.ink,
-            overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div style={{ fontSize: 13.5, fontWeight: 600, color: C.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {partner.nombre || partner.email || "Usuario"}
           </div>
-          {partner.rol && (
-            <div style={{ fontSize: 11, color: C.sub, textTransform: "capitalize" }}>{partner.rol}</div>
-          )}
+          {partner.rol && <div style={{ fontSize: 11, color: C.sub, textTransform: "capitalize" }}>{partner.rol}</div>}
         </div>
       </div>
 
@@ -199,29 +270,20 @@ function ConvView({ partner, messages, myId, onBack, onSend }) {
         )}
         {groups.map((g, i) => {
           if (g.type === "date") return (
-            <div key={`d-${i}`} style={{ textAlign: "center", fontSize: 11, color: C.sub, margin: "8px 0 4px", letterSpacing: 0.3 }}>
-              {g.label}
-            </div>
+            <div key={`d-${i}`} style={{ textAlign: "center", fontSize: 11, color: C.sub, margin: "8px 0 4px", letterSpacing: 0.3 }}>{g.label}</div>
           );
           const { msg } = g;
           const esPropio = msg.from_user_id === myId;
           return (
-            <div key={msg.id} style={{ display: "flex", flexDirection: esPropio ? "row-reverse" : "row", alignItems: "flex-end", gap: 6 }}>
+            <div key={msg.id || i} style={{ display: "flex", flexDirection: esPropio ? "row-reverse" : "row", alignItems: "flex-end", gap: 6 }}>
               {!esPropio && <Avatar member={partner} size={22} />}
-              <div style={{
-                maxWidth: "72%", padding: "7px 11px", borderRadius: esPropio ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
-                background: esPropio ? C.brand : C.s2,
-                color: esPropio ? "#fff" : C.ink,
-                fontSize: 13, lineHeight: 1.45, wordBreak: "break-word",
-              }}>
-                {msg.message}
+              <div style={{ maxWidth: "72%", padding: "7px 11px", borderRadius: esPropio ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
+                background: esPropio ? C.brand : C.s2, color: esPropio ? "#fff" : C.ink,
+                fontSize: 13, lineHeight: 1.45, wordBreak: "break-word" }}>
+                <span>{renderMsgText(msg.message, miembros, onPedidoRef, esPropio)}</span>
                 <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 3, marginTop: 2 }}>
                   <span style={{ fontSize: 10, opacity: 0.7 }}>{formatHora(msg.created_at)}</span>
-                  {esPropio && (
-                    msg.is_read
-                      ? <CheckCheck size={11} style={{ opacity: 0.85 }} />
-                      : <Check size={11} style={{ opacity: 0.6 }} />
-                  )}
+                  {esPropio && (msg.is_read ? <CheckCheck size={11} style={{ opacity: 0.85 }} /> : <Check size={11} style={{ opacity: 0.6 }} />)}
                 </div>
               </div>
             </div>
@@ -229,6 +291,42 @@ function ConvView({ partner, messages, myId, onBack, onSend }) {
         })}
         <div ref={endRef} />
       </div>
+
+      {/* Autocomplete popup */}
+      {ac && (
+        <div style={{ borderTop: `1px solid ${C.line}`, background: C.surface, flexShrink: 0, maxHeight: 160, overflowY: "auto" }}>
+          <div style={{ padding: "4px 10px 2px", fontSize: 10.5, fontWeight: 700, color: C.sub, letterSpacing: 0.5 }}>
+            {ac.type === 'mention' ? '@ Mencionar usuario' : '/ Referencia pedido'}
+          </div>
+          {ac.items.map((item, idx) => (
+            <button key={idx} onMouseDown={e => { e.preventDefault(); applyAc(item); }}
+              style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "7px 12px",
+                border: "none", background: idx === acIdx ? C.brandSoft : "none", cursor: "pointer",
+                fontFamily: "inherit", textAlign: "left" }}>
+              {ac.type === 'mention' ? (
+                <>
+                  <Avatar member={item} size={22} />
+                  <div>
+                    <div style={{ fontSize: 12.5, fontWeight: 600, color: C.ink }}>{item.nombre || item.email}</div>
+                    <div style={{ fontSize: 11, color: C.sub }}>@{item.email?.split('@')[0]}</div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ width: 22, height: 22, borderRadius: 6, background: 'rgba(99,102,241,0.12)', color: '#6366f1',
+                    display: 'grid', placeItems: 'center', fontSize: 10, fontWeight: 800, flexShrink: 0 }}>OA</div>
+                  <div>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: '#6366f1' }}>{item.codigo || item.referencia}</div>
+                    <div style={{ fontSize: 11, color: C.sub, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 220 }}>
+                      {item.nombre || item.destino || '—'}
+                    </div>
+                  </div>
+                </>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Error envío */}
       {sendErr && (
@@ -238,28 +336,20 @@ function ConvView({ partner, messages, myId, onBack, onSend }) {
       )}
 
       {/* Input */}
-      <form onSubmit={enviar} style={{
-        display: "flex", gap: 8, padding: "10px 12px",
-        borderTop: `1px solid ${C.line}`, flexShrink: 0,
-      }}>
-        <textarea
-          value={texto} onChange={e => setTexto(e.target.value)} onKeyDown={onKey}
-          placeholder="Escribe un mensaje..."
-          rows={1}
-          style={{
-            flex: 1, padding: "8px 11px", borderRadius: 10,
-            border: `1px solid ${C.strong}`, resize: "none", outline: "none",
-            fontFamily: "inherit", fontSize: 13, background: C.s2, color: C.ink,
-            lineHeight: 1.4, maxHeight: 80, overflowY: "auto",
-          }}
-        />
+      <form onSubmit={enviar} style={{ display: "flex", gap: 8, padding: "10px 12px", borderTop: `1px solid ${C.line}`, flexShrink: 0 }}>
+        <div style={{ flex: 1, position: "relative" }}>
+          <textarea ref={taRef} value={texto} onChange={handleChange} onKeyDown={onKey}
+            placeholder="Escribe… @ para mencionar, / para pedido"
+            rows={1}
+            style={{ width: "100%", padding: "8px 11px", borderRadius: 10, border: `1px solid ${C.strong}`,
+              resize: "none", outline: "none", fontFamily: "inherit", fontSize: 13,
+              background: C.s2, color: C.ink, lineHeight: 1.4, maxHeight: 80, overflowY: "auto", boxSizing: "border-box" }}
+          />
+        </div>
         <button type="submit" disabled={!texto.trim() || sending}
-          style={{
-            background: texto.trim() && !sending ? C.brand : C.strong,
-            color: "#fff", border: "none", borderRadius: 10, padding: "0 13px",
-            cursor: texto.trim() && !sending ? "pointer" : "not-allowed", display: "flex", alignItems: "center",
-            transition: "background .15s", flexShrink: 0,
-          }}>
+          style={{ background: texto.trim() && !sending ? C.brand : C.strong, color: "#fff", border: "none",
+            borderRadius: 10, padding: "0 13px", cursor: texto.trim() && !sending ? "pointer" : "not-allowed",
+            display: "flex", alignItems: "center", transition: "background .15s", flexShrink: 0 }}>
           <Send size={15} />
         </button>
       </form>
@@ -276,7 +366,7 @@ function formatHora(iso) {
 // ─── ChatFloat ─────────────────────────────────────────────────────────────
 // Componente principal: panel flotante de chat + gestión de estado
 // Exporta también la campana de notificaciones via ref
-const ChatFloat = forwardRef(function ChatFloat({ empresa, miembros = [], currentUser, onUnreadChange }, ref) {
+const ChatFloat = forwardRef(function ChatFloat({ empresa, miembros = [], currentUser, onUnreadChange, pedidos = [], onPedidoRef }, ref) {
   const [open, setOpen]           = useState(false);
   const [view, setView]           = useState("list");
   const [partner, setPartner]     = useState(null);
@@ -335,9 +425,21 @@ const ChatFloat = forwardRef(function ChatFloat({ empresa, miembros = [], curren
   useEffect(() => { onUnreadChange?.(totalUnread); }, [totalUnread]);
 
   const handleSend = async (msg) => {
+    // Envío principal al interlocutor
     const sent = await enviarMensaje(companyId, myId, partner.user_id, msg);
-    // El canal Realtime lo captura, pero añadimos optimista para velocidad
     setAllMessages(prev => [...prev, { ...sent, is_read: false }]);
+
+    // Fanout a usuarios @mencionados (si no son el interlocutor ya)
+    const handles = [...msg.matchAll(/@([\w.]+)/g)].map(m => m[1].toLowerCase());
+    if (handles.length) {
+      for (const mb of otros) {
+        if (mb.user_id === partner.user_id) continue;
+        const handle = mb.email?.split('@')[0]?.toLowerCase();
+        if (handle && handles.includes(handle)) {
+          await enviarMensaje(companyId, myId, mb.user_id, msg);
+        }
+      }
+    }
   };
 
   const handleSelect = (member) => {
@@ -395,6 +497,9 @@ const ChatFloat = forwardRef(function ChatFloat({ empresa, miembros = [], curren
               myId={myId}
               onBack={handleBack}
               onSend={handleSend}
+              miembros={otros}
+              pedidos={pedidos}
+              onPedidoRef={onPedidoRef}
             />
           )}
         </div>

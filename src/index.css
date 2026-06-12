@@ -75,3 +75,20 @@ button { font-family: inherit; cursor: pointer; }
 
 @keyframes spin { to { transform: rotate(360deg); } }
 .spin { animation: spin 0.9s linear infinite; }
+
+@keyframes rainbow-border {
+  0%   { border-color: #ff3b30; box-shadow: 0 0 0 2px #ff3b3040; }
+  17%  { border-color: #ff9500; box-shadow: 0 0 0 2px #ff950040; }
+  33%  { border-color: #ffcc00; box-shadow: 0 0 0 2px #ffcc0040; }
+  50%  { border-color: #34c759; box-shadow: 0 0 0 2px #34c75940; }
+  67%  { border-color: #007aff; box-shadow: 0 0 0 2px #007aff40; }
+  83%  { border-color: #af52de; box-shadow: 0 0 0 2px #af52de40; }
+  100% { border-color: #ff3b30; box-shadow: 0 0 0 2px #ff3b3040; }
+}
+.pedido-rainbow {
+  animation: rainbow-border 1.4s linear infinite !important;
+  border: 2.5px solid #ff3b30 !important;
+  border-radius: 10px !important;
+  z-index: 1;
+  position: relative;
+}

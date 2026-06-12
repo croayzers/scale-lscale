@@ -129,7 +129,17 @@ export default function App() {
   const [formatoFecha,      setFormatoFecha]      = useState("DD/MM/YYYY");
   const [miembros,          setMiembros]          = useState([]);
   const [chatUnread,        setChatUnread]        = useState(0);
+  const [highlightedPedido, setHighlightedPedido] = useState(null);
   const chatRef = useRef();
+
+  const handlePedidoRef = useCallback((codigo) => {
+    const p = pedidos.find(p => (p.codigo || p.referencia || "").toUpperCase() === codigo.toUpperCase());
+    setTab("pedido");
+    if (p) {
+      setHighlightedPedido(p.id);
+      setTimeout(() => setHighlightedPedido(null), 6000);
+    }
+  }, [pedidos]);
 
   const tramosIniciales = useMemo(() => {
     const r = {};
@@ -323,7 +333,7 @@ export default function App() {
         {/* Contenido */}
         <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column", minHeight:0 }}>
           {tab === "almacen"  && <TabAlmacen  materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} L={L}/>}
-          {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} rolesImport={rolesImport} formatoFecha={formatoFecha} sesion={sesion}
+          {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} rolesImport={rolesImport} formatoFecha={formatoFecha} sesion={sesion} highlightedPedidoId={highlightedPedido}
             onRegistrarVisto={async (pid) => {
               if (modo === "supabase" && sesion?.user) {
                 const nombre = sesion.user.email.split("@")[0].split(".")[0];
@@ -347,6 +357,8 @@ export default function App() {
             miembros={miembros}
             currentUser={sesion.user}
             onUnreadChange={setChatUnread}
+            pedidos={pedidos}
+            onPedidoRef={handlePedidoRef}
           />
         )}
       </div>
