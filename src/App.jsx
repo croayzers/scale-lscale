@@ -21,8 +21,9 @@ import TabPlanning from "./TabPlanning.jsx";
 import TabRetorno from "./TabRetorno.jsx";
 import TabConfig from "./TabConfig.jsx";
 import TabInventario from "./TabInventario.jsx";
+import TabSimulacro from "./TabSimulacro.jsx";
 import ChatFloat from "./ChatFloat.jsx";
-import { Package, Shield, ClipboardCheck } from "lucide-react";
+import { Package, Shield, ClipboardCheck, FlaskConical } from "lucide-react";
 import { ToastContainer, PanelAlertasStock, crearNotificacion } from "./StockNotificaciones.jsx";
 
 // MARK: - Constantes (ROLES_DEFECTO, DEFAULT_VEHICULOS_EMPRESA, TABS)
@@ -51,6 +52,7 @@ const TABS = [
   { id: "pedido",     label: "Pedidos",         Icon: ClipboardList  },
   { id: "planning",   label: "Planning",        Icon: CalendarDays   },
   { id: "retorno",    label: "Retorno/Cierre",  Icon: RotateCcw      },
+  { id: "simulacro",  label: "Simulacro",       Icon: FlaskConical   },
   { id: "config",     label: "Config",          Icon: Settings       },
 ];
 
@@ -432,6 +434,7 @@ export default function App() {
             materiales={materiales} setMateriales={setMateriales} modo={modo} empresa={empresa}
             onNotificarStock={notificarStock}
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} L={L}/>}
+          {tab === "simulacro" && <TabSimulacro pedidos={pedidos} materiales={materiales} setPedidos={setPedidos} setMateriales={setMateriales} L={L}/>}
           {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={myRol === "owner" || myRol === "admin"} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} L={L}/>}
         </div>
 
