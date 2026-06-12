@@ -105,7 +105,8 @@ function calcularTramos(pedido, vehiculoId, offsetH, offsetVuelta) {
 // MARK: - TramoBar
 function TramoBar({ tramo, isDragging, isGroupDrag, vehColor, onMD, onResizeMD }) {
   const cfg   = TIPOS[tramo.tipo] || {};
-  const vc    = vehColor || cfg.color;
+  const tc    = cfg.color;               // color del tipo (franja superior)
+  const vc    = vehColor || cfg.color;   // color del vehículo (fondo + texto)
   const left  = hToX(tramo.hora_inicio);
   const width = Math.max((tramo.hora_fin - tramo.hora_inicio) * W_PX, 6);
   const wide  = width >= 56;
@@ -115,7 +116,7 @@ function TramoBar({ tramo, isDragging, isGroupDrag, vehColor, onMD, onResizeMD }
       style={{ position:"absolute", top:6, height:ROW_H - 12,
         left, width, boxSizing:"border-box",
         borderRadius:6, background:`${vc}28`,
-        border:`1.5px solid ${vc}88`, borderTop:`4px solid ${vc}`,
+        border:`1.5px solid ${vc}66`, borderTop:`4px solid ${tc}`,
         opacity: isGroupDrag ? 0.55 : isDragging ? 0.85 : 1,
         cursor:"grab", userSelect:"none", zIndex: isDragging ? 20 : 4,
         boxShadow: isDragging ? `0 2px 12px ${vc}44` : "none",
@@ -123,11 +124,11 @@ function TramoBar({ tramo, isDragging, isGroupDrag, vehColor, onMD, onResizeMD }
       <div style={{ padding:"2px 4px", height:"100%", display:"flex",
         flexDirection:"column", justifyContent:"center" }}>
         {wide && <>
-          <div style={{ fontSize:9, fontWeight:800, color:vc, letterSpacing:.2,
+          <div style={{ fontSize:9, fontWeight:800, color:tc, letterSpacing:.2,
             overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
             {cfg.short || cfg.label}
           </div>
-          <div style={{ fontSize:8, color:vc, opacity:.7, whiteSpace:"nowrap" }}>
+          <div style={{ fontSize:8, color:vc, opacity:.8, whiteSpace:"nowrap" }}>
             {toHM(tramo.hora_inicio)}–{toHM(tramo.hora_fin)}
           </div>
         </>}
