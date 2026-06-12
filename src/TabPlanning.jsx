@@ -149,9 +149,9 @@ function PedidoRow({ pedido, tramos, offsetH, vehById, vehiculosEmpresa,
   const horaIda    = dec2hm(pedido.hora_ida);
   const horaVuelta = dec2hm(pedido.hora_vuelta);
   const vehSel     = vehById[String(pedido.vehiculo_id)] || null;
-  const CHIP = { confirmado:"#16a34a", borrador:"#94a3b8", planificado:"#2563eb",
-                 en_ruta:"#d97706", entregado:"#16a34a", cancelado:"#dc2626" };
-  const chipColor = CHIP[pedido.estado] || CHIP.borrador;
+  const CHIP = { reservado:"#94a3b8", confirmado:"#16a34a", retorno:"#d97706",
+                 finalizado:"#2563eb", cancelado:"#dc2626" };
+  const chipColor = CHIP[pedido.estado] || CHIP.reservado;
   const offsetV = vueltaCanvas(pedido, anchorIso);
   const vueltaDiasExtra = (offsetV - offsetH) / 24; // 0=mismo día, 1=+1 día, etc.
 
@@ -208,7 +208,7 @@ function PedidoRow({ pedido, tramos, offsetH, vehById, vehiculosEmpresa,
               fontFamily:"inherit", cursor:"pointer", outline:"none", maxWidth:100 }}>
             <option value="">{L("Sin vehículo","No vehicle")}</option>
             {(vehiculosEmpresa || []).map(v => (
-              <option key={v.id} value={String(v.id)}>{v.matricula || v.nombre}</option>
+              <option key={v.id} value={String(v.id)}>{v.nombre || v.matricula}</option>
             ))}
           </select>
         </div>
@@ -305,7 +305,7 @@ function PedidoEditModal({ pedido, onSave, onClose, vehiculosEmpresa = [], L }) 
       </select>
     </div>
   );
-  const ESTADOS = ["borrador","confirmado","planificado","en_ruta","entregado","cancelado"];
+  const ESTADOS = ["reservado","confirmado","retorno","finalizado","cancelado"];
   const vehSel = vehiculosEmpresa.find(v => String(v.id) === String(form.vehiculo_id));
   return (
     <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)", zIndex:1000,
@@ -384,7 +384,7 @@ function TramoModal({ tramo, veh, pedidoLabel, isNew, onSave, onDelete, onClose,
               {isNew ? L("Nuevo tramo","New segment") : L("Editar tramo","Edit segment")}
             </div>
             <div style={{ fontSize:11.5, color:"var(--text-2)" }}>
-              {vehSel?.matricula || vehSel?.nombre || "—"} · {pedidoLabel}
+              {vehSel?.nombre || vehSel?.matricula || "—"} · {pedidoLabel}
             </div>
           </div>
           <button onClick={onClose}
@@ -408,7 +408,7 @@ function TramoModal({ tramo, veh, pedidoLabel, isNew, onSave, onDelete, onClose,
                       border:`1.5px solid ${sel ? v.color : "var(--border)"}`,
                       background: sel ? `${v.color}22` : "var(--surface-2)",
                       color: sel ? v.color : "var(--text-2)" }}>
-                    {v.matricula || v.nombre}
+                    {v.nombre || v.matricula}
                   </button>
                 );
               })}
@@ -532,8 +532,8 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
   const totalW    = 24 * W_PX_S;
   const ticksH    = Array.from({length:25},(_,i)=>i);
 
-  const CHIP = { confirmado:"#16a34a", borrador:"#94a3b8", planificado:"#2563eb",
-                 en_ruta:"#d97706", entregado:"#16a34a", cancelado:"#dc2626" };
+  const CHIP = { reservado:"#94a3b8", confirmado:"#16a34a", retorno:"#d97706",
+                 finalizado:"#2563eb", cancelado:"#dc2626" };
 
   const pedidosDia = iso =>
     (pedidos||[])
@@ -602,7 +602,7 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
               const hi  = p ? dec2hm(p.hora_ida)    : null;
               const hv  = p ? dec2hm(p.hora_vuelta) : null;
               const veh = p ? (vehById[String(p.vehiculo_id)] || null) : null;
-              const cc  = p ? (CHIP[p.estado] || CHIP.borrador) : "#ccc";
+              const cc  = p ? (CHIP[p.estado] || CHIP.reservado) : "#ccc";
               const esUltimoDia = idx === filas.length-1 || filas[idx+1]?.iso !== iso;
               const d   = new Date(iso + "T00:00:00");
               const dow = d.getDay();
@@ -711,7 +711,7 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
                         {veh && (
                           <span style={{ fontSize:8.5, fontWeight:700, color:veh.color,
                             background:`${veh.color}15`, borderRadius:4, padding:"0 4px", alignSelf:"flex-start" }}>
-                            {veh.matricula || veh.nombre}
+                            {veh.nombre || veh.matricula}
                           </span>
                         )}
                       </div>
@@ -755,8 +755,8 @@ function VistaMes({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha, on
   const semanas = [];
   for (let i=0; i < dias.length; i+=7) semanas.push(dias.slice(i,i+7));
 
-  const CHIP = { confirmado:"#16a34a", borrador:"#94a3b8", planificado:"#2563eb",
-                 en_ruta:"#d97706", entregado:"#16a34a", cancelado:"#dc2626" };
+  const CHIP = { reservado:"#94a3b8", confirmado:"#16a34a", retorno:"#d97706",
+                 finalizado:"#2563eb", cancelado:"#dc2626" };
 
   return (
     <div style={{ flex:1, overflowY:"auto", minHeight:0 }}>
@@ -792,7 +792,7 @@ function VistaMes({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha, on
                 </div>
                 {psDia.slice(0,3).map(p => {
                   const veh = vehById[String(p.vehiculo_id)] || null;
-                  const cc  = CHIP[p.estado] || CHIP.borrador;
+                  const cc  = CHIP[p.estado] || CHIP.reservado;
                   return (
                     <div key={p.id}
                       onClick={e => { e.stopPropagation(); onEditPedido(p); }}
@@ -1253,9 +1253,9 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, for
               const pid        = String(p.id);
               const isOverride = !!tramosOverride[pid];
               const vehSel     = vehById[String(p.vehiculo_id)] || null;
-              const CHIP = { confirmado:"#16a34a", borrador:"#94a3b8", planificado:"#2563eb",
-                             en_ruta:"#d97706", entregado:"#16a34a", cancelado:"#dc2626" };
-              const chipColor = CHIP[p.estado] || CHIP.borrador;
+              const CHIP = { reservado:"#94a3b8", confirmado:"#16a34a", retorno:"#d97706",
+                             finalizado:"#2563eb", cancelado:"#dc2626" };
+              const chipColor = CHIP[p.estado] || CHIP.reservado;
               const horaIda    = dec2hm(p.hora_ida);
               const horaVuelta = dec2hm(p.hora_vuelta);
               const labelOffV  = vueltaCanvas(p, anchorIso);
@@ -1315,7 +1315,7 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, for
                         fontFamily:"inherit", cursor:"pointer", outline:"none", maxWidth:90 }}>
                       <option value="">{L("Sin vehículo","No vehicle")}</option>
                       {(vehiculosEmpresa || []).map(v => (
-                        <option key={v.id} value={String(v.id)}>{v.matricula || v.nombre}</option>
+                        <option key={v.id} value={String(v.id)}>{v.nombre || v.matricula}</option>
                       ))}
                     </select>
                   </div>

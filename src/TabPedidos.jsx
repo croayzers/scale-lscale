@@ -34,14 +34,14 @@ const C = {
 };
 
 const CHIP_ESTADO = {
-  borrador:    { bg:C.s2,          ink:C.sub   },
-  confirmado:  { bg:"var(--ok-soft)",     ink:"var(--ok)"     },
-  planificado: { bg:"var(--brand-soft)",  ink:"var(--brand)"  },
-  en_ruta:     { bg:"var(--warn-soft)",   ink:"var(--warn)"   },
-  entregado:   { bg:"var(--ok-soft)",     ink:"var(--ok)"     },
-  cancelado:   { bg:"var(--danger-soft)", ink:"var(--danger)" },
+  reservado:   { bg:"var(--surface-2)",    ink:"var(--text-2)"  },
+  confirmado:  { bg:"var(--ok-soft)",      ink:"var(--ok)"      },
+  retorno:     { bg:"var(--warn-soft)",    ink:"var(--warn)"    },
+  finalizado:  { bg:"var(--brand-soft)",   ink:"var(--brand)"   },
+  cancelado:   { bg:"var(--danger-soft)",  ink:"var(--danger)"  },
 };
-const ESTADOS = ["borrador","confirmado","planificado","en_ruta","entregado","cancelado"];
+const ESTADOS = ["reservado","confirmado","retorno","finalizado","cancelado"];
+const ESTADO_SEQ = ["reservado","confirmado","retorno","finalizado"];
 
 // MARK: - Btn / Field
 /* ─── Helpers ─────────────────────────────────────────────────────────────── */
@@ -201,7 +201,7 @@ function ListaPedidos({ pedidos, almacenes, vehiculosEmpresa, onSelect, onImport
           </div>
         ) : (
           sorted.map(p => {
-            const chip = CHIP_ESTADO[p.estado] || CHIP_ESTADO.borrador;
+            const chip = CHIP_ESTADO[p.estado] || CHIP_ESTADO.reservado;
             const almNombre = almacenes.find(a => a.id === p.almacen_id)?.nombre || p.almacen_nombre || "—";
             return (
               <div key={p.id} onClick={() => onSelect(p)}
@@ -235,7 +235,7 @@ function ListaPedidos({ pedidos, almacenes, vehiculosEmpresa, onSelect, onImport
                       return v ? (
                         <span style={{ display:"inline-flex", alignItems:"center", gap:4 }}>
                           <span style={{ width:7, height:7, borderRadius:999, background:v.color, display:"inline-block" }}/>
-                          {v.matricula || v.nombre}
+                          {v.nombre || v.matricula}
                         </span>
                       ) : null;
                     })()}
@@ -785,7 +785,7 @@ function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato
    DETALLE / EDICIÓN DE PEDIDO
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - DetallePedido
-function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, rolesImport, empresaId, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, L }) {
+function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, rolesImport, empresaId, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, L }) {
   const [exportModal, setExportModal] = useState(null); // null | "pdf" | "excel"
   const [p, setP] = useState({ ...pedido });
   const [editando, setEditando] = useState(false);
@@ -874,7 +874,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
     setAddLinea(null);
   };
 
-  const chip = CHIP_ESTADO[p.estado] || CHIP_ESTADO.borrador;
+  const chip = CHIP_ESTADO[p.estado] || CHIP_ESTADO.reservado;
 
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"100%", minHeight:0 }}>
@@ -913,7 +913,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
               <option value="">{L("Sin vehículo","No vehicle")}</option>
               {vehiculosEmpresa.map(v => (
                 <option key={v.id} value={String(v.id)}>
-                  {v.matricula || v.nombre || `VEH-${v.id}`}
+                  {v.nombre || v.matricula || `VEH-${v.id}`}
                 </option>
               ))}
             </select>
@@ -944,8 +944,8 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
             </Btn>
           </>
         )}
-        {p.estado !== "planificado" && p.estado !== "en_ruta" && p.estado !== "entregado" && (
-          <Btn onClick={() => onSave({ ...p, estado: "planificado" })} color={C.brand} style={{ padding:"6px 14px", fontSize:13 }}>
+        {p.estado !== "finalizado" && p.estado !== "cancelado" && (
+          <Btn onClick={() => onPlanning?.(p)} color={C.brand} style={{ padding:"6px 14px", fontSize:13 }}>
             <ArrowRight size={13}/>{L("Pasar a Planning","Send to Planning")}
           </Btn>
         )}
@@ -960,13 +960,23 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
           <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
             <Field label="CÓDIGO"      value={p.codigo}       onChange={f("codigo")}/>
             <Field label="REFERENCIA"  value={p.referencia}   onChange={f("referencia")}/>
-            <div>
-              <label style={{ fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.5, display:"block", marginBottom:4 }}>ESTADO</label>
-              <select value={p.estado || "borrador"} onChange={e => f("estado")(e.target.value)}
-                style={{ width:"100%", padding:"8px 10px", border:`1px solid ${C.strong}`, borderRadius:9,
-                  fontSize:13.5, fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none" }}>
-                {ESTADOS.map(s => <option key={s} value={s}>{s}</option>)}
-              </select>
+            <div style={{ gridColumn:"1 / -1" }}>
+              <label style={{ fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.5, display:"block", marginBottom:6 }}>ESTADO</label>
+              <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                {ESTADOS.map(s => {
+                  const cfg = CHIP_ESTADO[s] || CHIP_ESTADO.reservado;
+                  const sel = (p.estado || "reservado") === s;
+                  return (
+                    <button key={s} onClick={() => f("estado")(s)}
+                      style={{ padding:"5px 14px", borderRadius:999, border: sel ? `2px solid ${cfg.ink}` : `2px solid transparent`,
+                        background: sel ? cfg.bg : C.s2, color: sel ? cfg.ink : C.sub,
+                        fontWeight: sel ? 700 : 500, fontSize:12.5, cursor:"pointer", fontFamily:"inherit",
+                        textTransform:"capitalize" }}>
+                      {s}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
             <Field label="CLIENTE / NOMBRE" value={p.nombre}         onChange={f("nombre")} span/>
             <Field label="DESTINO"           value={p.destino}        onChange={f("destino")}/>
@@ -981,9 +991,29 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
               {p.codigo && <span style={{ fontSize:16, fontWeight:800, color:C.brand }}>{p.codigo}</span>}
               {p.referencia && <span style={{ fontSize:12.5, color:C.sub }}>{p.referencia}</span>}
               {p.nombre && <span style={{ fontSize:14.5, fontWeight:600, color:C.ink }}>{p.nombre}</span>}
-              <span style={{ fontSize:11, padding:"2px 8px", borderRadius:999, background:chip.bg, color:chip.ink, fontWeight:600 }}>
-                {p.estado}
-              </span>
+            </div>
+            {/* Estado chips — clicables para cambio rápido */}
+            <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginTop:8 }}>
+              {ESTADO_SEQ.map(s => {
+                const cfg = CHIP_ESTADO[s];
+                const sel = (p.estado || "reservado") === s;
+                return (
+                  <button key={s} onClick={() => { const next = { ...p, estado: s }; setP(next); onSave(next); }}
+                    style={{ padding:"4px 12px", borderRadius:999,
+                      border: sel ? `2px solid ${cfg.ink}` : `1.5px solid ${C.line}`,
+                      background: sel ? cfg.bg : C.s2, color: sel ? cfg.ink : C.sub,
+                      fontWeight: sel ? 700 : 500, fontSize:11.5, cursor:"pointer", fontFamily:"inherit",
+                      textTransform:"capitalize" }}>
+                    {s}
+                  </button>
+                );
+              })}
+              {/* cancelado se muestra solo si está en ese estado */}
+              {p.estado === "cancelado" && (
+                <span style={{ padding:"4px 12px", borderRadius:999, border:`2px solid ${CHIP_ESTADO.cancelado.ink}`,
+                  background:CHIP_ESTADO.cancelado.bg, color:CHIP_ESTADO.cancelado.ink,
+                  fontWeight:700, fontSize:11.5, textTransform:"capitalize" }}>cancelado</span>
+              )}
             </div>
             <div style={{ display:"flex", gap:16, flexWrap:"wrap", marginTop:6, fontSize:12.5, color:C.sub }}>
               {p.destino   && <span>📍 {p.destino}</span>}
@@ -998,7 +1028,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                 return v ? (
                   <span style={{ display:"inline-flex", alignItems:"center", gap:5 }}>
                     <span style={{ width:8, height:8, borderRadius:999, background:v.color, display:"inline-block" }}/>
-                    <strong style={{ color:C.ink }}>{v.matricula || v.nombre}</strong>
+                    <strong style={{ color:C.ink }}>{v.nombre || v.matricula}</strong>
                   </span>
                 ) : null;
               })()}
@@ -1408,7 +1438,7 @@ function ModalNotificaciones({ pedido, companyId, onClose }) {
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - TabPedidos [export default]
-export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, highlightedPedidoId, highlightedCategoria }) {
+export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, highlightedPedidoId, highlightedCategoria }) {
   const L = useL();
   const fileRef = useRef(null);
 
@@ -1576,7 +1606,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
       fecha_retorno:  normFecha(expForm.fecha_retorno),
       almacen_id:     parsed.almacen.id,
       almacen_nombre: parsed.almacen.nombre,
-      estado:         "confirmado",
+      estado:         "reservado",
       fecha_pedido:   new Date().toISOString().slice(0, 10),
       vehiculo_id:    vehiculoDefault ? String(vehiculoDefault.id) : null,
       lineas:         nuevasLineas,
@@ -1669,6 +1699,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         onSave={guardarPedidoEdit}
         onDelete={eliminarPedido}
         onCambiarVehiculo={cambiarVehiculoPedido}
+        onPlanning={onPlanning}
         rolesImport={rolesImport}
         empresaId={empresa?.id}
         formatoFecha={formatoFecha}

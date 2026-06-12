@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { C, Badge, Btn, ModalField } from "./lib/ui.jsx";
 import { crearMaterial, actualizarMaterial, borrarMaterial } from "./lib/data.js";
+import AlmacenConfigurador from "./AlmacenConfigurador.jsx";
 
 const TODAS_COLS = [
   { id: "referencia",   label: "REFERENCIA",   fija: false, def: true  },
@@ -177,6 +178,7 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
   const [delConf, setDelConf]       = useState(null);
   const [almacenSel, setAlmacenSel] = useState(() => almacenes?.[0]?.id ?? 1);
   const [showUbicaciones, setShowUbicaciones] = useState(false);
+  const [importFile, setImportFile] = useState(null);
 
   const colsActivas = TODAS_COLS.filter((c) => c.fija || colsVis.includes(c.id));
   const toggleCol   = (id) => {
@@ -232,40 +234,28 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
     const file = e.target.files?.[0];
     if (!file) return;
     e.target.value = "";
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const data = new Uint8Array(ev.target.result);
-      const wb = XLSX.read(data, { type: "uint8array" });
-      const ws = wb.Sheets[wb.SheetNames[0]];
-      const rows = XLSX.utils.sheet_to_json(ws, { defval: "" });
-      if (!rows.length) return;
-      const map = { nombre:"nombre", name:"nombre", referencia:"referencia", ref:"referencia",
-        descripcion:"descripcion", descripció:"descripcion", categoria:"categoria",
-        "categoría":"categoria", unidad:"unidad", stock:"stock_actual", stock_actual:"stock_actual",
-        stock_minimo:"stock_minimo", ubicacion:"ubicacion", "ubicación":"ubicacion",
-        estado:"estado", proveedor:"proveedor", precio:"precio_coste", precio_coste:"precio_coste", notas:"notas" };
-      const headers = Object.keys(rows[0]);
-      const colMap = {};
-      headers.forEach(h => { const k = map[h.toLowerCase().trim()]; if (k) colMap[h] = k; });
-      const nuevos = rows.map(r => {
-        const m = { ...blankMaterial };
-        Object.entries(colMap).forEach(([h, k]) => { if (r[h] !== "") m[k] = r[h]; });
-        m.stock_actual = Number(m.stock_actual) || 0;
-        m.stock_minimo = Number(m.stock_minimo) || 0;
-        m.id = Date.now() + Math.random();
-        m.emp = empresa?.id;
-        return m;
-      }).filter(m => m.nombre);
-      if (!nuevos.length) return;
-      if (modo === "demo") {
-        setMateriales(prev => [...prev, ...nuevos]);
-      } else {
-        Promise.all(nuevos.map(m => crearMaterial(m, empresa.id))).then(saved => {
-          setMateriales(prev => [...prev, ...saved]);
-        }).catch(console.error);
-      }
-    };
-    reader.readAsArrayBuffer(file);
+    setImportFile(file);
+  };
+
+  const handleConfirmImport = async (materiales) => {
+    setImportFile(null);
+    const almacen = almacenes?.find(a => a.id === almacenSel);
+    const nuevos = materiales.map(m => ({
+      ...blankMaterial, ...m,
+      almacen_id: almacenSel,
+      almacen_nombre: almacen?.nombre || "",
+      stock_actual: Number(m.stock_actual) || 0,
+      stock_minimo: Number(m.stock_minimo) || 0,
+    })).filter(m => m.nombre?.trim());
+    if (!nuevos.length) return;
+    if (modo === "demo") {
+      setMateriales(prev => [...prev, ...nuevos.map(m => ({ ...m, id: Date.now() + Math.random(), emp: empresa?.id }))]);
+    } else {
+      try {
+        const saved = await Promise.all(nuevos.map(m => crearMaterial(m, empresa.id)));
+        setMateriales(prev => [...prev, ...saved]);
+      } catch (e) { console.error(e); }
+    }
   };
 
   const handleExportAlmExcel = () => {
@@ -480,6 +470,16 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
           empresaId={empresa?.id} almacenId={almacenSel}
           almacenNombre={almacenes?.find(a => a.id === almacenSel)?.nombre || "Almacén"}
           onClose={() => setShowUbicaciones(false)}
+        />
+      )}
+
+      {importFile && (
+        <AlmacenConfigurador
+          file={importFile}
+          almacen={almacenes?.find(a => a.id === almacenSel) || { id: almacenSel, nombre:"Almacén" }}
+          empresaId={empresa?.id}
+          onConfirm={handleConfirmImport}
+          onCancel={() => setImportFile(null)}
         />
       )}
     </div>

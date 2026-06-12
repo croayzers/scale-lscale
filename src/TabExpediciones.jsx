@@ -161,7 +161,7 @@ function EventoCol({ pedido, tramosEvento, vehiculos, selected, onSelect, onCtxM
               <span key={vid} style={{ fontSize:10.5, background:`${v.color}22`, color:v.color,
                 borderRadius:999, padding:"2px 7px", fontWeight:600, whiteSpace:"nowrap",
                 border:`1px solid ${v.color}55` }}>
-                {v.matricula}
+                {v.nombre || v.matricula}
               </span>
             ) : null;
           })}
@@ -225,7 +225,7 @@ function EventoCol({ pedido, tramosEvento, vehiculos, selected, onSelect, onCtxM
               color:v.color, fontWeight:700, letterSpacing:.3,
               background:`${v.color}15`, borderRadius:4, padding:"1px 5px",
               maxWidth:LANE_W - 10, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-              {v.matricula}
+              {v.nombre || v.matricula}
             </div>
           );
         })}
@@ -390,7 +390,7 @@ function AddModal({ pedidoId, pedidoLabel, vehiculos, tramos, horaCtx, horaVuelt
             <select value={vehId} onChange={e => setVehId(e.target.value)}
               style={{ width:"100%", padding:"9px 10px", border:"1px solid var(--border-strong)", borderRadius:9,
                 fontSize:13.5, fontFamily:"inherit", background:"var(--surface-2)", color:"var(--text)", outline:"none" }}>
-              {vehiculos.map(v => <option key={v.id} value={v.id}>{v.nombre ? `${v.nombre} · ` : ""}{v.matricula} ({v.tipo})</option>)}
+              {vehiculos.map(v => <option key={v.id} value={v.id}>{v.nombre || v.matricula}{v.matricula && v.nombre ? ` · ${v.matricula}` : ""} ({v.tipo})</option>)}
             </select>
             {lastT && (
               <div style={{ fontSize:11.5, color:"var(--text-2)", marginTop:5, padding:"5px 8px",
@@ -517,7 +517,7 @@ function EditTramoModal({ tramo, veh, pedidoLabel, onSave, onDelete, onClose, L 
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <div>
             <div style={{ fontSize:15, fontWeight:700 }}>{L("Editar tramo","Edit segment")}</div>
-            <div style={{ fontSize:11.5, color:"var(--text-2)" }}>{veh?.matricula} · {pedidoLabel}</div>
+            <div style={{ fontSize:11.5, color:"var(--text-2)" }}>{veh?.nombre || veh?.matricula} · {pedidoLabel}</div>
           </div>
           <button onClick={onClose} style={{ background:"none", border:"none", cursor:"pointer", color:"var(--text-2)", display:"flex" }}><X size={18}/></button>
         </div>

@@ -3,11 +3,10 @@ import { RotateCcw, ArrowRight, Check, Loader } from "lucide-react";
 import { C, Btn } from "./lib/ui.jsx";
 
 const CHIP_ESTADO = {
-  borrador:   { bg:"#f1f5f9", ink:"#64748b" },
+  reservado:  { bg:"#f1f5f9", ink:"#64748b" },
   confirmado: { bg:"#dcfce7", ink:"#16a34a" },
-  planificado:{ bg:"#dbeafe", ink:"#2563eb" },
-  en_ruta:    { bg:"#fef3c7", ink:"#d97706" },
-  entregado:  { bg:"#dcfce7", ink:"#16a34a" },
+  retorno:    { bg:"#fef3c7", ink:"#d97706" },
+  finalizado: { bg:"#dbeafe", ink:"#2563eb" },
   cancelado:  { bg:"#fee2e2", ink:"#dc2626" },
 };
 
@@ -16,9 +15,9 @@ export default function TabRetorno({ pedidos = [], setPedidos, vehiculosEmpresa 
   const [saving, setSaving] = useState(null);
 
   const visibles = pedidos.filter(p => {
-    if (filtro === "activos")    return p.estado === "planificado" || p.estado === "en_ruta";
-    if (filtro === "entregados") return p.estado === "entregado";
-    return p.estado !== "cancelado" && p.estado !== "borrador";
+    if (filtro === "activos")     return p.estado === "confirmado" || p.estado === "retorno";
+    if (filtro === "finalizados") return p.estado === "finalizado";
+    return p.estado !== "cancelado" && p.estado !== "reservado";
   }).sort((a, b) => (b.fecha_entrega || "").localeCompare(a.fecha_entrega || ""));
 
   const vehById = Object.fromEntries((vehiculosEmpresa || []).map(v => [String(v.id), v]));
@@ -29,8 +28,8 @@ export default function TabRetorno({ pedidos = [], setPedidos, vehiculosEmpresa 
     const updated = {
       ...pedido,
       estado: nuevoEstado,
-      ...(nuevoEstado === "en_ruta" && !pedido.fecha_entrega ? { fecha_entrega: hoy } : {}),
-      ...(nuevoEstado === "entregado" && !pedido.fecha_retorno ? { fecha_retorno: hoy } : {}),
+      ...(nuevoEstado === "retorno"    && !pedido.fecha_entrega ? { fecha_entrega: hoy } : {}),
+      ...(nuevoEstado === "finalizado" && !pedido.fecha_retorno ? { fecha_retorno: hoy } : {}),
     };
     setPedidos(prev => prev.map(p => p.id === updated.id ? updated : p));
     await onSavePedido?.(updated);
@@ -40,9 +39,9 @@ export default function TabRetorno({ pedidos = [], setPedidos, vehiculosEmpresa 
   const fmtF = iso => { if (!iso) return "—"; const [y,m,d] = iso.split("-"); return formatoFecha === "MM/DD/YYYY" ? `${m}/${d}/${y}` : formatoFecha === "DD-MM-YYYY" ? `${d}-${m}-${y}` : `${d}/${m}/${y}`; };
 
   const FILTROS = [
-    { id:"activos",    label: L("En curso","In progress") },
-    { id:"entregados", label: L("Entregados","Delivered") },
-    { id:"todos",      label: L("Todos","All") },
+    { id:"activos",     label: L("En curso","In progress") },
+    { id:"finalizados", label: L("Finalizados","Finalized") },
+    { id:"todos",       label: L("Todos","All") },
   ];
 
   return (
@@ -77,14 +76,14 @@ export default function TabRetorno({ pedidos = [], setPedidos, vehiculosEmpresa 
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
           {visibles.map(p => {
-            const chip = CHIP_ESTADO[p.estado] || CHIP_ESTADO.borrador;
+            const chip = CHIP_ESTADO[p.estado] || CHIP_ESTADO.reservado;
             const veh  = vehById[String(p.vehiculo_id)] || null;
             const isSaving = saving === p.id;
             return (
               <div key={p.id} style={{ background:C.surface, border:`1px solid ${C.line}`, borderRadius:14,
                 padding:"14px 18px", display:"flex", gap:14, alignItems:"center", flexWrap:"wrap" }}>
                 <span style={{ padding:"3px 10px", borderRadius:999, background:chip.bg, color:chip.ink,
-                  fontSize:11.5, fontWeight:700, flexShrink:0 }}>{p.estado}</span>
+                  fontSize:11.5, fontWeight:700, flexShrink:0, textTransform:"capitalize" }}>{p.estado}</span>
 
                 <div style={{ flex:1, minWidth:160 }}>
                   <div style={{ fontWeight:700, fontSize:14.5 }}>{p.codigo || `PED-${p.id}`}</div>
@@ -108,27 +107,27 @@ export default function TabRetorno({ pedidos = [], setPedidos, vehiculosEmpresa 
                 )}
 
                 <div style={{ display:"flex", gap:6, flexShrink:0 }}>
-                  {p.estado === "planificado" && (
-                    <Btn onClick={() => cambiarEstado(p, "en_ruta")} disabled={isSaving}
+                  {p.estado === "confirmado" && (
+                    <Btn onClick={() => cambiarEstado(p, "retorno")} disabled={isSaving}
                       color="#d97706" style={{ fontSize:12, padding:"6px 12px" }}>
                       {isSaving ? <Loader size={13}/> : <ArrowRight size={13}/>}
                       {L("Salida","Depart")}
                     </Btn>
                   )}
-                  {p.estado === "en_ruta" && (
-                    <Btn onClick={() => cambiarEstado(p, "entregado")} disabled={isSaving}
+                  {p.estado === "retorno" && (
+                    <Btn onClick={() => cambiarEstado(p, "finalizado")} disabled={isSaving}
                       color={C.ok} style={{ fontSize:12, padding:"6px 12px" }}>
                       {isSaving ? <Loader size={13}/> : <RotateCcw size={13}/>}
                       {L("Registrar retorno","Log return")}
                     </Btn>
                   )}
-                  {p.estado === "entregado" && (
+                  {p.estado === "finalizado" && (
                     <span style={{ fontSize:12, color:C.ok, fontWeight:600, display:"flex", alignItems:"center", gap:4 }}>
-                      <Check size={13}/>{L("Cerrado","Closed")}
+                      <Check size={13}/>{L("Finalizado","Finalized")}
                     </span>
                   )}
-                  {(p.estado === "en_ruta" || p.estado === "entregado") && (
-                    <Btn onClick={() => cambiarEstado(p, "planificado")} disabled={isSaving} outline
+                  {(p.estado === "retorno" || p.estado === "finalizado") && (
+                    <Btn onClick={() => cambiarEstado(p, "confirmado")} disabled={isSaving} outline
                       style={{ fontSize:12, padding:"6px 12px" }}>
                       ↩ {L("Revertir","Undo")}
                     </Btn>
