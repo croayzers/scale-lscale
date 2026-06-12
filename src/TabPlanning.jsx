@@ -485,7 +485,7 @@ function rango(start, n) {
 
 /* ─── VistaSemana ─────────────────────────────────────────────────────────── */
 // MARK: - VistaSemana
-// Layout: columna izquierda = día (abarca todas sus filas de pedido), columna derecha = una fila por pedido igual que vista día
+// Layout: tabla con columna izquierda inline por fila — etiqueta del día con rowSpan CSS via grid
 function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha, onEditPedido, L }) {
   const fmtD    = iso => fmtFecha(iso, formatoFecha);
   const vehById = Object.fromEntries((vehiculosEmpresa||[]).map(v=>[String(v.id),v]));
@@ -493,9 +493,9 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
   const lunes   = lunesDe(fecha);
   const dias    = rango(lunes, 7);
 
-  const W_PX_S   = 80;
-  const ROW_H_S  = 64;
-  const LABEL_W_S = 100;
+  const W_PX_S    = 80;
+  const ROW_H_S   = 64;
+  const LABEL_W_S = 110;
   const AXIS_H_S  = 36;
   const totalW    = 24 * W_PX_S;
   const ticksH    = Array.from({length:25},(_,i)=>i);
@@ -503,174 +503,183 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
   const CHIP = { confirmado:"#16a34a", borrador:"#94a3b8", planificado:"#2563eb",
                  en_ruta:"#d97706", entregado:"#16a34a", cancelado:"#dc2626" };
 
-  // Pedidos de cada día, ordenados por hora_ida
   const pedidosDia = iso =>
     (pedidos||[])
       .filter(p => p.fecha_entrega === iso || p.fecha_retorno === iso)
       .sort((a,b) => (dec2hm(a.hora_ida)??99) - (dec2hm(b.hora_ida)??99));
 
-  // Construir filas: cada fila tiene { iso, pedido } — días sin pedidos tienen 1 fila vacía
+  // Filas: { iso, pedido, primeroDia, nFils }
   const filas = [];
   dias.forEach(iso => {
     const ps = pedidosDia(iso);
-    if (ps.length === 0) filas.push({ iso, pedido: null, primeroDia: true, totalDia: 0 });
-    else ps.forEach((p, i) => filas.push({ iso, pedido: p, primeroDia: i===0, totalDia: ps.length }));
+    if (ps.length === 0) {
+      filas.push({ iso, pedido: null, primeroDia: true, nFils: 1 });
+    } else {
+      ps.forEach((p, i) => filas.push({ iso, pedido: p, primeroDia: i===0, nFils: ps.length }));
+    }
   });
 
   return (
     <div style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}>
       <div style={{ flex:1, overflowX:"auto", overflowY:"auto", minHeight:0 }}>
-        <div style={{ display:"flex", minWidth: LABEL_W_S + totalW }}>
-
-          {/* Columna izquierda sticky */}
-          <div style={{ width:LABEL_W_S, flexShrink:0, position:"sticky", left:0, zIndex:15,
-            background:"var(--surface)", borderRight:"1px solid var(--border)" }}>
-            {/* Esquina eje */}
-            <div style={{ height:AXIS_H_S, borderBottom:"2px solid var(--border)" }}/>
-            {/* Una celda por grupo de día, abarcando todas sus filas */}
-            {dias.map(iso => {
-              const ps     = pedidosDia(iso);
-              const nFils  = Math.max(ps.length, 1);
-              const d      = new Date(iso + "T00:00:00");
-              const dow    = d.getDay();
-              const esSel  = iso === fecha;
-              const esHoy  = iso === hoy;
-              return (
-                <div key={iso} onClick={() => setFecha(iso)}
-                  style={{ height: ROW_H_S * nFils, borderBottom:"2px solid var(--border-strong)",
-                    display:"flex", flexDirection:"column", justifyContent:"center",
-                    padding:"0 10px", cursor:"pointer", boxSizing:"border-box",
-                    background: esSel ? "var(--brand-soft)" : esHoy ? "var(--warn-soft)" : "var(--surface)" }}>
-                  <span style={{ fontSize:14, fontWeight:800, lineHeight:1.1,
-                    color: esSel ? "var(--brand)" : esHoy ? "var(--warn)" : "var(--text)" }}>
-                    {DIAS_ES[dow]}
-                  </span>
-                  <span style={{ fontSize:10.5, fontWeight:600, marginTop:2,
-                    color: esSel ? "var(--brand)" : "var(--text-3)" }}>
-                    {fmtD(iso)}
-                  </span>
-                  {nFils > 0 && ps.length > 0 && (
-                    <span style={{ fontSize:9, marginTop:3,
-                      color: esSel ? "var(--brand)" : "var(--text-3)" }}>
-                      {ps.length} evento{ps.length!==1?"s":""}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Canvas derecho */}
-          <div style={{ position:"relative", flexShrink:0, width:totalW }}>
-
-            {/* Eje de horas sticky-top */}
-            <div style={{ position:"sticky", top:0, zIndex:12, height:AXIS_H_S,
-              background:"var(--surface)", borderBottom:"2px solid var(--border)", position:"sticky" }}>
-              {ticksH.map(h => (
-                <div key={h} style={{ position:"absolute", left:h*W_PX_S, bottom:0,
-                  display:"flex", flexDirection:"column", alignItems:"flex-start" }}>
-                  <div style={{ width:1, height:10, background:"var(--border-strong)" }}/>
-                  {h < 24 && <span style={{ fontSize:9, fontWeight:600, color:"var(--text-3)",
-                    position:"absolute", bottom:12, left:2, whiteSpace:"nowrap" }}>
-                    {String(h).padStart(2,"0")}:00
-                  </span>}
-                </div>
-              ))}
-            </div>
-
-            {/* Líneas verticales de fondo */}
-            <div style={{ position:"absolute", top:AXIS_H_S, left:0, right:0, bottom:0,
-              zIndex:0, pointerEvents:"none" }}>
-              {ticksH.map(h => (
-                <div key={h} style={{ position:"absolute", top:0, bottom:0, left:h*W_PX_S,
-                  width:1, background: h%6===0 ? "var(--border-strong)" : "var(--border)" }}/>
-              ))}
-            </div>
-
-            {/* Una fila por pedido (igual que vista día) */}
-            {filas.map(({ iso, pedido: p, primeroDia, totalDia }, idx) => {
+        {/* Tabla real con columna fija izquierda */}
+        <table style={{ borderCollapse:"collapse", minWidth: LABEL_W_S + totalW, tableLayout:"fixed", width: LABEL_W_S + totalW }}>
+          <colgroup>
+            <col style={{ width:LABEL_W_S }}/>
+            <col style={{ width:totalW }}/>
+          </colgroup>
+          <thead>
+            <tr style={{ height:AXIS_H_S, background:"var(--surface)", position:"sticky", top:0, zIndex:12 }}>
+              {/* Esquina */}
+              <th style={{ position:"sticky", left:0, zIndex:20, background:"var(--surface)",
+                borderBottom:"2px solid var(--border)", borderRight:"1px solid var(--border)",
+                padding:0 }}/>
+              {/* Eje de horas */}
+              <th style={{ position:"relative", borderBottom:"2px solid var(--border)", padding:0,
+                background:"var(--surface)" }}>
+                {ticksH.map(h => (
+                  <div key={h} style={{ position:"absolute", left:h*W_PX_S, bottom:0,
+                    display:"flex", flexDirection:"column", alignItems:"flex-start", height:"100%" }}>
+                    <div style={{ marginTop:"auto", width:1, height:10, background:"var(--border-strong)" }}/>
+                    {h < 24 && <span style={{ fontSize:9, fontWeight:600, color:"var(--text-3)",
+                      position:"absolute", bottom:12, left:2, whiteSpace:"nowrap" }}>
+                      {String(h).padStart(2,"0")}:00
+                    </span>}
+                  </div>
+                ))}
+                {/* Líneas verticales */}
+                {ticksH.map(h => (
+                  <div key={`vl${h}`} style={{ position:"absolute", top:0, bottom:0, left:h*W_PX_S,
+                    width:1, background: h%6===0 ? "var(--border-strong)" : "var(--border)",
+                    pointerEvents:"none" }}/>
+                ))}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {filas.map(({ iso, pedido: p, primeroDia, nFils }, idx) => {
               const hi  = p ? dec2hm(p.hora_ida)    : null;
               const hv  = p ? dec2hm(p.hora_vuelta) : null;
               const veh = p ? (vehById[String(p.vehiculo_id)] || null) : null;
               const cc  = p ? (CHIP[p.estado] || CHIP.borrador) : "#ccc";
               const esUltimoDia = idx === filas.length-1 || filas[idx+1]?.iso !== iso;
+              const d   = new Date(iso + "T00:00:00");
+              const dow = d.getDay();
+              const esSel = iso === fecha;
+              const esHoy = iso === hoy;
 
               return (
-                <div key={`${iso}-${p?.id??'empty'}`}
-                  style={{ height:ROW_H_S, position:"relative",
-                    borderBottom: esUltimoDia ? "2px solid var(--border-strong)" : "1px solid var(--border)",
-                    background: iso===fecha ? "rgba(99,102,241,.03)" : "transparent" }}>
+                <tr key={`${iso}-${p?.id??'empty'}-${idx}`}
+                  style={{ height:ROW_H_S }}>
 
-                  {/* Bloque duración evento */}
-                  {hi!=null && hv!=null && (
-                    <div style={{ position:"absolute", top:4, bottom:4,
-                      left:hi*W_PX_S, width:Math.max((hv-hi)*W_PX_S,3),
-                      background:"rgba(220,38,38,.07)", border:"1px solid rgba(220,38,38,.22)",
-                      borderRadius:4, pointerEvents:"none", zIndex:1 }}/>
-                  )}
-
-                  {/* Marcador hora ida */}
-                  {hi!=null && (
-                    <div style={{ position:"absolute", top:0, bottom:0, left:hi*W_PX_S,
-                      width:2, background:"#2563eb55", zIndex:3, pointerEvents:"none" }}>
-                      <span style={{ position:"absolute", top:2, left:3, fontSize:7.5,
-                        color:"#2563eb", fontWeight:700, background:"var(--surface)",
-                        padding:"0 2px", borderRadius:2, whiteSpace:"nowrap" }}>
-                        {p.hora_ida}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Marcador hora vuelta */}
-                  {hv!=null && (
-                    <div style={{ position:"absolute", top:0, bottom:0, left:hv*W_PX_S,
-                      width:2, background:"#d9770655", zIndex:3, pointerEvents:"none" }}>
-                      <span style={{ position:"absolute", top:2, left:3, fontSize:7.5,
-                        color:"#d97706", fontWeight:700, background:"var(--surface)",
-                        padding:"0 2px", borderRadius:2, whiteSpace:"nowrap" }}>
-                        {p.hora_vuelta}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Info pedido — sticky izquierda dentro de la fila */}
-                  {p && (
-                    <div onClick={() => onEditPedido(p)}
-                      style={{ position:"absolute", left:6, top:"50%", transform:"translateY(-50%)",
-                        zIndex:4, cursor:"pointer", display:"flex", flexDirection:"column", gap:1,
-                        background:"var(--surface)", borderRadius:6, padding:"3px 7px",
-                        border:`1.5px solid ${veh ? veh.color+"66" : cc+"55"}`,
-                        boxShadow:"0 1px 4px rgba(0,0,0,.08)", maxWidth:160 }}>
-                      <span style={{ fontSize:10, fontWeight:800,
-                        color: veh ? veh.color : cc, whiteSpace:"nowrap" }}>
-                        {p.codigo || `PED-${p.id}`}
-                      </span>
-                      <span style={{ fontSize:9, color:"var(--text-2)",
-                        overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:150 }}>
-                        {p.nombre}
-                      </span>
-                      {veh && (
-                        <span style={{ fontSize:8.5, fontWeight:700, color:veh.color,
-                          background:`${veh.color}15`, borderRadius:4, padding:"0 4px",
-                          alignSelf:"flex-start" }}>
-                          {veh.matricula || veh.nombre}
-                        </span>
+                  {/* Celda día — solo en primera fila del día, rowSpan=nFils */}
+                  {primeroDia && (
+                    <td rowSpan={nFils}
+                      onClick={() => setFecha(iso)}
+                      style={{ position:"sticky", left:0, zIndex:10, cursor:"pointer",
+                        width:LABEL_W_S, verticalAlign:"middle", padding:"0 10px",
+                        boxSizing:"border-box",
+                        borderRight:"1px solid var(--border)",
+                        borderBottom:"2px solid var(--border-strong)",
+                        background: esSel ? "var(--brand-soft)" : esHoy ? "var(--warn-soft)" : "var(--surface)" }}>
+                      <div style={{ fontSize:15, fontWeight:800, lineHeight:1.1,
+                        color: esSel ? "var(--brand)" : esHoy ? "var(--warn)" : "var(--text)" }}>
+                        {DIAS_ES[dow]}
+                      </div>
+                      <div style={{ fontSize:10.5, fontWeight:600, marginTop:2,
+                        color: esSel ? "var(--brand)" : "var(--text-3)" }}>
+                        {fmtD(iso)}
+                      </div>
+                      {nFils > 1 && (
+                        <div style={{ fontSize:9, marginTop:3,
+                          color: esSel ? "var(--brand)" : "var(--text-3)" }}>
+                          {nFils} evento{nFils!==1?"s":""}
+                        </div>
                       )}
-                    </div>
+                    </td>
                   )}
 
-                  {!p && (
-                    <div style={{ position:"absolute", inset:0, display:"flex",
-                      alignItems:"center", paddingLeft:12,
-                      color:"var(--text-3)", pointerEvents:"none", fontSize:9, fontStyle:"italic" }}>
-                      {L("Sin pedidos","No orders")}
-                    </div>
-                  )}
-                </div>
+                  {/* Celda canvas */}
+                  <td style={{ position:"relative", height:ROW_H_S, padding:0,
+                    borderBottom: esUltimoDia ? "2px solid var(--border-strong)" : "1px solid var(--border)",
+                    background: esSel ? "rgba(99,102,241,.03)" : "transparent", overflow:"hidden" }}>
+
+                    {/* Líneas verticales */}
+                    {ticksH.map(h => (
+                      <div key={h} style={{ position:"absolute", top:0, bottom:0, left:h*W_PX_S,
+                        width:1, background: h%6===0 ? "var(--border-strong)" : "var(--border)",
+                        zIndex:0, pointerEvents:"none" }}/>
+                    ))}
+
+                    {/* Bloque duración evento */}
+                    {hi!=null && hv!=null && (
+                      <div style={{ position:"absolute", top:4, bottom:4,
+                        left:hi*W_PX_S, width:Math.max((hv-hi)*W_PX_S,3),
+                        background:"rgba(220,38,38,.07)", border:"1px solid rgba(220,38,38,.22)",
+                        borderRadius:4, pointerEvents:"none", zIndex:1 }}/>
+                    )}
+
+                    {/* Marcador hora ida */}
+                    {hi!=null && (
+                      <div style={{ position:"absolute", top:0, bottom:0, left:hi*W_PX_S,
+                        width:2, background:"#2563eb55", zIndex:3, pointerEvents:"none" }}>
+                        <span style={{ position:"absolute", top:2, left:3, fontSize:7.5,
+                          color:"#2563eb", fontWeight:700, background:"var(--surface)",
+                          padding:"0 2px", borderRadius:2, whiteSpace:"nowrap" }}>
+                          {p.hora_ida}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Marcador hora vuelta */}
+                    {hv!=null && (
+                      <div style={{ position:"absolute", top:0, bottom:0, left:hv*W_PX_S,
+                        width:2, background:"#d9770655", zIndex:3, pointerEvents:"none" }}>
+                        <span style={{ position:"absolute", top:2, left:3, fontSize:7.5,
+                          color:"#d97706", fontWeight:700, background:"var(--surface)",
+                          padding:"0 2px", borderRadius:2, whiteSpace:"nowrap" }}>
+                          {p.hora_vuelta}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Chip pedido + vehículo */}
+                    {p && (
+                      <div onClick={() => onEditPedido(p)}
+                        style={{ position:"absolute", left:8, top:"50%", transform:"translateY(-50%)",
+                          zIndex:4, cursor:"pointer", display:"flex", flexDirection:"column", gap:1,
+                          background:"var(--surface)", borderRadius:6, padding:"3px 8px",
+                          border:`1.5px solid ${veh ? veh.color+"66" : cc+"55"}`,
+                          boxShadow:"0 1px 4px rgba(0,0,0,.08)", maxWidth:170 }}>
+                        <span style={{ fontSize:10.5, fontWeight:800, color: veh ? veh.color : cc,
+                          whiteSpace:"nowrap" }}>
+                          {p.codigo || `PED-${p.id}`}
+                        </span>
+                        <span style={{ fontSize:9, color:"var(--text-2)",
+                          overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                          {p.nombre}
+                        </span>
+                        {veh && (
+                          <span style={{ fontSize:8.5, fontWeight:700, color:veh.color,
+                            background:`${veh.color}15`, borderRadius:4, padding:"0 4px", alignSelf:"flex-start" }}>
+                            {veh.matricula || veh.nombre}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {!p && (
+                      <span style={{ position:"absolute", left:12, top:"50%", transform:"translateY(-50%)",
+                        fontSize:9, color:"var(--text-3)", fontStyle:"italic", pointerEvents:"none" }}>
+                        {L("Sin pedidos","No orders")}
+                      </span>
+                    )}
+                  </td>
+                </tr>
               );
             })}
-          </div>
-        </div>
+          </tbody>
+        </table>
       </div>
     </div>
   );
