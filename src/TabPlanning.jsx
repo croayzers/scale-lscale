@@ -485,51 +485,76 @@ function rango(start, n) {
 
 /* ─── VistaSemana ─────────────────────────────────────────────────────────── */
 // MARK: - VistaSemana
+// Layout: columna izquierda = día (abarca todas sus filas de pedido), columna derecha = una fila por pedido igual que vista día
 function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha, onEditPedido, L }) {
-  const fmtD   = iso => fmtFecha(iso, formatoFecha);
+  const fmtD    = iso => fmtFecha(iso, formatoFecha);
   const vehById = Object.fromEntries((vehiculosEmpresa||[]).map(v=>[String(v.id),v]));
+  const hoy     = new Date().toISOString().slice(0,10);
   const lunes   = lunesDe(fecha);
   const dias    = rango(lunes, 7);
-  const W_PX_S  = 80;   // px por hora en semana
-  const H_ROW   = 56;
-  const LABEL_W_S = 90;
-  const totalW  = 24 * W_PX_S;
 
-  const ticksH = Array.from({length:25},(_,i)=>i);
-
-  const pedidosDia = iso =>
-    (pedidos||[]).filter(p => p.fecha_entrega === iso || p.fecha_retorno === iso);
+  const W_PX_S   = 80;
+  const ROW_H_S  = 64;
+  const LABEL_W_S = 100;
+  const AXIS_H_S  = 36;
+  const totalW    = 24 * W_PX_S;
+  const ticksH    = Array.from({length:25},(_,i)=>i);
 
   const CHIP = { confirmado:"#16a34a", borrador:"#94a3b8", planificado:"#2563eb",
                  en_ruta:"#d97706", entregado:"#16a34a", cancelado:"#dc2626" };
 
+  // Pedidos de cada día, ordenados por hora_ida
+  const pedidosDia = iso =>
+    (pedidos||[])
+      .filter(p => p.fecha_entrega === iso || p.fecha_retorno === iso)
+      .sort((a,b) => (dec2hm(a.hora_ida)??99) - (dec2hm(b.hora_ida)??99));
+
+  // Construir filas: cada fila tiene { iso, pedido } — días sin pedidos tienen 1 fila vacía
+  const filas = [];
+  dias.forEach(iso => {
+    const ps = pedidosDia(iso);
+    if (ps.length === 0) filas.push({ iso, pedido: null, primeroDia: true, totalDia: 0 });
+    else ps.forEach((p, i) => filas.push({ iso, pedido: p, primeroDia: i===0, totalDia: ps.length }));
+  });
+
   return (
-    <div style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0, overflow:"hidden" }}>
-      <div style={{ overflowX:"auto", overflowY:"auto", flex:1, minHeight:0 }}>
+    <div style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0 }}>
+      <div style={{ flex:1, overflowX:"auto", overflowY:"auto", minHeight:0 }}>
         <div style={{ display:"flex", minWidth: LABEL_W_S + totalW }}>
 
           {/* Columna izquierda sticky */}
           <div style={{ width:LABEL_W_S, flexShrink:0, position:"sticky", left:0, zIndex:15,
             background:"var(--surface)", borderRight:"1px solid var(--border)" }}>
-            <div style={{ height:32, borderBottom:"2px solid var(--border)" }}/>
+            {/* Esquina eje */}
+            <div style={{ height:AXIS_H_S, borderBottom:"2px solid var(--border)" }}/>
+            {/* Una celda por grupo de día, abarcando todas sus filas */}
             {dias.map(iso => {
-              const d   = new Date(iso + "T00:00:00");
-              const dow = d.getDay();
-              const esFecha = iso === fecha;
-              const esHoy   = iso === new Date().toISOString().slice(0,10);
+              const ps     = pedidosDia(iso);
+              const nFils  = Math.max(ps.length, 1);
+              const d      = new Date(iso + "T00:00:00");
+              const dow    = d.getDay();
+              const esSel  = iso === fecha;
+              const esHoy  = iso === hoy;
               return (
                 <div key={iso} onClick={() => setFecha(iso)}
-                  style={{ height:H_ROW, borderBottom:"1px solid var(--border)",
+                  style={{ height: ROW_H_S * nFils, borderBottom:"2px solid var(--border-strong)",
                     display:"flex", flexDirection:"column", justifyContent:"center",
-                    padding:"0 10px", cursor:"pointer",
-                    background: esFecha ? "var(--brand-soft)" : esHoy ? "var(--warn-soft)" : "var(--surface)" }}>
-                  <span style={{ fontSize:13, fontWeight:800,
-                    color: esFecha ? "var(--brand)" : esHoy ? "var(--warn)" : "var(--text-2)" }}>
+                    padding:"0 10px", cursor:"pointer", boxSizing:"border-box",
+                    background: esSel ? "var(--brand-soft)" : esHoy ? "var(--warn-soft)" : "var(--surface)" }}>
+                  <span style={{ fontSize:14, fontWeight:800, lineHeight:1.1,
+                    color: esSel ? "var(--brand)" : esHoy ? "var(--warn)" : "var(--text)" }}>
                     {DIAS_ES[dow]}
                   </span>
-                  <span style={{ fontSize:10, color: esFecha ? "var(--brand)" : "var(--text-3)" }}>
+                  <span style={{ fontSize:10.5, fontWeight:600, marginTop:2,
+                    color: esSel ? "var(--brand)" : "var(--text-3)" }}>
                     {fmtD(iso)}
                   </span>
+                  {nFils > 0 && ps.length > 0 && (
+                    <span style={{ fontSize:9, marginTop:3,
+                      color: esSel ? "var(--brand)" : "var(--text-3)" }}>
+                      {ps.length} evento{ps.length!==1?"s":""}
+                    </span>
+                  )}
                 </div>
               );
             })}
@@ -539,72 +564,106 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
           <div style={{ position:"relative", flexShrink:0, width:totalW }}>
 
             {/* Eje de horas sticky-top */}
-            <div style={{ position:"sticky", top:0, zIndex:12, height:32,
-              background:"var(--surface)", borderBottom:"2px solid var(--border)",
-              display:"flex", alignItems:"flex-end" }}>
+            <div style={{ position:"sticky", top:0, zIndex:12, height:AXIS_H_S,
+              background:"var(--surface)", borderBottom:"2px solid var(--border)", position:"sticky" }}>
               {ticksH.map(h => (
-                <div key={h} style={{ position:"absolute", left:h * W_PX_S,
-                  bottom:0, display:"flex", flexDirection:"column", alignItems:"flex-start" }}>
+                <div key={h} style={{ position:"absolute", left:h*W_PX_S, bottom:0,
+                  display:"flex", flexDirection:"column", alignItems:"flex-start" }}>
                   <div style={{ width:1, height:10, background:"var(--border-strong)" }}/>
-                  {h < 24 && <span style={{ fontSize:9, color:"var(--text-3)", position:"absolute",
-                    bottom:12, left:2, whiteSpace:"nowrap", fontWeight:600 }}>
+                  {h < 24 && <span style={{ fontSize:9, fontWeight:600, color:"var(--text-3)",
+                    position:"absolute", bottom:12, left:2, whiteSpace:"nowrap" }}>
                     {String(h).padStart(2,"0")}:00
                   </span>}
                 </div>
               ))}
             </div>
 
-            {/* Líneas verticales */}
-            {ticksH.map(h => (
-              <div key={h} style={{ position:"absolute", top:32, bottom:0,
-                left:h*W_PX_S, width:1,
-                background: h%6===0 ? "var(--border-strong)" : "var(--border)",
-                zIndex:0, pointerEvents:"none" }}/>
-            ))}
+            {/* Líneas verticales de fondo */}
+            <div style={{ position:"absolute", top:AXIS_H_S, left:0, right:0, bottom:0,
+              zIndex:0, pointerEvents:"none" }}>
+              {ticksH.map(h => (
+                <div key={h} style={{ position:"absolute", top:0, bottom:0, left:h*W_PX_S,
+                  width:1, background: h%6===0 ? "var(--border-strong)" : "var(--border)" }}/>
+              ))}
+            </div>
 
-            {/* Filas de días */}
-            {dias.map(iso => {
-              const ps = pedidosDia(iso);
+            {/* Una fila por pedido (igual que vista día) */}
+            {filas.map(({ iso, pedido: p, primeroDia, totalDia }, idx) => {
+              const hi  = p ? dec2hm(p.hora_ida)    : null;
+              const hv  = p ? dec2hm(p.hora_vuelta) : null;
+              const veh = p ? (vehById[String(p.vehiculo_id)] || null) : null;
+              const cc  = p ? (CHIP[p.estado] || CHIP.borrador) : "#ccc";
+              const esUltimoDia = idx === filas.length-1 || filas[idx+1]?.iso !== iso;
+
               return (
-                <div key={iso} style={{ height:H_ROW, position:"relative",
-                  borderBottom:"1px solid var(--border)",
-                  background: iso === fecha ? "rgba(99,102,241,.03)" : "transparent" }}>
-                  {ps.map((p,i) => {
-                    const hi = dec2hm(p.hora_ida);
-                    const hv = dec2hm(p.hora_vuelta);
-                    const x1 = hi != null ? hi * W_PX_S : null;
-                    const x2 = hv != null ? hv * W_PX_S : null;
-                    const veh = vehById[String(p.vehiculo_id)] || null;
-                    const cc  = CHIP[p.estado] || CHIP.borrador;
-                    const top = 4 + i * 0;
-                    if (x1 == null && x2 == null) return null;
-                    const left  = x1 ?? x2;
-                    const width = x1 != null && x2 != null ? Math.max(x2-x1, 40) : 60;
-                    return (
-                      <div key={p.id} onClick={() => onEditPedido(p)}
-                        title={`${p.codigo||""} ${p.nombre||""}`}
-                        style={{ position:"absolute", top:top+4, height:H_ROW-12,
-                          left, width, borderRadius:6, cursor:"pointer",
-                          background: veh ? `${veh.color}22` : `${cc}18`,
-                          border:`1.5px solid ${veh ? veh.color+"66" : cc+"55"}`,
-                          overflow:"hidden", padding:"2px 5px", zIndex:2,
-                          display:"flex", flexDirection:"column", justifyContent:"center" }}>
-                        <span style={{ fontSize:9, fontWeight:800,
-                          color: veh ? veh.color : cc,
-                          overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                          {p.codigo || `PED-${p.id}`}
+                <div key={`${iso}-${p?.id??'empty'}`}
+                  style={{ height:ROW_H_S, position:"relative",
+                    borderBottom: esUltimoDia ? "2px solid var(--border-strong)" : "1px solid var(--border)",
+                    background: iso===fecha ? "rgba(99,102,241,.03)" : "transparent" }}>
+
+                  {/* Bloque duración evento */}
+                  {hi!=null && hv!=null && (
+                    <div style={{ position:"absolute", top:4, bottom:4,
+                      left:hi*W_PX_S, width:Math.max((hv-hi)*W_PX_S,3),
+                      background:"rgba(220,38,38,.07)", border:"1px solid rgba(220,38,38,.22)",
+                      borderRadius:4, pointerEvents:"none", zIndex:1 }}/>
+                  )}
+
+                  {/* Marcador hora ida */}
+                  {hi!=null && (
+                    <div style={{ position:"absolute", top:0, bottom:0, left:hi*W_PX_S,
+                      width:2, background:"#2563eb55", zIndex:3, pointerEvents:"none" }}>
+                      <span style={{ position:"absolute", top:2, left:3, fontSize:7.5,
+                        color:"#2563eb", fontWeight:700, background:"var(--surface)",
+                        padding:"0 2px", borderRadius:2, whiteSpace:"nowrap" }}>
+                        {p.hora_ida}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Marcador hora vuelta */}
+                  {hv!=null && (
+                    <div style={{ position:"absolute", top:0, bottom:0, left:hv*W_PX_S,
+                      width:2, background:"#d9770655", zIndex:3, pointerEvents:"none" }}>
+                      <span style={{ position:"absolute", top:2, left:3, fontSize:7.5,
+                        color:"#d97706", fontWeight:700, background:"var(--surface)",
+                        padding:"0 2px", borderRadius:2, whiteSpace:"nowrap" }}>
+                        {p.hora_vuelta}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Info pedido — sticky izquierda dentro de la fila */}
+                  {p && (
+                    <div onClick={() => onEditPedido(p)}
+                      style={{ position:"absolute", left:6, top:"50%", transform:"translateY(-50%)",
+                        zIndex:4, cursor:"pointer", display:"flex", flexDirection:"column", gap:1,
+                        background:"var(--surface)", borderRadius:6, padding:"3px 7px",
+                        border:`1.5px solid ${veh ? veh.color+"66" : cc+"55"}`,
+                        boxShadow:"0 1px 4px rgba(0,0,0,.08)", maxWidth:160 }}>
+                      <span style={{ fontSize:10, fontWeight:800,
+                        color: veh ? veh.color : cc, whiteSpace:"nowrap" }}>
+                        {p.codigo || `PED-${p.id}`}
+                      </span>
+                      <span style={{ fontSize:9, color:"var(--text-2)",
+                        overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:150 }}>
+                        {p.nombre}
+                      </span>
+                      {veh && (
+                        <span style={{ fontSize:8.5, fontWeight:700, color:veh.color,
+                          background:`${veh.color}15`, borderRadius:4, padding:"0 4px",
+                          alignSelf:"flex-start" }}>
+                          {veh.matricula || veh.nombre}
                         </span>
-                        {(H_ROW-12) > 28 && <span style={{ fontSize:8, color:"var(--text-2)",
-                          overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                          {p.nombre}
-                        </span>}
-                      </div>
-                    );
-                  })}
-                  {ps.length === 0 && (
+                      )}
+                    </div>
+                  )}
+
+                  {!p && (
                     <div style={{ position:"absolute", inset:0, display:"flex",
-                      alignItems:"center", paddingLeft:8,
-                      color:"var(--text-3)", pointerEvents:"none", fontSize:9 }}>
+                      alignItems:"center", paddingLeft:12,
+                      color:"var(--text-3)", pointerEvents:"none", fontSize:9, fontStyle:"italic" }}>
+                      {L("Sin pedidos","No orders")}
                     </div>
                   )}
                 </div>
