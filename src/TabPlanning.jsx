@@ -486,7 +486,7 @@ function rango(start, n) {
 /* ─── VistaSemana ─────────────────────────────────────────────────────────── */
 // MARK: - VistaSemana
 // Layout: tabla con columna izquierda inline por fila — etiqueta del día con rowSpan CSS via grid
-function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha, onEditPedido, L }) {
+function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha, onEditPedido, tramosOverride, L }) {
   const fmtD    = iso => fmtFecha(iso, formatoFecha);
   const vehById = Object.fromEntries((vehiculosEmpresa||[]).map(v=>[String(v.id),v]));
   const hoy     = new Date().toISOString().slice(0,10);
@@ -507,6 +507,15 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
     (pedidos||[])
       .filter(p => p.fecha_entrega === iso || p.fecha_retorno === iso)
       .sort((a,b) => (dec2hm(a.hora_ida)??99) - (dec2hm(b.hora_ida)??99));
+
+  // Tramos para cada pedido de la semana (anchor = día anterior al de la semana)
+  const tramosForPedido = (p, iso) => {
+    const pid    = String(p.id);
+    const anchor = isoPlus(iso, -1);
+    const off    = pedidoHoraCanvas(p, anchor);
+    const offV   = vueltaCanvas(p, anchor);
+    return (tramosOverride||{})[pid] ?? (p.vehiculo_id ? calcularTramos(p, p.vehiculo_id, off, offV) : []);
+  };
 
   // Filas: { iso, pedido, primeroDia, nFils }
   const filas = [];
@@ -642,6 +651,14 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
                         </span>
                       </div>
                     )}
+
+                    {/* Tramos (igual que vista día, sin drag) */}
+                    {p && tramosForPedido(p, iso).map(t => (
+                      <TramoBar key={t.id} tramo={t}
+                        isDragging={false} isGroupDrag={false}
+                        vehColor={vehById[t.vehiculo_id]?.color}
+                        onMD={() => {}} onResizeMD={() => {}}/>
+                    ))}
 
                     {/* Chip pedido + vehículo */}
                     {p && (
@@ -1170,6 +1187,7 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, for
       {vista === "semana" && (
         <VistaSemana pedidos={pedidos} fecha={fecha} setFecha={d=>{setFecha(d);setVista("dia");}}
           vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha}
+          tramosOverride={tramosOverride}
           onEditPedido={setPedidoEdit} L={L}/>
       )}
 
