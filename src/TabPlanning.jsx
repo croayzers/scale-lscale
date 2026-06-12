@@ -213,10 +213,17 @@ function PedidoRow({ pedido, tramos, offsetH, vehById, vehiculosEmpresa,
         </div>
       </div>
 
-      {/* Canvas */}
+      {/* Canvas — doble click o click derecho para nuevo tramo */}
       <div style={{ position:"relative", width:totalW, flexShrink:0, overflow:"visible" }}
-        onClick={e => {
+        onDoubleClick={e => {
           if (e.target !== e.currentTarget) return;
+          const rect = e.currentTarget.getBoundingClientRect();
+          const h = snp((e.clientX - rect.left) / W_PX);
+          onGridClick?.(clamp(h, 0, H_TOTAL - 1));
+        }}
+        onContextMenu={e => {
+          if (e.target !== e.currentTarget) return;
+          e.preventDefault();
           const rect = e.currentTarget.getBoundingClientRect();
           const h = snp((e.clientX - rect.left) / W_PX);
           onGridClick?.(clamp(h, 0, H_TOTAL - 1));
@@ -346,11 +353,12 @@ function PedidoEditModal({ pedido, onSave, onClose, vehiculosEmpresa = [], L }) 
 
 /* ─── TramoModal ─────────────────────────────────────────────────────────── */
 // MARK: - TramoModal
-function TramoModal({ tramo, veh, pedidoLabel, isNew, onSave, onDelete, onClose, L }) {
+function TramoModal({ tramo, veh, pedidoLabel, isNew, onSave, onDelete, onClose, vehiculosEmpresa, L }) {
   const [form, setForm] = useState({ ...tramo });
-  const f   = k => v => setForm(p => ({ ...p, [k]: v }));
-  const cfg = TIPOS[form.tipo] || {};
-  const dur = ((form.hora_fin - form.hora_inicio) * 60).toFixed(0);
+  const f    = k => v => setForm(p => ({ ...p, [k]: v }));
+  const cfg  = TIPOS[form.tipo] || {};
+  const dur  = ((form.hora_fin - form.hora_inicio) * 60).toFixed(0);
+  const vehSel = (vehiculosEmpresa||[]).find(v => String(v.id) === String(form.vehiculo_id)) || veh;
 
   // Convierte hora canvas (puede ser >24 o negativa) a HH:MM del reloj
   const canvasToTime = h => toHM(h);
@@ -375,7 +383,7 @@ function TramoModal({ tramo, veh, pedidoLabel, isNew, onSave, onDelete, onClose,
               {isNew ? L("Nuevo tramo","New segment") : L("Editar tramo","Edit segment")}
             </div>
             <div style={{ fontSize:11.5, color:"var(--text-2)" }}>
-              {veh?.matricula || veh?.nombre || "—"} · {pedidoLabel}
+              {vehSel?.matricula || vehSel?.nombre || "—"} · {pedidoLabel}
             </div>
           </div>
           <button onClick={onClose}
@@ -383,6 +391,29 @@ function TramoModal({ tramo, veh, pedidoLabel, isNew, onSave, onDelete, onClose,
             <X size={18}/>
           </button>
         </div>
+
+        {/* Vehículo */}
+        {(vehiculosEmpresa||[]).length > 1 && (
+          <div style={{ marginBottom:14 }}>
+            <label style={{ fontSize:11, fontWeight:700, color:"var(--text-2)", letterSpacing:.5,
+              display:"block", marginBottom:6 }}>{L("VEHÍCULO","VEHICLE")}</label>
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+              {(vehiculosEmpresa||[]).map(v => {
+                const sel = String(form.vehiculo_id) === String(v.id);
+                return (
+                  <button key={v.id} onClick={() => f("vehiculo_id")(String(v.id))}
+                    style={{ padding:"5px 12px", borderRadius:999, fontFamily:"inherit", cursor:"pointer",
+                      fontSize:12, fontWeight:700,
+                      border:`1.5px solid ${sel ? v.color : "var(--border)"}`,
+                      background: sel ? `${v.color}22` : "var(--surface-2)",
+                      color: sel ? v.color : "var(--text-2)" }}>
+                    {v.matricula || v.nombre}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Tipo */}
         <div style={{ marginBottom:14 }}>
@@ -1383,8 +1414,15 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, for
                     borderBottom:"1px solid var(--border)",
                     background: p.fecha_entrega === fecha || p.fecha_retorno === fecha
                       ? "transparent" : "rgba(0,0,0,.015)" }}
-                    onClick={e => {
+                    onDoubleClick={e => {
                       if (e.target !== e.currentTarget) return;
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const h = snp((e.clientX - rect.left) / W_PX);
+                      onGridClick(pid, h);
+                    }}
+                    onContextMenu={e => {
+                      if (e.target !== e.currentTarget) return;
+                      e.preventDefault();
                       const rect = e.currentTarget.getBoundingClientRect();
                       const h = snp((e.clientX - rect.left) / W_PX);
                       onGridClick(pid, h);
@@ -1461,6 +1499,7 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, for
           tramo={tramoModal.tramo} veh={tramoModal.veh}
           pedidoLabel={tramoModal.pedidoLabel}
           isNew={tramoModal.isNew}
+          vehiculosEmpresa={vehiculosEmpresa}
           onSave={onSaveTramo} onDelete={onDeleteTramo}
           onClose={() => setTramoModal(null)} L={L}/>
       )}
