@@ -34,7 +34,7 @@ function Avatar({ member, size = 32 }) {
 }
 
 // Vista: lista de miembros con último mensaje y no-leídos
-function ListView({ otros, allMessages, myId, onSelect }) {
+function ListView({ otros, allMessages, myId, onSelect, myEmail }) {
   function lastMsg(userId) {
     const msgs = allMessages.filter(m =>
       (m.from_user_id === myId && m.to_user_id === userId) ||
@@ -44,6 +44,15 @@ function ListView({ otros, allMessages, myId, onSelect }) {
   }
   function unreadFrom(userId) {
     return allMessages.filter(m => m.from_user_id === userId && m.to_user_id === myId && !m.is_read).length;
+  }
+  // Mensajes no leídos que me mencionan (de cualquier remitente)
+  const myHandle = myEmail?.split('@')[0]?.toLowerCase();
+  function hasMention(userId) {
+    if (!myHandle) return false;
+    return allMessages.some(m =>
+      m.from_user_id === userId && m.to_user_id === myId && !m.is_read &&
+      m.message?.toLowerCase().includes(`@${myHandle}`)
+    );
   }
 
   if (!otros.length) {
@@ -67,8 +76,9 @@ function ListView({ otros, allMessages, myId, onSelect }) {
   return (
     <div style={{ flex: 1, overflowY: "auto" }}>
       {sorted.map((m) => {
-        const last  = lastMsg(m.user_id);
-        const unread = unreadFrom(m.user_id);
+        const last    = lastMsg(m.user_id);
+        const unread  = unreadFrom(m.user_id);
+        const mention = hasMention(m.user_id);
         return (
           <button key={m.user_id} onClick={() => onSelect(m)}
             style={{
@@ -102,13 +112,22 @@ function ListView({ otros, allMessages, myId, onSelect }) {
                     : <span style={{ fontStyle: "italic" }}>Escribe un mensaje...</span>
                   }
                 </span>
-                {unread > 0 && (
-                  <span style={{
-                    minWidth: 18, height: 18, borderRadius: 999, background: C.brand,
-                    color: "#fff", fontSize: 10.5, fontWeight: 700,
-                    display: "grid", placeItems: "center", flexShrink: 0, padding: "0 5px",
-                  }}>{unread}</span>
-                )}
+                <div style={{ display:"flex", gap:4, alignItems:"center", flexShrink:0 }}>
+                  {mention && (
+                    <span style={{
+                      minWidth: 18, height: 18, borderRadius: 999, background: "#7c3aed",
+                      color: "#fff", fontSize: 10.5, fontWeight: 800,
+                      display: "grid", placeItems: "center", padding: "0 5px",
+                    }}>@</span>
+                  )}
+                  {unread > 0 && (
+                    <span style={{
+                      minWidth: 18, height: 18, borderRadius: 999, background: C.brand,
+                      color: "#fff", fontSize: 10.5, fontWeight: 700,
+                      display: "grid", placeItems: "center", padding: "0 5px",
+                    }}>{unread}</span>
+                  )}
+                </div>
               </div>
             </div>
           </button>
@@ -162,7 +181,7 @@ function renderMsgText(text, miembros, onPedidoRef, esPropio) {
 }
 
 // Vista: conversación con un miembro
-function ConvView({ partner, messages, myId, onBack, onSend, miembros, pedidos, onPedidoRef }) {
+function ConvView({ partner, messages, myId, onBack, onSend, miembros, pedidos, materiales, onPedidoRef }) {
   const [texto, setTexto] = useState("");
   const [sending, setSending] = useState(false);
   const [sendErr, setSendErr] = useState(null);
@@ -393,6 +412,7 @@ const ChatFloat = forwardRef(function ChatFloat({ empresa, miembros = [], curren
   const [allMessages, setAllMessages] = useState([]);
 
   const myId      = currentUser?.id;
+  const myEmail   = currentUser?.email;
   const companyId = empresa?.id;
 
   // Expone openConversation al padre via ref
@@ -510,7 +530,7 @@ const ChatFloat = forwardRef(function ChatFloat({ empresa, miembros = [], curren
 
           {/* Contenido */}
           {view === "list" ? (
-            <ListView otros={otros} allMessages={allMessages} myId={myId} onSelect={handleSelect} />
+            <ListView otros={otros} allMessages={allMessages} myId={myId} myEmail={myEmail} onSelect={handleSelect} />
           ) : (
             <ConvView
               partner={partner}
@@ -520,6 +540,7 @@ const ChatFloat = forwardRef(function ChatFloat({ empresa, miembros = [], curren
               onSend={handleSend}
               miembros={otros}
               pedidos={pedidos}
+              materiales={materiales}
               onPedidoRef={onPedidoRef}
             />
           )}
