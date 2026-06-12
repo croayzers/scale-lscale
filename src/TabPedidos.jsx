@@ -785,7 +785,7 @@ function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato
    DETALLE / EDICIÓN DE PEDIDO
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - DetallePedido
-function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, rolesImport, empresaId, formatoFecha = "DD/MM/YYYY", highlightedCategoria, L }) {
+function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, rolesImport, empresaId, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, L }) {
   const [exportModal, setExportModal] = useState(null); // null | "pdf" | "excel"
   const [p, setP] = useState({ ...pedido });
   const [editando, setEditando] = useState(false);
@@ -844,7 +844,17 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
   const guardarLinea = (idx, linea) => {
     setP(prev => {
       const lineas = [...(prev.lineas || [])];
-      lineas[idx] = { ...lineas[idx], ...linea };
+      const anterior = lineas[idx];
+      const cantidadCambio = Number(linea.cantidad) !== Number(anterior.cantidad);
+      const autor = sesion?.user?.email || sesion?.user?.id || "usuario";
+      lineas[idx] = {
+        ...anterior, ...linea,
+        ...(cantidadCambio ? {
+          _editado_por: autor,
+          _editado_en: new Date().toISOString(),
+          _cantidad_original: anterior._cantidad_original ?? anterior.cantidad,
+        } : {}),
+      };
       return { ...prev, lineas };
     });
     setEditLinea(null);
@@ -1068,15 +1078,25 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                       display:"grid",
                       gridTemplateColumns:`220px 1fr${rolesCols.map(() => " minmax(80px,1fr)").join("")} 80px 44px`,
                       padding:"0 20px", borderBottom:`1px solid ${C.line}`, alignItems:"start",
+                      background: item._editado_por ? "rgba(251,146,60,.10)" : "",
                       transition:"background .1s" }}
-                      onMouseEnter={e => e.currentTarget.style.background = C.s2}
-                      onMouseLeave={e => e.currentTarget.style.background = ""}>
+                      onMouseEnter={e => e.currentTarget.style.background = item._editado_por ? "rgba(251,146,60,.18)" : C.s2}
+                      onMouseLeave={e => e.currentTarget.style.background = item._editado_por ? "rgba(251,146,60,.10)" : ""}>
                       <div style={{ padding:"9px 8px", fontSize:12, color:C.sub,
                         overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
                         {item.categoria || ""}
                       </div>
                       <div style={{ padding:"9px 8px" }}>
                         <div style={{ fontSize:13.5, color:C.ink }}>{item.nombre}</div>
+                        {item._editado_por && (
+                          <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:3 }}>
+                            <span style={{ fontSize:10.5, fontWeight:700, color:"#ea580c",
+                              background:"rgba(251,146,60,.18)", borderRadius:4, padding:"1px 6px" }}>
+                              ✏ {item._editado_por.split('@')[0]}
+                              {item._cantidad_original != null && ` · antes: ${item._cantidad_original}`}
+                            </span>
+                          </div>
+                        )}
                         {rolesDesc.length > 0 && (
                           <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginTop:3 }}>
                             {rolesDesc.map(r => (
@@ -1093,7 +1113,8 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                           {item[r.key] || ""}
                         </div>
                       ))}
-                      <div style={{ padding:"9px 8px", fontSize:13.5, fontWeight:700, textAlign:"right" }}>{item.cantidad}</div>
+                      <div style={{ padding:"9px 8px", fontSize:13.5, fontWeight:700, textAlign:"right",
+                        color: item._editado_por ? "#ea580c" : C.ink }}>{item.cantidad}</div>
                       {editando && (
                         <div style={{ display:"flex", gap:2, padding:"9px 4px" }}>
                           <button onClick={() => setEditLinea({ idx: globalIdx, ...item })}
@@ -1652,6 +1673,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         empresaId={empresa?.id}
         formatoFecha={formatoFecha}
         highlightedCategoria={highlightedCategoria}
+        sesion={sesion}
         L={L}/>
     );
   }
