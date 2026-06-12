@@ -16,7 +16,11 @@ import { sb, lsc, supabaseConfigurado } from "./supabase.js";
 function mapEmpresa(co, cfg) {
   return {
     id: co.id, nombre: co.nombre, pais: co.pais || "ES",
-    logo_url: co.logo_url || null,
+    logo_url:      co.logo_url      || null,
+    website:       co.website       || null,
+    phone:         co.phone         || null,
+    cif:           co.cif           || null,
+    billing_email: co.billing_email || null,
     apps: co.apps || [],
     flags: co.flags || {},
     col_config: cfg?.col_config || {},
@@ -386,6 +390,24 @@ export async function guardarPrefs(companyId, patch) {
 }
 
 // MARK: - Notificaciones (cargarMiembrosEmpresa, enviarNotificacionPedido)
+
+// Carga miembros con email y rol (para el panel de empresa y el chat)
+export async function cargarMiembros(companyId) {
+  if (!supabaseConfigurado || !companyId) return [];
+  const [{ data: members, error }, { data: rpcEmails }] = await Promise.all([
+    sb().from("company_members").select("user_id, rol").eq("company_id", companyId),
+    sb().rpc("get_company_member_emails", { p_company_id: companyId }),
+  ]);
+  if (error) { console.error("[L-Scale] cargarMiembros:", error.message); return []; }
+  const emailMap = {};
+  (rpcEmails || []).forEach(r => { if (r.user_id) emailMap[r.user_id] = r.email; });
+  return (members || []).map(m => {
+    const email = emailMap[m.user_id] ?? null;
+    const nombre = email ? email.split("@")[0].replace(/[._]/g, " ") : "Usuario";
+    return { user_id: m.user_id, rol: m.rol, email, nombre };
+  });
+}
+
 export async function cargarMiembrosEmpresa(companyId) {
   if (!supabaseConfigurado || !companyId) return [];
   const { data, error } = await sb().rpc("get_company_member_emails", { p_company_id: companyId });

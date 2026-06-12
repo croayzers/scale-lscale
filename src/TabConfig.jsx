@@ -1,10 +1,18 @@
 import React, { useState, useEffect } from "react";
-import { Settings, Plus, Trash2, Check, Shield } from "lucide-react";
+import { Settings, Plus, Trash2, Check, Shield, MessageCircle, Globe, Phone, Mail, Building2 } from "lucide-react";
 import { C, Badge, Btn } from "./lib/ui.jsx";
 
 const COLORES_ROLES = ["#0891b2","#be185d","#65a30d","#7c3aed","#f59e0b","#ef4444","#10b981","#8b5cf6","#f97316","#06b6d4"];
+const AVATAR_COLORS = ["#6366f1","#0891b2","#be185d","#65a30d","#f59e0b","#ef4444","#10b981","#8b5cf6"];
 
-export default function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpresa, guardarVehiculos, rolesImport, guardarRoles, formatoFecha = "DD/MM/YYYY", guardarFormatoFecha, isAdmin = true, L }) {
+function avatarColor(uid) {
+  if (!uid) return AVATAR_COLORS[0];
+  let h = 0;
+  for (let i = 0; i < uid.length; i++) h = (h * 31 + uid.charCodeAt(i)) & 0x7fffffff;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length];
+}
+
+export default function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpresa, guardarVehiculos, rolesImport, guardarRoles, formatoFecha = "DD/MM/YYYY", guardarFormatoFecha, isAdmin = true, miembros = [], onEnviarMensaje, L }) {
   const [alms, setAlms] = useState(almacenes);
   const [vehs, setVehs] = useState(vehiculosEmpresa || []);
   const [roles, setRoles] = useState(rolesImport || []);
@@ -64,21 +72,93 @@ export default function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, 
         </div>
       )}
 
-      {/* Info empresa */}
+      {/* Panel de empresa */}
       <div style={{ background:C.surface, border:`1px solid ${C.line}`, borderRadius:14, overflow:"hidden", marginBottom:20 }}>
-        <div style={{ padding:"14px 18px", borderBottom:`1px solid ${C.line}` }}>
-          <div style={{ fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, marginBottom:4 }}>{L("EMPRESA","COMPANY")}</div>
-          <div style={{ fontSize:16, fontWeight:600 }}>{empresa?.nombre || "—"}</div>
-          <div style={{ fontSize:12, color:C.sub, marginTop:2 }}>ID: {empresa?.id}</div>
-        </div>
-        <div style={{ padding:"14px 18px", borderBottom:`1px solid ${C.line}` }}>
-          <div style={{ fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, marginBottom:4 }}>{L("MODO","MODE")}</div>
+        {/* Logo + nombre */}
+        <div style={{ padding:"18px 18px 14px", borderBottom:`1px solid ${C.line}`, display:"flex", alignItems:"center", gap:14 }}>
+          <div style={{ width:52, height:52, borderRadius:12, overflow:"hidden", flexShrink:0,
+            background: empresa?.logo_url ? "transparent" : C.brandSoft,
+            display:"grid", placeItems:"center", border:`1px solid ${C.line}` }}>
+            {empresa?.logo_url
+              ? <img src={empresa.logo_url} alt="" style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+              : <Building2 size={24} color={C.brand}/>
+            }
+          </div>
+          <div style={{ flex:1, minWidth:0 }}>
+            <div style={{ fontSize:16, fontWeight:700, color:C.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+              {empresa?.nombre || "—"}
+            </div>
+            <div style={{ fontSize:11.5, color:C.sub, marginTop:2 }}>
+              {empresa?.pais || ""}{empresa?.pais && empresa?.cif ? " · " : ""}{empresa?.cif || ""}
+            </div>
+          </div>
           <Badge color={modo === "demo" ? C.warnSoft : C.brandSoft} ink={modo === "demo" ? C.warn : C.brand}>
-            {modo === "demo" ? L("Demo (sin Supabase)","Demo (no Supabase)") : "Supabase"}
+            {modo === "demo" ? "Demo" : "Supabase"}
           </Badge>
         </div>
-        <div style={{ padding:"14px 18px" }}>
-          <div style={{ fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, marginBottom:4 }}>{L("APPS ACTIVAS","ACTIVE APPS")}</div>
+
+        {/* Datos de contacto */}
+        {(empresa?.website || empresa?.phone || empresa?.billing_email) && (
+          <div style={{ padding:"12px 18px", borderBottom:`1px solid ${C.line}`, display:"flex", flexDirection:"column", gap:6 }}>
+            {empresa.website && (
+              <a href={empresa.website} target="_blank" rel="noreferrer" style={{ display:"flex", alignItems:"center", gap:7, fontSize:12.5, color:C.brand, textDecoration:"none" }}>
+                <Globe size={13}/>{empresa.website.replace(/^https?:\/\//, "")}
+              </a>
+            )}
+            {empresa.phone && (
+              <div style={{ display:"flex", alignItems:"center", gap:7, fontSize:12.5, color:C.sub }}>
+                <Phone size={13}/>{empresa.phone}
+              </div>
+            )}
+            {empresa.billing_email && (
+              <div style={{ display:"flex", alignItems:"center", gap:7, fontSize:12.5, color:C.sub }}>
+                <Mail size={13}/>{empresa.billing_email}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Admin / Owner */}
+        {(() => {
+          const admin = miembros.find(m => m.rol === "owner") || miembros.find(m => m.rol === "admin") || miembros[0];
+          if (!admin) return null;
+          const color = avatarColor(admin.user_id);
+          const inicial = (admin.nombre || admin.email || "A")[0].toUpperCase();
+          return (
+            <div style={{ padding:"12px 18px", borderBottom:`1px solid ${C.line}`, display:"flex", alignItems:"center", gap:10 }}>
+              <div style={{ width:34, height:34, borderRadius:"50%", background:color, color:"#fff",
+                display:"grid", placeItems:"center", fontSize:13, fontWeight:700, flexShrink:0 }}>
+                {inicial}
+              </div>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ fontSize:12, fontWeight:700, color:C.sub, letterSpacing:.4, marginBottom:1 }}>
+                  {L("ADMINISTRADOR","ADMINISTRATOR")}
+                </div>
+                <div style={{ fontSize:13, color:C.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                  {admin.nombre || admin.email || "Usuario"}
+                </div>
+                {admin.email && (
+                  <div style={{ fontSize:11, color:C.sub, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                    {admin.email}
+                  </div>
+                )}
+              </div>
+              {onEnviarMensaje && (
+                <button onClick={() => onEnviarMensaje(admin)}
+                  title={L("Enviar mensaje","Send message")}
+                  style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 12px", borderRadius:9,
+                    background:C.brandSoft, color:C.brand, border:`1px solid ${C.brand}30`,
+                    cursor:"pointer", fontSize:12.5, fontWeight:600, fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                  <MessageCircle size={13}/>{L("Mensaje","Message")}
+                </button>
+              )}
+            </div>
+          );
+        })()}
+
+        {/* Apps activas */}
+        <div style={{ padding:"12px 18px" }}>
+          <div style={{ fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, marginBottom:6 }}>{L("APPS ACTIVAS","ACTIVE APPS")}</div>
           <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
             {(empresa?.apps || []).map((a) => <Badge key={a}>{a}</Badge>)}
           </div>

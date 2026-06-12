@@ -2,16 +2,16 @@
 // MARK: - AvisoPortal
 // MARK: - SinConfig
 // MARK: - App [export default]
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import {
   CalendarDays, RotateCcw, Warehouse, Settings,
   Sun, Moon, Globe, Loader, ArrowRight,
-  Building2, ShoppingBag, ClipboardList,
+  Building2, ShoppingBag, ClipboardList, Bell,
 } from "lucide-react";
 import { LangContext, IDIOMAS } from "./lib/i18n.js";
 import { sb, supabaseConfigurado } from "./lib/supabase.js";
 import {
-  cargarDatos, crearConfigInicial, cargarPrefs, guardarPrefs, guardarPedido, guardarTramos, registrarVistoPor,
+  cargarDatos, crearConfigInicial, cargarPrefs, guardarPrefs, guardarPedido, guardarTramos, registrarVistoPor, cargarMiembros,
 } from "./lib/data.js";
 import { C, Badge, Btn } from "./lib/ui.jsx";
 import Login from "./Login.jsx";
@@ -20,6 +20,7 @@ import TabPedidos from "./TabPedidos.jsx";
 import TabPlanning from "./TabPlanning.jsx";
 import TabRetorno from "./TabRetorno.jsx";
 import TabConfig from "./TabConfig.jsx";
+import ChatFloat from "./ChatFloat.jsx";
 import { Package, Shield } from "lucide-react";
 
 // MARK: - Constantes (ROLES_DEFECTO, DEFAULT_VEHICULOS_EMPRESA, TABS)
@@ -126,6 +127,9 @@ export default function App() {
   const [rolesImport,       setRolesImport]       = useState(ROLES_DEFECTO);
   const [myRol,             setMyRol]             = useState("owner");
   const [formatoFecha,      setFormatoFecha]      = useState("DD/MM/YYYY");
+  const [miembros,          setMiembros]          = useState([]);
+  const [chatUnread,        setChatUnread]        = useState(0);
+  const chatRef = useRef();
 
   const tramosIniciales = useMemo(() => {
     const r = {};
@@ -134,6 +138,12 @@ export default function App() {
     }
     return r;
   }, [expediciones]);
+
+  // Carga miembros de la empresa (para panel de empresa y chat)
+  useEffect(() => {
+    if (!empresa?.id || modo !== "supabase") return;
+    cargarMiembros(empresa.id).then(setMiembros);
+  }, [empresa?.id, modo]);
 
   useEffect(() => {
     if (!empresa?.id) return;
@@ -262,6 +272,24 @@ export default function App() {
           </div>
 
           <div style={{ display:"flex", alignItems:"center", gap:6, marginLeft:"auto" }}>
+            {/* Campana de mensajes */}
+            {supabaseConfigurado && empresa?.id && (
+              <button onClick={() => chatRef.current?.openPanel()}
+                title={L("Mensajes","Messages")}
+                style={{ position:"relative", background:"none", border:"none", cursor:"pointer", color:C.sub, padding:6, borderRadius:8, display:"flex" }}>
+                <Bell size={16}/>
+                {chatUnread > 0 && (
+                  <span style={{
+                    position:"absolute", top:2, right:2,
+                    minWidth:15, height:15, borderRadius:999,
+                    background:"#ef4444", color:"#fff",
+                    fontSize:9, fontWeight:800,
+                    display:"grid", placeItems:"center", padding:"0 3px",
+                    lineHeight:1,
+                  }}>{chatUnread > 9 ? "9+" : chatUnread}</span>
+                )}
+              </button>
+            )}
             <button onClick={cambiarLang} title={L("Cambiar idioma","Change language")} style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, padding:6, borderRadius:8, display:"flex" }}><Globe size={16}/></button>
             <button onClick={toggleTema} title={L("Cambiar tema","Toggle theme")} style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, padding:6, borderRadius:8, display:"flex" }}>
               {tema === "dark" ? <Sun size={16}/> : <Moon size={16}/>}
@@ -308,8 +336,19 @@ export default function App() {
             onSaveTramos={async (pid, tramos) => { if (modo === "supabase" && empresa?.id) await guardarTramos(pid, tramos, empresa.id); }}/>}
           {tab === "retorno"  && <TabRetorno  pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha}
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} L={L}/>}
-          {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={myRol === "owner" || myRol === "admin"} L={L}/>}
+          {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={myRol === "owner" || myRol === "admin"} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} L={L}/>}
         </div>
+
+        {/* Chat flotante */}
+        {supabaseConfigurado && empresa?.id && sesion?.user && (
+          <ChatFloat
+            ref={chatRef}
+            empresa={empresa}
+            miembros={miembros}
+            currentUser={sesion.user}
+            onUnreadChange={setChatUnread}
+          />
+        )}
       </div>
     </LangContext.Provider>
   );
