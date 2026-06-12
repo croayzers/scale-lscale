@@ -122,6 +122,7 @@ function ListView({ otros, allMessages, myId, onSelect }) {
 function ConvView({ partner, messages, myId, onBack, onSend }) {
   const [texto, setTexto] = useState("");
   const [sending, setSending] = useState(false);
+  const [sendErr, setSendErr] = useState(null);
   const endRef = useRef(null);
 
   useEffect(() => {
@@ -133,9 +134,14 @@ function ConvView({ partner, messages, myId, onBack, onSend }) {
     const msg = texto.trim();
     if (!msg || sending) return;
     setTexto("");
+    setSendErr(null);
     setSending(true);
     try { await onSend(msg); }
-    catch { setTexto(msg); }
+    catch (err) {
+      console.error("[chat] enviar error:", err);
+      setTexto(msg);
+      setSendErr(err?.message || "Error al enviar");
+    }
     finally { setSending(false); }
   };
 
@@ -223,6 +229,13 @@ function ConvView({ partner, messages, myId, onBack, onSend }) {
         })}
         <div ref={endRef} />
       </div>
+
+      {/* Error envío */}
+      {sendErr && (
+        <div style={{ padding: "4px 14px", fontSize: 11.5, color: "#ef4444", background: "#fef2f2", borderTop: "1px solid #fecaca" }}>
+          {sendErr}
+        </div>
+      )}
 
       {/* Input */}
       <form onSubmit={enviar} style={{

@@ -16,12 +16,14 @@ export async function cargarTodosMensajes(companyId) {
 // Envía un mensaje de DM entre dos usuarios
 export async function enviarMensaje(companyId, fromUserId, toUserId, message) {
   if (!supabaseConfigurado) throw new Error("Supabase no configurado");
+  console.log("[chat] enviar →", { companyId, fromUserId, toUserId, message });
   const { data, error } = await sb()
     .from("company_messages")
     .insert({ company_id: companyId, from_user_id: fromUserId, to_user_id: toUserId, message })
     .select()
     .single();
-  if (error) throw error;
+  if (error) { console.error("[chat] enviarMensaje error:", error); throw error; }
+  console.log("[chat] enviado ✓", data);
   return data;
 }
 
