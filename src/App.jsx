@@ -14,7 +14,6 @@ import {
   cargarDatos, crearConfigInicial, cargarPrefs, guardarPrefs, guardarPedido, guardarTramos, registrarVistoPor, cargarMiembros,
 } from "./lib/data.js";
 import { C, Badge, Btn } from "./lib/ui.jsx";
-import Login from "./Login.jsx";
 import TabAlmacen from "./TabAlmacen.jsx";
 import TabPedidos from "./TabPedidos.jsx";
 import TabPlanning from "./TabPlanning.jsx";
@@ -319,7 +318,9 @@ export default function App() {
     );
   }
   if (supabaseConfigurado && (!sesion || modo === "sin_sesion")) {
-    return <LangContext.Provider value={lang}><Login/></LangContext.Provider>;
+    const PORTAL = import.meta.env?.VITE_PORTAL_URL || "http://localhost:3000";
+    window.location.replace(`${PORTAL}/login?returnUrl=${encodeURIComponent(window.location.href)}`);
+    return null;
   }
   if (modo === "sin_empresa")   return <LangContext.Provider value={lang}><AvisoPortal tipo="sin_empresa"   L={L}/></LangContext.Provider>;
   if (modo === "no_contratado") return <LangContext.Provider value={lang}><AvisoPortal tipo="no_contratado" L={L}/></LangContext.Provider>;
