@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { Settings, Plus, Trash2, Check, Shield, MessageCircle, Globe, Phone, Mail, Building2 } from "lucide-react";
+import { Settings, Plus, Trash2, Check, Shield, MessageCircle, Globe, Phone, Mail, Building2, ExternalLink } from "lucide-react";
 import { C, Badge, Btn } from "./lib/ui.jsx";
 
 const COLORES_ROLES = ["#0891b2","#be185d","#65a30d","#7c3aed","#f59e0b","#ef4444","#10b981","#8b5cf6","#f97316","#06b6d4"];
@@ -12,7 +12,7 @@ function avatarColor(uid) {
   return AVATAR_COLORS[h % AVATAR_COLORS.length];
 }
 
-export default function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpresa, guardarVehiculos, rolesImport, guardarRoles, formatoFecha = "DD/MM/YYYY", guardarFormatoFecha, isAdmin = true, miembros = [], onEnviarMensaje, L }) {
+export default function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpresa, guardarVehiculos, rolesImport, guardarRoles, formatoFecha = "DD/MM/YYYY", guardarFormatoFecha, isAdmin = true, miembros = [], onEnviarMensaje, L, portalUrl }) {
   const [alms, setAlms] = useState(almacenes);
   const [vehs, setVehs] = useState(vehiculosEmpresa || []);
   const [roles, setRoles] = useState(rolesImport || []);
@@ -92,9 +92,9 @@ export default function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, 
               {empresa?.pais || ""}{empresa?.pais && empresa?.cif ? " · " : ""}{empresa?.cif || ""}
             </div>
           </div>
-          <Badge color={modo === "demo" ? C.warnSoft : C.brandSoft} ink={modo === "demo" ? C.warn : C.brand}>
-            {modo === "demo" ? "Demo" : "Supabase"}
-          </Badge>
+          {modo === "demo" && (
+            <Badge color={C.warnSoft} ink={C.warn}>Demo</Badge>
+          )}
         </div>
 
         {/* Datos de contacto */}
@@ -118,51 +118,65 @@ export default function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, 
           </div>
         )}
 
-        {/* Admin / Owner */}
+        {/* Admins / Owners */}
         {(() => {
-          const admin = miembros.find(m => m.rol === "owner") || miembros.find(m => m.rol === "admin") || miembros[0];
-          if (!admin) return null;
-          const color = avatarColor(admin.user_id);
-          const inicial = (admin.nombre || admin.email || "A")[0].toUpperCase();
-          return (
-            <div style={{ padding:"12px 18px", borderBottom:`1px solid ${C.line}`, display:"flex", alignItems:"center", gap:10 }}>
-              <div style={{ width:34, height:34, borderRadius:"50%", background:color, color:"#fff",
-                display:"grid", placeItems:"center", fontSize:13, fontWeight:700, flexShrink:0 }}>
-                {inicial}
-              </div>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ fontSize:12, fontWeight:700, color:C.sub, letterSpacing:.4, marginBottom:1 }}>
-                  {L("ADMINISTRADOR","ADMINISTRATOR")}
+          const admins = miembros.filter(m => m.rol === "owner" || m.rol === "admin");
+          if (!admins.length) return null;
+          return admins.map((admin, idx) => {
+            const color = avatarColor(admin.user_id);
+            const inicial = (admin.nombre || admin.email || "A")[0].toUpperCase();
+            return (
+              <div key={admin.user_id} style={{ padding:"12px 18px", borderBottom:`1px solid ${C.line}`, display:"flex", alignItems:"center", gap:10 }}>
+                <div style={{ width:34, height:34, borderRadius:"50%", background:color, color:"#fff",
+                  display:"grid", placeItems:"center", fontSize:13, fontWeight:700, flexShrink:0 }}>
+                  {inicial}
                 </div>
-                <div style={{ fontSize:13, color:C.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                  {admin.nombre || admin.email || "Usuario"}
-                </div>
-                {admin.email && (
-                  <div style={{ fontSize:11, color:C.sub, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
-                    {admin.email}
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.4, marginBottom:1, textTransform:"uppercase" }}>
+                    {admin.rol === "owner" ? L("PROPIETARIO","OWNER") : L("ADMINISTRADOR","ADMIN")}
                   </div>
+                  <div style={{ fontSize:13, color:C.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                    {admin.nombre || admin.email || "Usuario"}
+                  </div>
+                  {admin.email && (
+                    <div style={{ fontSize:11, color:C.sub, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                      {admin.email}
+                    </div>
+                  )}
+                </div>
+                {onEnviarMensaje && (
+                  <button onClick={() => onEnviarMensaje(admin)}
+                    title={L("Enviar mensaje","Send message")}
+                    style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 12px", borderRadius:9,
+                      background:C.brandSoft, color:C.brand, border:`1px solid ${C.brand}30`,
+                      cursor:"pointer", fontSize:12.5, fontWeight:600, fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                    <MessageCircle size={13}/>{L("Mensaje","Message")}
+                  </button>
                 )}
               </div>
-              {onEnviarMensaje && (
-                <button onClick={() => onEnviarMensaje(admin)}
-                  title={L("Enviar mensaje","Send message")}
-                  style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 12px", borderRadius:9,
-                    background:C.brandSoft, color:C.brand, border:`1px solid ${C.brand}30`,
-                    cursor:"pointer", fontSize:12.5, fontWeight:600, fontFamily:"inherit", whiteSpace:"nowrap" }}>
-                  <MessageCircle size={13}/>{L("Mensaje","Message")}
-                </button>
-              )}
-            </div>
-          );
+            );
+          });
         })()}
 
         {/* Apps activas */}
-        <div style={{ padding:"12px 18px" }}>
+        <div style={{ padding:"12px 18px", borderBottom: isAdmin && portalUrl ? `1px solid ${C.line}` : "none" }}>
           <div style={{ fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, marginBottom:6 }}>{L("APPS ACTIVAS","ACTIVE APPS")}</div>
           <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
             {(empresa?.apps || []).map((a) => <Badge key={a}>{a}</Badge>)}
           </div>
         </div>
+
+        {/* Botón panel de admin */}
+        {isAdmin && portalUrl && (
+          <div style={{ padding:"12px 18px" }}>
+            <a href={`${portalUrl}/account/admin`} target="_blank" rel="noreferrer"
+              style={{ display:"inline-flex", alignItems:"center", gap:7, padding:"8px 16px", borderRadius:9,
+                background:C.brandSoft, color:C.brand, border:`1px solid ${C.brand}30`,
+                fontSize:13, fontWeight:600, textDecoration:"none", cursor:"pointer" }}>
+              <ExternalLink size={13}/>{L("Panel de admin","Admin panel")}
+            </a>
+          </div>
+        )}
       </div>
 
       {/* Almacenes */}
