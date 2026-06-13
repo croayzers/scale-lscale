@@ -646,11 +646,92 @@ function SubvistaHistorial({ historico, materiales }) {
 
 // ── Sub-vista Análisis ─────────────────────────────────────────────────────
 // MARK: - SubvistaAnalisis
-function SubvistaAnalisis({ historico, materiales }) {
+function BarraDoble({ salida, retorno, maxVal, colorS, colorR }) {
+  const pS = maxVal > 0 ? (salida  / maxVal * 100) : 0;
+  const pR = maxVal > 0 ? (retorno / maxVal * 100) : 0;
+  return (
+    <div style={{ display:"flex", flexDirection:"column", gap:3, flex:1 }}>
+      <div style={{ height:10, background:C.s2, borderRadius:4, overflow:"hidden" }}>
+        <div style={{ height:"100%", width:`${pS}%`, background:colorS, borderRadius:4, transition:"width .4s" }}/>
+      </div>
+      <div style={{ height:10, background:C.s2, borderRadius:4, overflow:"hidden" }}>
+        <div style={{ height:"100%", width:`${pR}%`, background:colorR, borderRadius:4, transition:"width .4s" }}/>
+      </div>
+    </div>
+  );
+}
+
+function SubvistaAnalisis({ historico, materiales, pedidos = [], almacenes = [] }) {
   const { sesiones, lineas } = historico;
   const cerradas = sesiones.filter(s => s.estado === "cerrada");
 
-  // Variación acumulada por material
+  // ── Datos de pedidos finalizados ──────────────────────────────────────────
+  const pedidosFinalizados = useMemo(() =>
+    pedidos.filter(p => p.estado === "finalizado" && (p.lineas || []).length > 0),
+  [pedidos]);
+
+  // Flujo mensual por almacén: { "2026-03": { almId: { salida, retorno } } }
+  const flujoMensual = useMemo(() => {
+    const mapa = {}; // { mesKey: { almId: { salida, retorno, noRetorno } } }
+    pedidosFinalizados.forEach(p => {
+      const fecha = p.fecha_retorno || p.fecha_entrega || p.fecha_salida;
+      if (!fecha) return;
+      const mesKey = fecha.slice(0, 7); // "2026-03"
+      const almId  = String(p.almacen_id || "sin_almacen");
+      if (!mapa[mesKey]) mapa[mesKey] = {};
+      if (!mapa[mesKey][almId]) mapa[mesKey][almId] = { salida: 0, retorno: 0, noRetorno: 0 };
+      const entry = mapa[mesKey][almId];
+      (p.lineas || []).forEach(l => {
+        const cant    = Number(l.cantidad)  || 0;
+        const ret     = Number(l._retorno)  ?? cant;
+        entry.salida  += cant;
+        entry.retorno += ret;
+        entry.noRetorno += Math.max(0, cant - ret);
+      });
+    });
+    return mapa;
+  }, [pedidosFinalizados]);
+
+  const mesesOrdenados = useMemo(() =>
+    Object.keys(flujoMensual).sort().reverse(),
+  [flujoMensual]);
+
+  const almacenesUsados = useMemo(() => {
+    const ids = new Set();
+    Object.values(flujoMensual).forEach(m => Object.keys(m).forEach(id => ids.add(id)));
+    return [...ids].map(id => ({
+      id,
+      nombre: almacenes.find(a => String(a.id) === id)?.nombre || (id === "sin_almacen" ? "Sin almacén" : `Almacén ${id}`),
+    }));
+  }, [flujoMensual, almacenes]);
+
+  // Material no retornado: pedidos donde alguna línea _retorno < cantidad
+  const noRetornado = useMemo(() => {
+    const mapa = {}; // material_id → { mat, cantSalida, cantRetorno }
+    pedidosFinalizados.forEach(p => {
+      (p.lineas || []).forEach(l => {
+        const cant = Number(l.cantidad) || 0;
+        const ret  = l._retorno != null ? Number(l._retorno) : cant;
+        const diff = cant - ret;
+        if (diff <= 0) return;
+        const mid = l.material_id || l.nombre;
+        if (!mapa[mid]) {
+          const mat = materiales.find(m =>
+            (l.material_id && m.id === l.material_id) ||
+            m.nombre?.trim().toLowerCase() === l.nombre?.trim().toLowerCase()
+          );
+          mapa[mid] = { mat, nombre: l.nombre, cantSalida: 0, cantRetorno: 0 };
+        }
+        mapa[mid].cantSalida  += cant;
+        mapa[mid].cantRetorno += ret;
+      });
+    });
+    return Object.values(mapa)
+      .map(v => ({ ...v, perdida: v.cantSalida - v.cantRetorno }))
+      .sort((a, b) => b.perdida - a.perdida);
+  }, [pedidosFinalizados, materiales]);
+
+  // Variación acumulada por material (recuentos)
   const variaciones = useMemo(() => {
     const mapa = {};
     lineas.forEach(l => {
@@ -663,17 +744,26 @@ function SubvistaAnalisis({ historico, materiales }) {
         return { material_id: Number(mid), mat, total };
       })
       .filter(v => v.total !== 0)
-      .sort((a, b) => a.total - b.total); // más negativo primero
+      .sort((a, b) => a.total - b.total);
   }, [lineas, materiales]);
 
   const perdidas   = variaciones.filter(v => v.total < 0);
   const ganancias  = variaciones.filter(v => v.total > 0);
   const costeTotal = perdidas.reduce((s, v) => s + (Math.abs(v.total) * (v.mat?.precio_coste || 0)), 0);
+  const maxAbs     = Math.max(1, ...variaciones.map(v => Math.abs(v.total)));
+  const ultimaFecha = cerradas.length
+    ? new Date([...cerradas].sort((a, b) => new Date(b.closed_at) - new Date(a.closed_at))[0].closed_at)
+    : null;
 
-  const maxAbs = Math.max(1, ...variaciones.map(v => Math.abs(v.total)));
-  const ultimaFecha = cerradas.length ? new Date([...cerradas].sort((a,b) => new Date(b.closed_at) - new Date(a.closed_at))[0].closed_at) : null;
+  const totalSalidaGlobal  = pedidosFinalizados.reduce((s, p) => s + (p.lineas || []).reduce((a, l) => a + (Number(l.cantidad) || 0), 0), 0);
+  const totalRetornoGlobal = pedidosFinalizados.reduce((s, p) => s + (p.lineas || []).reduce((a, l) => {
+    const r = l._retorno != null ? Number(l._retorno) : Number(l.cantidad) || 0;
+    return a + r;
+  }, 0), 0);
+  const tasaRetorno = totalSalidaGlobal > 0 ? (totalRetornoGlobal / totalSalidaGlobal * 100) : null;
 
-  if (!cerradas.length) {
+  const sinDatos = !cerradas.length && !pedidosFinalizados.length;
+  if (sinDatos) {
     return (
       <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
         flex:1, gap:16, padding:32, textAlign:"center" }}>
@@ -683,51 +773,212 @@ function SubvistaAnalisis({ historico, materiales }) {
     );
   }
 
-  return (
-    <div style={{ height:"100%", overflowY:"auto", padding:"16px", display:"flex", flexDirection:"column", gap:16 }}>
+  const fmtMes = mesKey => {
+    const [y, m] = mesKey.split("-");
+    const MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+    return `${MESES[Number(m) - 1]} ${y}`;
+  };
 
-      {/* Cards resumen */}
-      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(160px, 1fr))", gap:12 }}>
+  return (
+    <div style={{ height:"100%", overflowY:"auto", padding:"16px", display:"flex", flexDirection:"column", gap:20 }}>
+
+      {/* ── Cards KPI globales ───────────────────────────────────────────── */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(155px, 1fr))", gap:12 }}>
         <div style={{ padding:"14px 16px", borderRadius:14, background:C.brandSoft, border:`1px solid ${C.brand}33` }}>
           <div style={{ fontSize:11, fontWeight:700, color:C.brand, letterSpacing:.5, marginBottom:6 }}>RECUENTOS</div>
           <div style={{ fontSize:24, fontWeight:800, color:C.brand }}>{cerradas.length}</div>
           {ultimaFecha && <div style={{ fontSize:12, color:C.brand, opacity:.8, marginTop:2 }}>Último {diasDesde(ultimaFecha)}</div>}
         </div>
+        <div style={{ padding:"14px 16px", borderRadius:14, background:"#eff6ff", border:"1px solid #bfdbfe" }}>
+          <div style={{ fontSize:11, fontWeight:700, color:"#2563eb", letterSpacing:.5, marginBottom:6 }}>PEDIDOS FINALIZADOS</div>
+          <div style={{ fontSize:24, fontWeight:800, color:"#2563eb" }}>{pedidosFinalizados.length}</div>
+          <div style={{ fontSize:12, color:"#2563eb", opacity:.8, marginTop:2 }}>{totalSalidaGlobal} uds salidas</div>
+        </div>
+        {tasaRetorno != null && (
+          <div style={{ padding:"14px 16px", borderRadius:14,
+            background: tasaRetorno >= 95 ? C.okSoft : tasaRetorno >= 80 ? "#fff3e0" : C.dangerSoft,
+            border:`1px solid ${tasaRetorno >= 95 ? C.ok : tasaRetorno >= 80 ? C.warn : C.danger}33` }}>
+            <div style={{ fontSize:11, fontWeight:700, letterSpacing:.5, marginBottom:6,
+              color: tasaRetorno >= 95 ? C.ok : tasaRetorno >= 80 ? C.warn : C.danger }}>TASA RETORNO</div>
+            <div style={{ fontSize:24, fontWeight:800,
+              color: tasaRetorno >= 95 ? C.ok : tasaRetorno >= 80 ? C.warn : C.danger }}>
+              {tasaRetorno.toFixed(1)}%
+            </div>
+            <div style={{ fontSize:12, opacity:.8, marginTop:2,
+              color: tasaRetorno >= 95 ? C.ok : tasaRetorno >= 80 ? C.warn : C.danger }}>
+              {totalRetornoGlobal} / {totalSalidaGlobal} uds
+            </div>
+          </div>
+        )}
         <div style={{ padding:"14px 16px", borderRadius:14, background:C.dangerSoft, border:`1px solid ${C.danger}33` }}>
-          <div style={{ fontSize:11, fontWeight:700, color:C.danger, letterSpacing:.5, marginBottom:6 }}>MATERIALES CON PÉRDIDA</div>
+          <div style={{ fontSize:11, fontWeight:700, color:C.danger, letterSpacing:.5, marginBottom:6 }}>CON PÉRDIDA (RECUENTOS)</div>
           <div style={{ fontSize:24, fontWeight:800, color:C.danger }}>{perdidas.length}</div>
           <div style={{ fontSize:12, color:C.danger, opacity:.8, marginTop:2 }}>
-            {perdidas.reduce((s,v) => s + Math.abs(v.total), 0)} uds. totales
+            {perdidas.reduce((s, v) => s + Math.abs(v.total), 0)} uds. totales
           </div>
         </div>
         {costeTotal > 0 && (
           <div style={{ padding:"14px 16px", borderRadius:14, background:"#fff3e0", border:`1px solid ${C.warn}33` }}>
-            <div style={{ fontSize:11, fontWeight:700, color:C.warn, letterSpacing:.5, marginBottom:6 }}>COSTE ESTIMADO PÉRDIDAS</div>
+            <div style={{ fontSize:11, fontWeight:700, color:C.warn, letterSpacing:.5, marginBottom:6 }}>COSTE PÉRDIDAS</div>
             <div style={{ fontSize:24, fontWeight:800, color:C.warn }}>{costeTotal.toFixed(2)}€</div>
-            <div style={{ fontSize:12, color:C.warn, opacity:.8, marginTop:2 }}>basado en precio coste</div>
+            <div style={{ fontSize:12, color:C.warn, opacity:.8, marginTop:2 }}>precio coste</div>
           </div>
         )}
         {ganancias.length > 0 && (
           <div style={{ padding:"14px 16px", borderRadius:14, background:C.okSoft, border:`1px solid ${C.ok}33` }}>
-            <div style={{ fontSize:11, fontWeight:700, color:C.ok, letterSpacing:.5, marginBottom:6 }}>MATERIALES CON GANANCIA</div>
+            <div style={{ fontSize:11, fontWeight:700, color:C.ok, letterSpacing:.5, marginBottom:6 }}>CON GANANCIA</div>
             <div style={{ fontSize:24, fontWeight:800, color:C.ok }}>{ganancias.length}</div>
             <div style={{ fontSize:12, color:C.ok, opacity:.8, marginTop:2 }}>
-              +{ganancias.reduce((s,v) => s + v.total, 0)} uds. totales
+              +{ganancias.reduce((s, v) => s + v.total, 0)} uds.
             </div>
           </div>
         )}
       </div>
 
-      {/* Ranking */}
+      {/* ── Flujo mensual por almacén ────────────────────────────────────── */}
+      {mesesOrdenados.length > 0 && (
+        <div style={{ background:C.surface, borderRadius:14, border:`1px solid ${C.line}`, overflow:"hidden" }}>
+          <div style={{ padding:"12px 16px", borderBottom:`1px solid ${C.line}`, display:"flex", alignItems:"center", gap:10 }}>
+            <div style={{ fontWeight:700, fontSize:14, color:C.ink, flex:1 }}>Flujo mensual por almacén</div>
+            <div style={{ display:"flex", alignItems:"center", gap:12, fontSize:11.5, color:C.sub }}>
+              <span style={{ display:"flex", alignItems:"center", gap:4 }}>
+                <span style={{ width:10, height:10, borderRadius:2, background:"#f97316", display:"inline-block" }}/>Salida
+              </span>
+              <span style={{ display:"flex", alignItems:"center", gap:4 }}>
+                <span style={{ width:10, height:10, borderRadius:2, background:C.ok, display:"inline-block" }}/>Retorno
+              </span>
+            </div>
+          </div>
+          <div style={{ overflowX:"auto" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+              <thead>
+                <tr style={{ background:C.s2 }}>
+                  <th style={{ padding:"8px 14px", textAlign:"left", fontWeight:700, fontSize:11, color:C.sub,
+                    letterSpacing:.5, position:"sticky", left:0, background:C.s2, minWidth:100, borderRight:`1px solid ${C.line}` }}>
+                    MES
+                  </th>
+                  {almacenesUsados.map(a => (
+                    <th key={a.id} colSpan={3} style={{ padding:"8px 12px", textAlign:"center", fontWeight:700,
+                      fontSize:11, color:C.brand, letterSpacing:.4, borderLeft:`1px solid ${C.line}` }}>
+                      {a.nombre}
+                    </th>
+                  ))}
+                </tr>
+                <tr style={{ background:C.s2 }}>
+                  <th style={{ position:"sticky", left:0, background:C.s2, borderRight:`1px solid ${C.line}` }}/>
+                  {almacenesUsados.map(a => (
+                    <React.Fragment key={a.id}>
+                      <th style={{ padding:"4px 8px", textAlign:"right", fontSize:10, fontWeight:600, color:C.sub, borderLeft:`1px solid ${C.line}` }}>SALIDA</th>
+                      <th style={{ padding:"4px 8px", textAlign:"right", fontSize:10, fontWeight:600, color:C.sub }}>RETORNO</th>
+                      <th style={{ padding:"4px 8px", textAlign:"right", fontSize:10, fontWeight:600, color:C.danger }}>NO RET.</th>
+                    </React.Fragment>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {mesesOrdenados.map((mes, ri) => {
+                  const dataMes = flujoMensual[mes] || {};
+                  const maxMes = Math.max(1, ...almacenesUsados.map(a => dataMes[a.id]?.salida || 0));
+                  return (
+                    <tr key={mes} style={{ background: ri % 2 === 0 ? C.bg : C.surface, borderBottom:`1px solid ${C.line}` }}>
+                      <td style={{ padding:"10px 14px", fontWeight:700, color:C.ink, fontSize:13,
+                        position:"sticky", left:0, background: ri % 2 === 0 ? C.bg : C.surface,
+                        borderRight:`1px solid ${C.line}`, whiteSpace:"nowrap" }}>
+                        {fmtMes(mes)}
+                      </td>
+                      {almacenesUsados.map(a => {
+                        const d = dataMes[a.id] || { salida:0, retorno:0, noRetorno:0 };
+                        const noRet = d.salida - d.retorno;
+                        return (
+                          <React.Fragment key={a.id}>
+                            <td style={{ padding:"6px 8px", textAlign:"right", borderLeft:`1px solid ${C.line}` }}>
+                              <div style={{ display:"flex", alignItems:"center", gap:6, justifyContent:"flex-end" }}>
+                                <BarraDoble salida={d.salida} retorno={d.retorno} maxVal={maxMes}
+                                  colorS="#f97316" colorR={C.ok}/>
+                                <span style={{ fontVariantNumeric:"tabular-nums", fontWeight:600,
+                                  color:"#f97316", minWidth:32, textAlign:"right" }}>{d.salida || "—"}</span>
+                              </div>
+                            </td>
+                            <td style={{ padding:"6px 8px", textAlign:"right", fontVariantNumeric:"tabular-nums",
+                              fontWeight:600, color:C.ok }}>
+                              {d.retorno || "—"}
+                            </td>
+                            <td style={{ padding:"6px 8px", textAlign:"right", fontVariantNumeric:"tabular-nums",
+                              fontWeight:700, color: noRet > 0 ? C.danger : C.dim }}>
+                              {noRet > 0 ? `-${noRet}` : "—"}
+                            </td>
+                          </React.Fragment>
+                        );
+                      })}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── Material no retornado ────────────────────────────────────────── */}
+      {noRetornado.length > 0 && (
+        <div style={{ background:C.surface, borderRadius:14, border:`1px solid ${C.line}`, overflow:"hidden" }}>
+          <div style={{ padding:"12px 16px", borderBottom:`1px solid ${C.line}`, display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ fontWeight:700, fontSize:14, color:C.ink, flex:1 }}>Material no retornado</div>
+            <span style={{ fontSize:12, color:C.sub }}>Acumulado de todos los pedidos</span>
+          </div>
+          <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+            <thead>
+              <tr style={{ background:C.s2 }}>
+                <th style={{ padding:"7px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.5 }}>MATERIAL</th>
+                <th style={{ padding:"7px 10px", textAlign:"right", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.5 }}>SALIDAS</th>
+                <th style={{ padding:"7px 10px", textAlign:"right", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.5 }}>RETORNOS</th>
+                <th style={{ padding:"7px 10px", textAlign:"right", fontSize:11, fontWeight:700, color:C.danger, letterSpacing:.5 }}>NO RET.</th>
+                <th style={{ padding:"7px 10px", textAlign:"right", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.5 }}>% PÉRD.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {noRetornado.map((v, i) => {
+                const pctPerd = v.cantSalida > 0 ? (v.perdida / v.cantSalida * 100) : 0;
+                const barPct  = noRetornado[0]?.perdida > 0 ? (v.perdida / noRetornado[0].perdida * 100) : 0;
+                return (
+                  <tr key={i} style={{ background: i % 2 === 0 ? C.bg : C.surface, borderBottom:`1px solid ${C.line}` }}>
+                    <td style={{ padding:"9px 14px" }}>
+                      <div style={{ fontWeight:600, color:C.ink }}>{v.mat?.nombre || v.nombre}</div>
+                      {v.mat?.referencia && <div style={{ fontSize:11, color:C.sub }}>{v.mat.referencia}</div>}
+                    </td>
+                    <td style={{ padding:"9px 10px", textAlign:"right", color:C.sub, fontVariantNumeric:"tabular-nums" }}>{v.cantSalida}</td>
+                    <td style={{ padding:"9px 10px", textAlign:"right", color:C.ok, fontWeight:600, fontVariantNumeric:"tabular-nums" }}>{v.cantRetorno}</td>
+                    <td style={{ padding:"9px 10px", textAlign:"right", verticalAlign:"middle" }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6, justifyContent:"flex-end" }}>
+                        <div style={{ width:60, height:6, background:C.s2, borderRadius:3, overflow:"hidden" }}>
+                          <div style={{ height:"100%", width:`${barPct}%`, background:C.danger, borderRadius:3 }}/>
+                        </div>
+                        <span style={{ fontWeight:700, color:C.danger, fontVariantNumeric:"tabular-nums", minWidth:20 }}>{v.perdida}</span>
+                      </div>
+                    </td>
+                    <td style={{ padding:"9px 10px", textAlign:"right", fontWeight:600,
+                      color: pctPerd >= 20 ? C.danger : pctPerd >= 10 ? C.warn : C.sub,
+                      fontVariantNumeric:"tabular-nums" }}>
+                      {pctPerd.toFixed(1)}%
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Ranking variación recuentos ──────────────────────────────────── */}
       {variaciones.length > 0 && (
         <div style={{ background:C.surface, borderRadius:14, border:`1px solid ${C.line}`, overflow:"hidden" }}>
           <div style={{ padding:"12px 16px", borderBottom:`1px solid ${C.line}`, fontWeight:700, fontSize:14, color:C.ink }}>
-            Variación acumulada por material
+            Variación en recuentos por material
           </div>
           <div style={{ display:"flex", flexDirection:"column" }}>
             {variaciones.map((v, i) => {
-              const dc   = difColor(v.total);
-              const pct  = Math.abs(v.total) / maxAbs * 100;
+              const dc  = difColor(v.total);
+              const pct = Math.abs(v.total) / maxAbs * 100;
               return (
                 <div key={v.material_id}
                   style={{ padding:"10px 16px", borderBottom: i < variaciones.length - 1 ? `1px solid ${C.line}` : "none",
@@ -739,11 +990,9 @@ function SubvistaAnalisis({ historico, materiales }) {
                     </div>
                     {v.mat?.referencia && <div style={{ fontSize:11.5, color:C.sub }}>{v.mat.referencia}</div>}
                   </div>
-                  {/* Barra */}
                   <div style={{ width:120, height:8, borderRadius:4, background:C.s2, overflow:"hidden", flexShrink:0 }}>
                     <div style={{ height:"100%", borderRadius:4, background:dc.ink, width:`${pct}%`, transition:"width .3s" }}/>
                   </div>
-                  {/* Valor + % */}
                   <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", flexShrink:0, minWidth:56 }}>
                     <span style={{ fontWeight:700, fontSize:13.5, color:dc.ink, fontVariantNumeric:"tabular-nums" }}>
                       {difLabel(v.total)}
@@ -766,7 +1015,7 @@ function SubvistaAnalisis({ historico, materiales }) {
 
 // ── Componente principal ───────────────────────────────────────────────────
 // MARK: - TabInventario [export default]
-export default function TabInventario({ materiales, setMateriales, empresa, modo, almacenes, sesion }) {
+export default function TabInventario({ materiales, setMateriales, empresa, modo, almacenes, sesion, pedidos = [] }) {
   const [subvista,      setSubvista]      = useState("recuento");
   const [sesiones,      setSesiones]      = useState([]);
   const [lineasActivas, setLineasActivas] = useState([]);
@@ -916,7 +1165,7 @@ export default function TabInventario({ materiales, setMateriales, empresa, modo
           <SubvistaHistorial historico={historico} materiales={materiales}/>
         )}
         {subvista === "analisis" && (
-          <SubvistaAnalisis historico={historico} materiales={materiales}/>
+          <SubvistaAnalisis historico={historico} materiales={materiales} pedidos={pedidos} almacenes={almacenes}/>
         )}
       </div>
 
