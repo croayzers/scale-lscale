@@ -180,10 +180,23 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
   const [showUbicaciones, setShowUbicaciones] = useState(false);
   const [importFile, setImportFile] = useState(null);
 
-  const colsActivas = TODAS_COLS.filter((c) => c.fija || colsVis.includes(c.id));
-  const toggleCol   = (id) => {
+  // Columnas fijas al principio, luego las visibles en el orden guardado
+  const colsActivas = [
+    ...TODAS_COLS.filter((c) => c.fija),
+    ...colsVis.map((id) => TODAS_COLS.find((c) => c.id === id)).filter(Boolean),
+  ];
+  const toggleCol = (id) => {
     const next = colsVis.includes(id) ? colsVis.filter((x) => x !== id) : [...colsVis, id];
     setColsVis(next); localStorage.setItem(EMP_ID, JSON.stringify(next));
+  };
+  const dragCol = useRef(null);
+  const moveCol = (fromId, toId) => {
+    if (fromId === toId) return;
+    const arr = [...colsVis];
+    const fi = arr.indexOf(fromId); const ti = arr.indexOf(toId);
+    if (fi < 0 || ti < 0) return;
+    arr.splice(fi, 1); arr.splice(ti, 0, fromId);
+    setColsVis(arr); localStorage.setItem(EMP_ID, JSON.stringify(arr));
   };
 
   const filtrados = materiales.filter((m) => {
@@ -332,10 +345,30 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
         <div style={{ position:"relative" }}>
           <Btn outline onClick={() => setShowColCfg((v) => !v)} style={{ padding:"8px 12px" }}><Columns3 size={15}/>{L("Columnas","Columns")}</Btn>
           {showColCfg && (
-            <div style={{ position:"absolute", top:"calc(100% + 6px)", right:0, background:C.surface, border:`1px solid ${C.strong}`, borderRadius:12, boxShadow:"var(--shadow-lg)", padding:"10px 0", zIndex:200, minWidth:170 }}>
-              {TODAS_COLS.filter((c) => !c.fija).map((c) => (
-                <label key={c.id} style={{ display:"flex", alignItems:"center", gap:9, padding:"7px 14px", cursor:"pointer", fontSize:13 }}>
-                  <input type="checkbox" checked={colsVis.includes(c.id)} onChange={() => toggleCol(c.id)} style={{ accentColor:C.brand }}/>
+            <div style={{ position:"absolute", top:"calc(100% + 6px)", right:0, background:C.surface, border:`1px solid ${C.strong}`, borderRadius:12, boxShadow:"var(--shadow-lg)", padding:"10px 0", zIndex:200, minWidth:190 }}>
+              <div style={{ fontSize:10.5, fontWeight:700, color:C.sub, letterSpacing:.5, padding:"0 14px 6px", textTransform:"uppercase" }}>Arrastrar para reordenar</div>
+              {/* Primero las visibles en orden (arrastrables) */}
+              {colsVis.map((id) => {
+                const c = TODAS_COLS.find(x => x.id === id);
+                if (!c) return null;
+                return (
+                  <div key={c.id}
+                    draggable
+                    onDragStart={() => { dragCol.current = c.id; }}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => moveCol(dragCol.current, c.id)}
+                    style={{ display:"flex", alignItems:"center", gap:9, padding:"7px 14px", cursor:"grab", fontSize:13, userSelect:"none" }}>
+                    <span style={{ color:C.sub, fontSize:12, marginRight:2 }}>⠿</span>
+                    <input type="checkbox" checked={true} onChange={() => toggleCol(c.id)} style={{ accentColor:C.brand }}/>
+                    {c.label}
+                  </div>
+                );
+              })}
+              {/* Luego las no visibles (no arrastrables) */}
+              {TODAS_COLS.filter((c) => !c.fija && !colsVis.includes(c.id)).map((c) => (
+                <label key={c.id} style={{ display:"flex", alignItems:"center", gap:9, padding:"7px 14px", cursor:"pointer", fontSize:13, opacity:.55 }}>
+                  <span style={{ fontSize:12, marginRight:2, visibility:"hidden" }}>⠿</span>
+                  <input type="checkbox" checked={false} onChange={() => toggleCol(c.id)} style={{ accentColor:C.brand }}/>
                   {c.label}
                 </label>
               ))}
