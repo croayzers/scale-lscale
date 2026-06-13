@@ -199,8 +199,13 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
     setColsVis(arr); localStorage.setItem(EMP_ID, JSON.stringify(arr));
   };
 
+  const primerAlmacenId = almacenes?.[0]?.id ?? null;
+
   const filtrados = materiales.filter((m) => {
+    // Materiales con almacen_id explícito: solo mostrar en su almacén
     if (m.almacen_id != null && m.almacen_id !== almacenSel) return false;
+    // Materiales sin almacen_id: solo mostrar en el primer almacén
+    if (m.almacen_id == null && almacenSel !== primerAlmacenId) return false;
     if (!busqueda) return true;
     const q = busqueda.toLowerCase();
     return (m.nombre||"").toLowerCase().includes(q)

@@ -153,16 +153,21 @@ export default function App() {
     setCesta(prev => {
       const next = [...prev];
       for (const item of items) {
-        const idx = next.findIndex(i => i.nombre === item.nombre);
+        const idx = next.findIndex(i =>
+          item.material_id != null ? i.material_id === item.material_id : i.nombre === item.nombre
+        );
         if (idx >= 0) {
-          next[idx] = { ...next[idx], cantidad: Math.max(next[idx].cantidad, item.cantidad), faltante: item.faltante };
+          next[idx] = {
+            ...next[idx],
+            cantidad: next[idx].cantidad + item.cantidad,
+            faltante: (next[idx].faltante || 0) + item.faltante,
+          };
         } else {
           next.push(item);
         }
       }
       return next;
     });
-    setTab("cesta");
   }, []);
 
   const notificarStock = useCallback((pedido, matSnapshot, tipo = "pedido") => {
@@ -478,7 +483,7 @@ export default function App() {
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} L={L}/>}
           {tab === "flota"     && <TabFlota pedidos={pedidos} vehiculosEmpresa={vehiculosEmpresa} empresa={empresa} formatoFecha={formatoFecha} L={L}/>}
           {tab === "etiquetas" && <TabEtiquetas pedidos={pedidos} L={L}/>}
-          {tab === "cesta"     && <TabCesta cesta={cesta} setCesta={setCesta} materiales={materiales} setMateriales={setMateriales} modo={modo} empresa={empresa} sesion={sesion} L={L}/>}
+          {tab === "cesta"     && <TabCesta cesta={cesta} setCesta={setCesta} materiales={materiales} setMateriales={setMateriales} almacenes={almacenes} modo={modo} empresa={empresa} sesion={sesion} L={L}/>}
           {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={puedeAdmin} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} portalUrl={import.meta.env?.VITE_PORTAL_URL || "http://localhost:3000"} L={L}/>}
         </div>
 

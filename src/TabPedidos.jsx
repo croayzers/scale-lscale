@@ -20,7 +20,7 @@ import { parsearExcelPedido } from "./lib/parseExcelPedido.js";
 import ExcelConfigurador from "./ExcelConfigurador.jsx";
 import { guardarPedido, borrarPedido, cargarMiembrosEmpresa, enviarNotificacionPedido, recargarMateriales } from "./lib/data.js";
 import { fmtFecha, siguienteCodigo } from "./lib/fechas.js";
-import { conflictosPedido } from "./lib/stockConflictos.js";
+import { conflictosPedido, calcularConflictosStock } from "./lib/stockConflictos.js";
 
 // MARK: - Constantes UI (C, CHIP_ESTADO, ESTADOS)
 /* ─── Paleta ──────────────────────────────────────────────────────────────── */
@@ -165,12 +165,13 @@ function MaterialesList({ grouped, updateMaterial, L }) {
    LISTA DE PEDIDOS
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - ListaPedidos
-function ListaPedidos({ pedidos, almacenes, vehiculosEmpresa, onSelect, onImport, formatoFecha = "DD/MM/YYYY", highlightedPedidoId, L }) {
+function ListaPedidos({ pedidos, almacenes, vehiculosEmpresa, materiales = [], onSelect, onImport, formatoFecha = "DD/MM/YYYY", highlightedPedidoId, L }) {
   const sorted = [...pedidos].sort((a, b) => {
     const fa = a.fecha_entrega || a.fecha_pedido || "";
     const fb = b.fecha_entrega || b.fecha_pedido || "";
     return fb.localeCompare(fa);
   });
+  const conflictosMap = calcularConflictosStock(pedidos, materiales);
 
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"100%", minHeight:0 }}>
@@ -204,16 +205,22 @@ function ListaPedidos({ pedidos, almacenes, vehiculosEmpresa, onSelect, onImport
           sorted.map(p => {
             const chip = CHIP_ESTADO[p.estado] || CHIP_ESTADO.reservado;
             const almNombre = almacenes.find(a => a.id === p.almacen_id)?.nombre || p.almacen_nombre || "—";
+            const tieneConflicto = (conflictosMap[String(p.id)] || []).length > 0;
             return (
               <div key={p.id} onClick={() => onSelect(p)}
                 className={highlightedPedidoId === p.id ? "pedido-rainbow" : ""}
                 style={{ display:"flex", alignItems:"center", gap:14, padding:"13px 20px",
-                  borderBottom:`1px solid ${C.line}`, cursor:"pointer", transition:"background .1s" }}
-                onMouseEnter={e => { if (highlightedPedidoId !== p.id) e.currentTarget.style.background = C.s2; }}
-                onMouseLeave={e => { if (highlightedPedidoId !== p.id) e.currentTarget.style.background = ""; }}>
-                <div style={{ width:36, height:36, borderRadius:10, background:C.brandSoft,
-                  color:C.brand, display:"grid", placeItems:"center", flexShrink:0 }}>
-                  <ClipboardList size={17}/>
+                  borderBottom:`1px solid ${tieneConflicto ? "#fca5a5" : C.line}`,
+                  borderLeft: tieneConflicto ? "4px solid #dc2626" : "4px solid transparent",
+                  background: tieneConflicto ? "#fff5f5" : "",
+                  cursor:"pointer", transition:"background .1s" }}
+                onMouseEnter={e => { if (highlightedPedidoId !== p.id) e.currentTarget.style.background = tieneConflicto ? "#fee2e2" : C.s2; }}
+                onMouseLeave={e => { if (highlightedPedidoId !== p.id) e.currentTarget.style.background = tieneConflicto ? "#fff5f5" : ""; }}>
+                <div style={{ width:36, height:36, borderRadius:10,
+                  background: tieneConflicto ? "#fee2e2" : C.brandSoft,
+                  color: tieneConflicto ? "#dc2626" : C.brand,
+                  display:"grid", placeItems:"center", flexShrink:0 }}>
+                  {tieneConflicto ? <AlertTriangle size={17}/> : <ClipboardList size={17}/>}
                 </div>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
@@ -984,12 +991,17 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
               <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
                 {onAgregarCesta && (
                   <button onClick={() => {
-                      const items = conflictos.map(c => ({
-                        nombre:      c.nombre,
-                        faltante:    c.faltante,
-                        cantidad:    c.faltante,
-                        material_id: c.material_id ?? null,
-                      }));
+                      const items = conflictos.map(c => {
+                        const mat = materiales?.find(m => m.id === c.material_id);
+                        return {
+                          nombre:      c.nombre,
+                          faltante:    c.faltante,
+                          cantidad:    c.faltante,
+                          material_id: c.material_id ?? null,
+                          almacen_id:  mat?.almacen_id ?? null,
+                          ubicacion:   mat?.ubicacion  ?? null,
+                        };
+                      });
                       onAgregarCesta(items);
                     }}
                     style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 12px",
@@ -1816,6 +1828,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         pedidos={pedidos || []}
         almacenes={almacenes}
         vehiculosEmpresa={vehiculosEmpresa || []}
+        materiales={materiales || []}
         onSelect={p => { setPedidoSel(p); onRegistrarVisto?.(p.id); }}
         onImport={triggerImport}
         formatoFecha={formatoFecha}

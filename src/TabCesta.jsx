@@ -71,7 +71,7 @@ function ConstructorColumnas({ cols, onChange }) {
 }
 
 /* ─── TabCesta ────────────────────────────────────────────────────────────── */
-export default function TabCesta({ cesta, setCesta, materiales, setMateriales, modo, empresa, sesion, L }) {
+export default function TabCesta({ cesta, setCesta, materiales, setMateriales, almacenes = [], modo, empresa, sesion, L }) {
   const [comprando, setComprando] = useState(false);
   const [comprado,  setComprado]  = useState(false);
   const [cols,      setCols]      = useState(cargarCols);
@@ -79,16 +79,19 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, m
 
   const total = cesta.reduce((s, i) => s + i.cantidad, 0);
 
-  const setCantidad = (nombre, v) => {
+  const matchItem = (i, item) =>
+    item.material_id != null ? i.material_id === item.material_id : i.nombre === item.nombre;
+
+  const setCantidad = (item, v) => {
     const n = Math.max(0, Number(v) || 0);
     if (n === 0) {
-      setCesta(prev => prev.filter(i => i.nombre !== nombre));
+      setCesta(prev => prev.filter(i => !matchItem(i, item)));
     } else {
-      setCesta(prev => prev.map(i => i.nombre === nombre ? { ...i, cantidad: n } : i));
+      setCesta(prev => prev.map(i => matchItem(i, item) ? { ...i, cantidad: n } : i));
     }
   };
 
-  const eliminar = (nombre) => setCesta(prev => prev.filter(i => i.nombre !== nombre));
+  const eliminar = (item) => setCesta(prev => prev.filter(i => !matchItem(i, item)));
 
   const comprar = async () => {
     if (!cesta.length) return;
@@ -215,8 +218,8 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, m
         <table style={{ width:"100%", borderCollapse:"collapse" }}>
           <thead>
             <tr style={{ background:C.s2 }}>
-              {["Material","Faltante","Cantidad a pedir","Proveedor",""].map((h, i) => (
-                <th key={i} style={{ padding:"8px 12px", textAlign: i === 2 ? "center" : "left",
+              {["Material","Almacén / Ubicación","Faltante","Cantidad a pedir","Proveedor",""].map((h, i) => (
+                <th key={i} style={{ padding:"8px 12px", textAlign: i === 3 ? "center" : "left",
                   fontSize:11, fontWeight:700, color:C.sub, textTransform:"uppercase",
                   letterSpacing:0.4, borderBottom:`1px solid ${C.line}` }}>
                   {h}
@@ -230,6 +233,9 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, m
                 (item.material_id != null && m.id === item.material_id) ||
                 m.nombre?.trim().toLowerCase() === item.nombre?.trim().toLowerCase()
               ) || {};
+              const almacenId = item.almacen_id ?? mat.almacen_id ?? null;
+              const almacen   = almacenes.find(a => a.id === almacenId);
+              const ubicacion = item.ubicacion ?? mat.ubicacion ?? null;
               return (
                 <tr key={item.nombre + idx}
                   style={{ borderBottom:`1px solid ${C.line}`, background: idx % 2 === 0 ? C.surface : C.bg }}>
@@ -242,6 +248,22 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, m
                   </td>
 
                   <td style={{ padding:"10px 12px" }}>
+                    <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                      {almacen ? (
+                        <span style={{ fontSize:12, background:C.brandSoft, color:C.brand,
+                          padding:"2px 7px", borderRadius:999, fontWeight:600, width:"fit-content" }}>
+                          {almacen.nombre}
+                        </span>
+                      ) : (
+                        <span style={{ fontSize:12, color:C.dim }}>—</span>
+                      )}
+                      {ubicacion && (
+                        <span style={{ fontSize:11, color:C.sub }}>{ubicacion}</span>
+                      )}
+                    </div>
+                  </td>
+
+                  <td style={{ padding:"10px 12px" }}>
                     <span style={{ fontSize:12.5, background:C.dangerSoft, color:C.danger,
                       padding:"2px 8px", borderRadius:999, fontWeight:600 }}>
                       -{item.faltante} uds
@@ -250,16 +272,16 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, m
 
                   <td style={{ padding:"10px 12px" }}>
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
-                      <button onClick={() => setCantidad(item.nombre, item.cantidad - 1)}
+                      <button onClick={() => setCantidad(item, item.cantidad - 1)}
                         style={ICON_BTN}>
                         <Minus size={12}/>
                       </button>
                       <input type="number" min={1} value={item.cantidad}
-                        onChange={e => setCantidad(item.nombre, e.target.value)}
+                        onChange={e => setCantidad(item, e.target.value)}
                         style={{ width:60, textAlign:"center", padding:"5px 6px",
                           border:`1px solid ${C.strong}`, borderRadius:7, fontSize:13.5,
                           fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none" }}/>
-                      <button onClick={() => setCantidad(item.nombre, item.cantidad + 1)}
+                      <button onClick={() => setCantidad(item, item.cantidad + 1)}
                         style={ICON_BTN}>
                         <Plus size={12}/>
                       </button>
@@ -271,7 +293,7 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, m
                   </td>
 
                   <td style={{ padding:"10px 12px" }}>
-                    <button onClick={() => eliminar(item.nombre)}
+                    <button onClick={() => eliminar(item)}
                       style={{ background:"none", border:"none", cursor:"pointer",
                         color:C.danger, padding:4, display:"flex" }}>
                       <Trash2 size={14}/>
