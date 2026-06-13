@@ -786,7 +786,7 @@ function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato
    DETALLE / EDICIÓN DE PEDIDO
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - DetallePedido
-function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, rolesImport, empresaId, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, L }) {
+function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, onAgregarCesta, rolesImport, empresaId, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, L }) {
   const [exportModal, setExportModal] = useState(null); // null | "pdf" | "excel"
   const [p, setP] = useState({ ...pedido });
   const [editando, setEditando] = useState(false);
@@ -977,6 +977,24 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                 ))}
               </div>
             </div>
+            {onAgregarCesta && (
+              <button onClick={() => {
+                  const items = conflictos.map(c => ({
+                    nombre:      c.nombre,
+                    faltante:    c.faltante,
+                    cantidad:    c.faltante,
+                    material_id: c.material_id ?? null,
+                  }));
+                  onAgregarCesta(items);
+                  setBannerDismissed(true);
+                }}
+                style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 12px",
+                  borderRadius:999, border:"1.5px solid #dc2626", background:"transparent",
+                  color:"#dc2626", fontWeight:700, fontSize:12, cursor:"pointer", flexShrink:0,
+                  fontFamily:"inherit" }}>
+                🛒 Agregar a la cesta
+              </button>
+            )}
             <button onClick={() => setBannerDismissed(true)}
               style={{ background:"none", border:"none", cursor:"pointer", color:"#dc2626",
                 padding:4, display:"flex", flexShrink:0 }}>
@@ -1470,7 +1488,7 @@ function ModalNotificaciones({ pedido, companyId, onClose }) {
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - TabPedidos [export default]
-export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, onNotificarStock, guardarPlantillaConf, cargarPlantillasConf, highlightedPedidoId, highlightedCategoria }) {
+export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, onNotificarStock, onAgregarCesta, guardarPlantillaConf, cargarPlantillasConf, highlightedPedidoId, highlightedCategoria, puedeEditar }) {
   const L = useL();
   const fileRef = useRef(null);
 
@@ -1736,6 +1754,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         onDelete={eliminarPedido}
         onCambiarVehiculo={cambiarVehiculoPedido}
         onPlanning={onPlanning}
+        onAgregarCesta={onAgregarCesta}
         rolesImport={rolesImport}
         empresaId={empresa?.id}
         formatoFecha={formatoFecha}

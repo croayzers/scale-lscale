@@ -21,8 +21,10 @@ import TabRetorno from "./TabRetorno.jsx";
 import TabConfig from "./TabConfig.jsx";
 import TabInventario from "./TabInventario.jsx";
 import TabFlota from "./TabFlota.jsx";
+import TabEtiquetas from "./TabEtiquetas.jsx";
+import TabCesta from "./TabCesta.jsx";
 import ChatFloat from "./ChatFloat.jsx";
-import { Package, Shield, ClipboardCheck, Truck } from "lucide-react";
+import { Package, Shield, ClipboardCheck, Truck, Tag, ShoppingCart } from "lucide-react";
 import AppLauncher from "./AppLauncher.jsx";
 import { ToastContainer, PanelAlertasStock, crearNotificacion } from "./StockNotificaciones.jsx";
 
@@ -53,6 +55,8 @@ const TABS = [
   { id: "planning",   label: "Planning",        Icon: CalendarDays   },
   { id: "retorno",    label: "Retorno/Cierre",  Icon: RotateCcw      },
   { id: "flota",      label: "Flota",           Icon: Truck          },
+  { id: "etiquetas",  label: "Etiquetas",       Icon: Tag            },
+  { id: "cesta",      label: "Cesta",           Icon: ShoppingCart   },
   { id: "config",     label: "Config",          Icon: Settings       },
 ];
 
@@ -137,12 +141,29 @@ export default function App() {
   const [miembros,          setMiembros]          = useState([]);
   const [chatUnread,        setChatUnread]        = useState(0);
   const [highlightedPedido, setHighlightedPedido] = useState(null);
+  const [cesta,        setCesta]        = useState([]);
   const [toasts,       setToasts]       = useState([]);
   const [silenciados,  setSilenciados]  = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem("lscale.silenciados") || "[]")); }
     catch { return new Set(); }
   });
   const chatRef = useRef();
+
+  const agregarACesta = useCallback((items) => {
+    setCesta(prev => {
+      const next = [...prev];
+      for (const item of items) {
+        const idx = next.findIndex(i => i.nombre === item.nombre);
+        if (idx >= 0) {
+          next[idx] = { ...next[idx], cantidad: Math.max(next[idx].cantidad, item.cantidad), faltante: item.faltante };
+        } else {
+          next.push(item);
+        }
+      }
+      return next;
+    });
+    setTab("cesta");
+  }, []);
 
   const notificarStock = useCallback((pedido, matSnapshot, tipo = "pedido") => {
     const n = crearNotificacion(pedido, matSnapshot, tipo);
@@ -343,8 +364,15 @@ export default function App() {
               <button key={id} onClick={() => setTab(id)}
                 style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 12px", borderRadius:8, border:"none",
                   fontWeight: tab === id ? 600 : 400, fontSize:13.5, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap",
-                  background: tab === id ? C.brandSoft : "transparent", color: tab === id ? C.brand : C.sub, transition:"background .15s" }}>
+                  background: tab === id ? C.brandSoft : "transparent", color: tab === id ? C.brand : C.sub, transition:"background .15s",
+                  position:"relative" }}>
                 <Icon size={15}/>{label}
+                {id === "cesta" && cesta.length > 0 && (
+                  <span style={{ minWidth:16, height:16, borderRadius:999, background:"#ef4444", color:"#fff",
+                    fontSize:9, fontWeight:800, display:"grid", placeItems:"center", padding:"0 4px", lineHeight:1 }}>
+                    {cesta.length}
+                  </span>
+                )}
               </button>
             ))}
           </div>
@@ -426,6 +454,7 @@ export default function App() {
             puedeEditar={puedeEditar}
             onPlanning={(p) => { setPlanningFecha(p?.fecha_entrega || null); setTab("planning"); }}
             onNotificarStock={notificarStock}
+            onAgregarCesta={agregarACesta}
             guardarPlantillaConf={(almId, pl) => guardarPlantillaConf("pedconf", almId, pl)}
             cargarPlantillasConf={(almId) => cargarPlantillasConf("pedconf", almId)}
             onRegistrarVisto={async (pid) => {
@@ -448,6 +477,8 @@ export default function App() {
             onNotificarStock={notificarStock}
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} L={L}/>}
           {tab === "flota"     && <TabFlota pedidos={pedidos} vehiculosEmpresa={vehiculosEmpresa} empresa={empresa} formatoFecha={formatoFecha} L={L}/>}
+          {tab === "etiquetas" && <TabEtiquetas pedidos={pedidos} L={L}/>}
+          {tab === "cesta"     && <TabCesta cesta={cesta} setCesta={setCesta} materiales={materiales} setMateriales={setMateriales} modo={modo} empresa={empresa} L={L}/>}
           {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={puedeAdmin} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} portalUrl={import.meta.env?.VITE_PORTAL_URL || "http://localhost:3000"} L={L}/>}
         </div>
 
