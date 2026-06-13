@@ -793,7 +793,9 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
   const [delConf, setDelConf]   = useState(false);
   const [addLinea, setAddLinea] = useState(null); // { categoria, nombre, cantidad }
   const [editLinea, setEditLinea] = useState(null); // { idx, ...linea }
-  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [bannerDismissed,  setBannerDismissed]  = useState(false);
+  const [comprobando,      setComprobando]      = useState(false);
+  const [stockOk,          setStockOk]          = useState(false);
 
   // Scroll a categoría si se abre desde un link de chat con #categoria
   useEffect(() => {
@@ -957,7 +959,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
       </div>
 
       {/* Banner de conflicto de stock */}
-      {!bannerDismissed && materiales && pedidos && (() => {
+      {!bannerDismissed && !stockOk && materiales && pedidos && (() => {
         const conflictos = conflictosPedido(p.id, pedidos, materiales);
         if (!conflictos.length) return null;
         return (
@@ -968,7 +970,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
               <div style={{ fontSize:13, fontWeight:700, color:"#dc2626", marginBottom:4 }}>
                 Stock insuficiente para este pedido
               </div>
-              <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom: onAgregarCesta ? 8 : 0 }}>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom:8 }}>
                 {conflictos.map((c, i) => (
                   <span key={i} style={{ fontSize:11.5, background:"#fee2e2", color:"#dc2626",
                     border:"1px solid #fca5a5", borderRadius:999, padding:"2px 10px", fontWeight:600 }}>
@@ -976,8 +978,8 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                   </span>
                 ))}
               </div>
-              {onAgregarCesta && (
-                <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+              <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                {onAgregarCesta && (
                   <button onClick={() => {
                       const items = conflictos.map(c => ({
                         nombre:      c.nombre,
@@ -993,15 +995,33 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                       fontFamily:"inherit" }}>
                     🛒 Agregar a la cesta
                   </button>
-                  <button onClick={() => onComprobarStock?.()}
+                )}
+                {onComprobarStock && (
+                  <button
+                    disabled={comprobando}
+                    onClick={async () => {
+                      setComprobando(true);
+                      try {
+                        await onComprobarStock();
+                        // tras actualizar materiales, React re-renderiza con stock nuevo
+                        // si conflictos queda vacío el banner desaparece solo
+                        // pero si aún hay conflictos mostramos brevemente "sin cambios"
+                        setComprobando(false);
+                      } catch {
+                        setComprobando(false);
+                      }
+                    }}
                     style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 12px",
-                      borderRadius:999, border:"1.5px solid #dc2626", background:"#dc2626",
-                      color:"#fff", fontWeight:700, fontSize:12, cursor:"pointer",
-                      fontFamily:"inherit" }}>
-                    ✓ Comprobar
+                      borderRadius:999, border:"1.5px solid #dc2626",
+                      background: comprobando ? "#fee2e2" : "#dc2626",
+                      color: comprobando ? "#dc2626" : "#fff",
+                      fontWeight:700, fontSize:12, cursor: comprobando ? "default" : "pointer",
+                      fontFamily:"inherit", opacity: comprobando ? 0.7 : 1 }}>
+                    {comprobando ? <Loader size={11} className="spin"/> : <Check size={11}/>}
+                    {comprobando ? "Comprobando…" : "Comprobar stock"}
                   </button>
-                </div>
-              )}
+                )}
+              </div>
             </div>
             <button onClick={() => setBannerDismissed(true)}
               style={{ background:"none", border:"none", cursor:"pointer", color:"#dc2626",
