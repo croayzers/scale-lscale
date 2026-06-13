@@ -20,10 +20,9 @@ import TabPlanning from "./TabPlanning.jsx";
 import TabRetorno from "./TabRetorno.jsx";
 import TabConfig from "./TabConfig.jsx";
 import TabInventario from "./TabInventario.jsx";
-import TabSimulacro from "./TabSimulacro.jsx";
 import TabFlota from "./TabFlota.jsx";
 import ChatFloat from "./ChatFloat.jsx";
-import { Package, Shield, ClipboardCheck, FlaskConical, Truck } from "lucide-react";
+import { Package, Shield, ClipboardCheck, Truck } from "lucide-react";
 import AppLauncher from "./AppLauncher.jsx";
 import { ToastContainer, PanelAlertasStock, crearNotificacion } from "./StockNotificaciones.jsx";
 
@@ -54,7 +53,6 @@ const TABS = [
   { id: "planning",   label: "Planning",        Icon: CalendarDays   },
   { id: "retorno",    label: "Retorno/Cierre",  Icon: RotateCcw      },
   { id: "flota",      label: "Flota",           Icon: Truck          },
-  { id: "simulacro",  label: "Simulacro",       Icon: FlaskConical   },
   { id: "config",     label: "Config",          Icon: Settings       },
 ];
 
@@ -448,7 +446,6 @@ export default function App() {
             onNotificarStock={notificarStock}
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} L={L}/>}
           {tab === "flota"     && <TabFlota pedidos={pedidos} vehiculosEmpresa={vehiculosEmpresa} empresa={empresa} formatoFecha={formatoFecha} L={L}/>}
-          {tab === "simulacro" && <TabSimulacro pedidos={pedidos} materiales={materiales} setPedidos={setPedidos} setMateriales={setMateriales} L={L}/>}
           {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={puedeAdmin} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} portalUrl={import.meta.env?.VITE_PORTAL_URL || "http://localhost:3000"} L={L}/>}
         </div>
 
