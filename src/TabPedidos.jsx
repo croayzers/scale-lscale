@@ -796,6 +796,8 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
   const [bannerDismissed,  setBannerDismissed]  = useState(false);
   const [comprobando,      setComprobando]      = useState(false);
   const [stockOk,          setStockOk]          = useState(false);
+  const [errorComprobar,   setErrorComprobar]   = useState(null);
+  const [checkTick,        setCheckTick]        = useState(0);
 
   // Scroll a categoría si se abre desde un link de chat con #categoria
   useEffect(() => {
@@ -958,8 +960,9 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
         </Btn>
       </div>
 
-      {/* Banner de conflicto de stock */}
+      {/* Banner de conflicto de stock — checkTick fuerza re-evaluación tras Comprobar */}
       {!bannerDismissed && !stockOk && materiales && pedidos && (() => {
+        void checkTick; // eslint-disable-line
         const conflictos = conflictosPedido(p.id, pedidos, materiales);
         if (!conflictos.length) return null;
         return (
@@ -996,30 +999,33 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                     🛒 Agregar a la cesta
                   </button>
                 )}
-                {onComprobarStock && (
-                  <button
-                    disabled={comprobando}
-                    onClick={async () => {
-                      setComprobando(true);
-                      try {
-                        await onComprobarStock();
-                        // tras actualizar materiales, React re-renderiza con stock nuevo
-                        // si conflictos queda vacío el banner desaparece solo
-                        // pero si aún hay conflictos mostramos brevemente "sin cambios"
-                        setComprobando(false);
-                      } catch {
-                        setComprobando(false);
-                      }
-                    }}
-                    style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 12px",
-                      borderRadius:999, border:"1.5px solid #dc2626",
-                      background: comprobando ? "#fee2e2" : "#dc2626",
-                      color: comprobando ? "#dc2626" : "#fff",
-                      fontWeight:700, fontSize:12, cursor: comprobando ? "default" : "pointer",
-                      fontFamily:"inherit", opacity: comprobando ? 0.7 : 1 }}>
-                    {comprobando ? <Loader size={11} className="spin"/> : <Check size={11}/>}
-                    {comprobando ? "Comprobando…" : "Comprobar stock"}
-                  </button>
+                <button
+                  disabled={comprobando}
+                  onClick={async () => {
+                    setComprobando(true);
+                    setErrorComprobar(null);
+                    try {
+                      await onComprobarStock();
+                      setCheckTick(t => t + 1);
+                    } catch(e) {
+                      setErrorComprobar(e?.message || "Error al recargar stock");
+                    } finally {
+                      setComprobando(false);
+                    }
+                  }}
+                  style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 12px",
+                    borderRadius:999, border:"1.5px solid #dc2626",
+                    background: comprobando ? "#fee2e2" : "#dc2626",
+                    color: comprobando ? "#dc2626" : "#fff",
+                    fontWeight:700, fontSize:12, cursor: comprobando ? "default" : "pointer",
+                    fontFamily:"inherit", opacity: comprobando ? 0.7 : 1 }}>
+                  {comprobando ? <Loader size={11} className="spin"/> : <Check size={11}/>}
+                  {comprobando ? "Comprobando…" : "Comprobar stock"}
+                </button>
+                {errorComprobar && (
+                  <span style={{ fontSize:11, color:"#dc2626", alignSelf:"center" }}>
+                    ⚠ {errorComprobar}
+                  </span>
                 )}
               </div>
             </div>
@@ -1783,9 +1789,13 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         onCambiarVehiculo={cambiarVehiculoPedido}
         onPlanning={onPlanning}
         onAgregarCesta={onAgregarCesta}
-        onComprobarStock={modo === "supabase" && setMateriales ? async () => {
-          try { const mats = await recargarMateriales(); setMateriales(mats); } catch (e) { console.warn("recargarMateriales:", e); }
-        } : undefined}
+        onComprobarStock={async () => {
+          if (modo === "supabase") {
+            const mats = await recargarMateriales();
+            setMateriales(mats);
+          }
+          // fuerza re-evaluación del banner con materiales actuales (modo demo o tras compra local)
+        }}
         rolesImport={rolesImport}
         empresaId={empresa?.id}
         formatoFecha={formatoFecha}

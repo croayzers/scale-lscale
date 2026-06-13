@@ -68,7 +68,7 @@ export function calcularConflictosStock(pedidos = [], materiales = []) {
         const faltante = Math.min(cant, nuevo - stockTotal);
         if (!resultado[pid]) resultado[pid] = [];
         if (!resultado[pid].some(x => x.nombre === linea.nombre))
-          resultado[pid].push({ nombre: linea.nombre || "?", faltante: Math.ceil(faltante) });
+          resultado[pid].push({ nombre: linea.nombre || "?", faltante: Math.ceil(faltante), material_id: linea.material_id ?? null });
       }
     }
   }
