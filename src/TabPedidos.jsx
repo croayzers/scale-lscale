@@ -18,7 +18,7 @@ import {
 import { useL } from "./lib/i18n.js";
 import { parsearExcelPedido } from "./lib/parseExcelPedido.js";
 import ExcelConfigurador from "./ExcelConfigurador.jsx";
-import { guardarPedido, borrarPedido, cargarMiembrosEmpresa, enviarNotificacionPedido } from "./lib/data.js";
+import { guardarPedido, borrarPedido, cargarMiembrosEmpresa, enviarNotificacionPedido, recargarMateriales } from "./lib/data.js";
 import { fmtFecha, siguienteCodigo } from "./lib/fechas.js";
 import { conflictosPedido } from "./lib/stockConflictos.js";
 
@@ -786,7 +786,7 @@ function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato
    DETALLE / EDICIÓN DE PEDIDO
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - DetallePedido
-function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, onAgregarCesta, rolesImport, empresaId, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, L }) {
+function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, onAgregarCesta, onComprobarStock, rolesImport, empresaId, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, L }) {
   const [exportModal, setExportModal] = useState(null); // null | "pdf" | "excel"
   const [p, setP] = useState({ ...pedido });
   const [editando, setEditando] = useState(false);
@@ -963,12 +963,12 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
         return (
           <div style={{ background:"#fef2f2", borderBottom:`2px solid #fca5a5`, padding:"10px 20px",
             display:"flex", alignItems:"flex-start", gap:10, flexShrink:0 }}>
-            <AlertTriangle size={18} color="#dc2626" style={{ flexShrink:0, marginTop:1 }}/>
+            <AlertTriangle size={18} color="#dc2626" style={{ flexShrink:0, marginTop:2 }}/>
             <div style={{ flex:1, minWidth:0 }}>
               <div style={{ fontSize:13, fontWeight:700, color:"#dc2626", marginBottom:4 }}>
                 Stock insuficiente para este pedido
               </div>
-              <div style={{ display:"flex", flexWrap:"wrap", gap:6 }}>
+              <div style={{ display:"flex", flexWrap:"wrap", gap:6, marginBottom: onAgregarCesta ? 8 : 0 }}>
                 {conflictos.map((c, i) => (
                   <span key={i} style={{ fontSize:11.5, background:"#fee2e2", color:"#dc2626",
                     border:"1px solid #fca5a5", borderRadius:999, padding:"2px 10px", fontWeight:600 }}>
@@ -976,25 +976,33 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                   </span>
                 ))}
               </div>
+              {onAgregarCesta && (
+                <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                  <button onClick={() => {
+                      const items = conflictos.map(c => ({
+                        nombre:      c.nombre,
+                        faltante:    c.faltante,
+                        cantidad:    c.faltante,
+                        material_id: c.material_id ?? null,
+                      }));
+                      onAgregarCesta(items);
+                    }}
+                    style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 12px",
+                      borderRadius:999, border:"1.5px solid #dc2626", background:"transparent",
+                      color:"#dc2626", fontWeight:700, fontSize:12, cursor:"pointer",
+                      fontFamily:"inherit" }}>
+                    🛒 Agregar a la cesta
+                  </button>
+                  <button onClick={() => onComprobarStock?.()}
+                    style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 12px",
+                      borderRadius:999, border:"1.5px solid #dc2626", background:"#dc2626",
+                      color:"#fff", fontWeight:700, fontSize:12, cursor:"pointer",
+                      fontFamily:"inherit" }}>
+                    ✓ Comprobar
+                  </button>
+                </div>
+              )}
             </div>
-            {onAgregarCesta && (
-              <button onClick={() => {
-                  const items = conflictos.map(c => ({
-                    nombre:      c.nombre,
-                    faltante:    c.faltante,
-                    cantidad:    c.faltante,
-                    material_id: c.material_id ?? null,
-                  }));
-                  onAgregarCesta(items);
-                  setBannerDismissed(true);
-                }}
-                style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 12px",
-                  borderRadius:999, border:"1.5px solid #dc2626", background:"transparent",
-                  color:"#dc2626", fontWeight:700, fontSize:12, cursor:"pointer", flexShrink:0,
-                  fontFamily:"inherit" }}>
-                🛒 Agregar a la cesta
-              </button>
-            )}
             <button onClick={() => setBannerDismissed(true)}
               style={{ background:"none", border:"none", cursor:"pointer", color:"#dc2626",
                 padding:4, display:"flex", flexShrink:0 }}>
@@ -1755,6 +1763,9 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         onCambiarVehiculo={cambiarVehiculoPedido}
         onPlanning={onPlanning}
         onAgregarCesta={onAgregarCesta}
+        onComprobarStock={modo === "supabase" && setMateriales ? async () => {
+          try { const mats = await recargarMateriales(); setMateriales(mats); } catch (e) { console.warn("recargarMateriales:", e); }
+        } : undefined}
         rolesImport={rolesImport}
         empresaId={empresa?.id}
         formatoFecha={formatoFecha}
