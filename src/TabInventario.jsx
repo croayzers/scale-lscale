@@ -11,6 +11,7 @@ import { ClipboardCheck, Plus, X, Check, AlertTriangle, ChevronRight,
 import {
   cargarSesiones, cargarLineasSesion, cargarHistorico,
   abrirRecuento, actualizarLinea, cerrarRecuento, cancelarRecuento,
+  cargarCompras,
   SESIONES_DEMO, LINEAS_DEMO,
 } from "./lib/dataRecuentos.js";
 
@@ -661,9 +662,124 @@ function BarraDoble({ salida, retorno, maxVal, colorS, colorR }) {
   );
 }
 
-function SubvistaAnalisis({ historico, materiales, pedidos = [], almacenes = [] }) {
+function SubvistaAnalisis({ historico, materiales, pedidos = [], almacenes = [], compras = [] }) {
   const { sesiones, lineas } = historico;
   const cerradas = sesiones.filter(s => s.estado === "cerrada");
+
+  // ── Último recuento cerrado (punto de partida del análisis) ───────────────
+  const ultimoRecuento = useMemo(() => {
+    if (!cerradas.length) return null;
+    return [...cerradas].sort((a, b) => new Date(b.closed_at) - new Date(a.closed_at))[0];
+  }, [cerradas]);
+
+  const fechaCorte = ultimoRecuento?.closed_at || null;
+
+  // Líneas del último recuento
+  const lineasUltimoRecuento = useMemo(() =>
+    fechaCorte ? lineas.filter(l => {
+      const ses = sesiones.find(s => s.id === l.sesion_id);
+      return ses && Math.abs(new Date(ses.closed_at) - new Date(fechaCorte)) < 1000;
+    }) : [],
+  [lineas, sesiones, fechaCorte]);
+
+  // Stock por material al momento del último recuento
+  const stockRecuento = useMemo(() => {
+    const m = {};
+    for (const l of lineasUltimoRecuento) {
+      m[l.material_id] = l.cantidad_contada ?? l.cantidad_sistema;
+    }
+    return m;
+  }, [lineasUltimoRecuento]);
+
+  // ── Compras desde el último recuento ─────────────────────────────────────
+  const comprasDesdeCorte = useMemo(() =>
+    fechaCorte ? compras.filter(c => c.fecha >= fechaCorte) : compras,
+  [compras, fechaCorte]);
+
+  // Entradas por material desde el último recuento
+  const entradasMat = useMemo(() => {
+    const m = {};
+    for (const c of comprasDesdeCorte) {
+      for (const l of (c.lineas || [])) {
+        const k = l.material_id ?? l.nombre;
+        m[k] = (m[k] || 0) + Number(l.cantidad);
+      }
+    }
+    return m;
+  }, [comprasDesdeCorte]);
+
+  // ── Consumo (pedidos activos/finalizados desde el corte) ─────────────────
+  const ESTADOS_CONSUMO = new Set(["confirmado", "retorno", "finalizado"]);
+  const pedidosConsumo = useMemo(() =>
+    pedidos.filter(p => ESTADOS_CONSUMO.has(p.estado) && (p.lineas || []).length > 0 &&
+      (!fechaCorte || (p.fecha_entrega || "9999") >= fechaCorte.slice(0, 10))),
+  [pedidos, fechaCorte]);
+
+  // Consumo por material_id o nombre
+  const consumoMat = useMemo(() => {
+    const m = {};
+    for (const p of pedidosConsumo) {
+      for (const l of (p.lineas || [])) {
+        const k = l.material_id ?? l.nombre;
+        m[k] = (m[k] || 0) + (Number(l.cantidad) || 0);
+      }
+    }
+    return m;
+  }, [pedidosConsumo]);
+
+  // ── Tabla cruzada por material ────────────────────────────────────────────
+  // Para cada material: stockRecuento + entradas - consumo = teórico vs real
+  const cruce = useMemo(() => {
+    return materiales.map(mat => {
+      const kId   = mat.id;
+      const kNom  = mat.nombre?.trim().toLowerCase();
+      const srId  = stockRecuento[kId] ?? null;
+      // entradas: buscar por id o nombre
+      const entId  = entradasMat[kId] ?? 0;
+      const entNom = entradasMat[kNom] ?? 0;
+      const entrada = entId + entNom;
+      // consumo: buscar por id o nombre
+      const conId  = consumoMat[kId] ?? 0;
+      const conNom = consumoMat[kNom] ?? 0;
+      const consumo = conId + conNom;
+
+      const stockBase = srId ?? mat.stock_actual; // si no hay recuento, usamos stock actual como base
+      const teorico   = stockBase + entrada - consumo;
+      const real      = mat.stock_actual;
+      const ajuste    = real - teorico; // positivo = encontrados, negativo = pérdida
+
+      return {
+        mat,
+        stockBase,    // stock al momento del recuento (o actual si no hay)
+        entrada,
+        consumo,
+        teorico,
+        real,
+        ajuste,
+        tieneRecuento: srId != null,
+      };
+    }).filter(r => r.entrada > 0 || r.consumo > 0 || r.ajuste !== 0 || r.tieneRecuento);
+  }, [materiales, stockRecuento, entradasMat, consumoMat]);
+
+  const perdidas  = cruce.filter(r => r.ajuste < 0);
+  const hallazgos = cruce.filter(r => r.ajuste > 0);
+  const totalPerdidaUds = perdidas.reduce((s, r) => s + Math.abs(r.ajuste), 0);
+  const costePerdidas   = perdidas.reduce((s, r) => s + Math.abs(r.ajuste) * (r.mat.precio_coste || 0), 0);
+  const totalEntradas   = comprasDesdeCorte.reduce((s, c) => s + (c.lineas || []).reduce((a, l) => a + l.cantidad, 0), 0);
+  const totalConsumo    = Object.values(consumoMat).reduce((s, v) => s + v, 0);
+
+  // Compras por mes para gráfico
+  const comprasPorMes = useMemo(() => {
+    const m = {};
+    for (const c of compras) {
+      const mes = c.fecha?.slice(0, 7);
+      if (!mes) continue;
+      m[mes] = (m[mes] || 0) + (c.lineas || []).reduce((s, l) => s + l.cantidad, 0);
+    }
+    return Object.entries(m).sort(([a], [b]) => a < b ? -1 : 1);
+  }, [compras]);
+
+  const maxComprasMes = Math.max(1, ...comprasPorMes.map(([, v]) => v));
 
   // ── Datos de pedidos finalizados ──────────────────────────────────────────
   const pedidosFinalizados = useMemo(() =>
@@ -747,13 +863,11 @@ function SubvistaAnalisis({ historico, materiales, pedidos = [], almacenes = [] 
       .sort((a, b) => a.total - b.total);
   }, [lineas, materiales]);
 
-  const perdidas   = variaciones.filter(v => v.total < 0);
-  const ganancias  = variaciones.filter(v => v.total > 0);
-  const costeTotal = perdidas.reduce((s, v) => s + (Math.abs(v.total) * (v.mat?.precio_coste || 0)), 0);
-  const maxAbs     = Math.max(1, ...variaciones.map(v => Math.abs(v.total)));
-  const ultimaFecha = cerradas.length
-    ? new Date([...cerradas].sort((a, b) => new Date(b.closed_at) - new Date(a.closed_at))[0].closed_at)
-    : null;
+  const varPerdidas  = variaciones.filter(v => v.total < 0);
+  const varGanancias = variaciones.filter(v => v.total > 0);
+  const varCoste     = varPerdidas.reduce((s, v) => s + (Math.abs(v.total) * (v.mat?.precio_coste || 0)), 0);
+  const maxAbs       = Math.max(1, ...variaciones.map(v => Math.abs(v.total)));
+  const ultimaFecha  = ultimoRecuento ? new Date(ultimoRecuento.closed_at) : null;
 
   const totalSalidaGlobal  = pedidosFinalizados.reduce((s, p) => s + (p.lineas || []).reduce((a, l) => a + (Number(l.cantidad) || 0), 0), 0);
   const totalRetornoGlobal = pedidosFinalizados.reduce((s, p) => s + (p.lineas || []).reduce((a, l) => {
@@ -781,6 +895,141 @@ function SubvistaAnalisis({ historico, materiales, pedidos = [], almacenes = [] 
 
   return (
     <div style={{ height:"100%", overflowY:"auto", padding:"16px", display:"flex", flexDirection:"column", gap:20 }}>
+
+      {/* ── Informe cruzado: desde último recuento ────────────────────────── */}
+      {ultimoRecuento && (
+        <>
+          {/* Cabecera del período */}
+          <div style={{ background:C.brandSoft, border:`1px solid ${C.brand}44`, borderRadius:12,
+            padding:"12px 16px", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
+            <div style={{ fontSize:13, fontWeight:700, color:C.brand }}>
+              Período analizado: desde el recuento <strong>{ultimoRecuento.nombre}</strong>
+            </div>
+            <div style={{ fontSize:12, color:C.brand, opacity:.8 }}>
+              {new Date(ultimoRecuento.closed_at).toLocaleDateString("es-ES", { day:"2-digit", month:"short", year:"numeric" })}
+              {" · "}
+              {pedidosConsumo.length} pedidos consumidos · {comprasDesdeCorte.length} compras registradas
+            </div>
+          </div>
+
+          {/* KPIs del período */}
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(140px, 1fr))", gap:10 }}>
+            <div style={{ padding:"12px 14px", borderRadius:12, background:"#eff6ff", border:"1px solid #bfdbfe" }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"#2563eb", letterSpacing:.5, marginBottom:4 }}>ENTRADAS (COMPRAS)</div>
+              <div style={{ fontSize:22, fontWeight:800, color:"#2563eb" }}>{totalEntradas}</div>
+              <div style={{ fontSize:11, color:"#2563eb", opacity:.8 }}>{comprasDesdeCorte.length} compras</div>
+            </div>
+            <div style={{ padding:"12px 14px", borderRadius:12, background:"#fff3e0", border:"1px solid #fed7aa" }}>
+              <div style={{ fontSize:10, fontWeight:700, color:"#ea580c", letterSpacing:.5, marginBottom:4 }}>CONSUMO (PEDIDOS)</div>
+              <div style={{ fontSize:22, fontWeight:800, color:"#ea580c" }}>{totalConsumo}</div>
+              <div style={{ fontSize:11, color:"#ea580c", opacity:.8 }}>{pedidosConsumo.length} pedidos</div>
+            </div>
+            {perdidas.length > 0 && (
+              <div style={{ padding:"12px 14px", borderRadius:12, background:C.dangerSoft, border:`1px solid ${C.danger}44` }}>
+                <div style={{ fontSize:10, fontWeight:700, color:C.danger, letterSpacing:.5, marginBottom:4 }}>AJUSTE NEGATIVO</div>
+                <div style={{ fontSize:22, fontWeight:800, color:C.danger }}>-{totalPerdidaUds} uds</div>
+                <div style={{ fontSize:11, color:C.danger, opacity:.8 }}>{perdidas.length} materiales</div>
+              </div>
+            )}
+            {hallazgos.length > 0 && (
+              <div style={{ padding:"12px 14px", borderRadius:12, background:C.okSoft, border:`1px solid ${C.ok}44` }}>
+                <div style={{ fontSize:10, fontWeight:700, color:C.ok, letterSpacing:.5, marginBottom:4 }}>AJUSTE POSITIVO</div>
+                <div style={{ fontSize:22, fontWeight:800, color:C.ok }}>+{hallazgos.reduce((s,r)=>s+r.ajuste,0)} uds</div>
+                <div style={{ fontSize:11, color:C.ok, opacity:.8 }}>{hallazgos.length} materiales</div>
+              </div>
+            )}
+            {costePerdidas > 0 && (
+              <div style={{ padding:"12px 14px", borderRadius:12, background:"#fefce8", border:"1px solid #fef08a" }}>
+                <div style={{ fontSize:10, fontWeight:700, color:"#a16207", letterSpacing:.5, marginBottom:4 }}>COSTE AJUSTE NEG.</div>
+                <div style={{ fontSize:22, fontWeight:800, color:"#a16207" }}>{costePerdidas.toFixed(2)}€</div>
+                <div style={{ fontSize:11, color:"#a16207", opacity:.8 }}>precio coste</div>
+              </div>
+            )}
+          </div>
+
+          {/* Tabla cruzada por material */}
+          {cruce.length > 0 && (
+            <div style={{ background:C.surface, borderRadius:14, border:`1px solid ${C.line}`, overflow:"hidden" }}>
+              <div style={{ padding:"12px 16px", borderBottom:`1px solid ${C.line}`, fontWeight:700, fontSize:14, color:C.ink }}>
+                Balance por material desde último recuento
+              </div>
+              <div style={{ overflowX:"auto" }}>
+                <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12.5 }}>
+                  <thead>
+                    <tr style={{ background:C.s2 }}>
+                      {["Material","Stock recuento","+ Entradas","− Consumo","Teórico","Real","Ajuste"].map((h,i) => (
+                        <th key={i} style={{ padding:"7px 12px", textAlign: i===0 ? "left" : "right",
+                          fontSize:10.5, fontWeight:700, color:C.sub, letterSpacing:.4,
+                          borderBottom:`1px solid ${C.line}`, whiteSpace:"nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cruce.sort((a,b) => a.ajuste - b.ajuste).map((r, i) => {
+                      const ajColor = r.ajuste < 0 ? C.danger : r.ajuste > 0 ? C.ok : C.sub;
+                      return (
+                        <tr key={r.mat.id} style={{ background: i%2===0 ? C.bg : C.surface, borderBottom:`1px solid ${C.line}` }}>
+                          <td style={{ padding:"9px 12px" }}>
+                            <div style={{ fontWeight:600, color:C.ink }}>{r.mat.nombre}</div>
+                            {r.mat.referencia && <div style={{ fontSize:10.5, color:C.dim }}>{r.mat.referencia}</div>}
+                          </td>
+                          <td style={{ padding:"9px 12px", textAlign:"right", color:C.sub, fontVariantNumeric:"tabular-nums" }}>
+                            {r.tieneRecuento ? r.stockBase : <span style={{ color:C.dim }}>—</span>}
+                          </td>
+                          <td style={{ padding:"9px 12px", textAlign:"right", color:"#2563eb", fontWeight:600, fontVariantNumeric:"tabular-nums" }}>
+                            {r.entrada > 0 ? `+${r.entrada}` : "—"}
+                          </td>
+                          <td style={{ padding:"9px 12px", textAlign:"right", color:"#ea580c", fontWeight:600, fontVariantNumeric:"tabular-nums" }}>
+                            {r.consumo > 0 ? `-${r.consumo}` : "—"}
+                          </td>
+                          <td style={{ padding:"9px 12px", textAlign:"right", color:C.ink, fontVariantNumeric:"tabular-nums", fontWeight:600 }}>
+                            {r.teorico}
+                          </td>
+                          <td style={{ padding:"9px 12px", textAlign:"right", color:C.ink, fontVariantNumeric:"tabular-nums" }}>
+                            {r.real}
+                          </td>
+                          <td style={{ padding:"9px 12px", textAlign:"right" }}>
+                            <span style={{ fontWeight:800, color:ajColor, fontVariantNumeric:"tabular-nums",
+                              background: r.ajuste !== 0 ? (r.ajuste < 0 ? C.dangerSoft : C.okSoft) : "transparent",
+                              padding:"2px 7px", borderRadius:6 }}>
+                              {r.ajuste > 0 ? `+${r.ajuste}` : r.ajuste === 0 ? "=" : r.ajuste}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Gráfico de compras por mes */}
+          {comprasPorMes.length > 0 && (
+            <div style={{ background:C.surface, borderRadius:14, border:`1px solid ${C.line}`, overflow:"hidden" }}>
+              <div style={{ padding:"12px 16px", borderBottom:`1px solid ${C.line}`, fontWeight:700, fontSize:14, color:C.ink }}>
+                Compras por mes (uds. totales)
+              </div>
+              <div style={{ padding:"16px", display:"flex", alignItems:"flex-end", gap:8, height:130 }}>
+                {comprasPorMes.map(([mes, val]) => {
+                  const pct = val / maxComprasMes * 100;
+                  const [y, m] = mes.split("-");
+                  const MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+                  return (
+                    <div key={mes} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:4 }}>
+                      <span style={{ fontSize:10, color:C.sub, fontVariantNumeric:"tabular-nums" }}>{val}</span>
+                      <div style={{ width:"100%", height:`${pct}%`, minHeight:4, background:"#2563eb", borderRadius:"4px 4px 0 0", transition:"height .3s" }}/>
+                      <span style={{ fontSize:10, color:C.dim, whiteSpace:"nowrap" }}>{MESES[Number(m)-1]}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          <div style={{ borderTop:`2px dashed ${C.line}`, paddingTop:4 }}/>
+        </>
+      )}
 
       {/* ── Cards KPI globales ───────────────────────────────────────────── */}
       <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit, minmax(155px, 1fr))", gap:12 }}>
@@ -812,24 +1061,24 @@ function SubvistaAnalisis({ historico, materiales, pedidos = [], almacenes = [] 
         )}
         <div style={{ padding:"14px 16px", borderRadius:14, background:C.dangerSoft, border:`1px solid ${C.danger}33` }}>
           <div style={{ fontSize:11, fontWeight:700, color:C.danger, letterSpacing:.5, marginBottom:6 }}>CON PÉRDIDA (RECUENTOS)</div>
-          <div style={{ fontSize:24, fontWeight:800, color:C.danger }}>{perdidas.length}</div>
+          <div style={{ fontSize:24, fontWeight:800, color:C.danger }}>{varPerdidas.length}</div>
           <div style={{ fontSize:12, color:C.danger, opacity:.8, marginTop:2 }}>
-            {perdidas.reduce((s, v) => s + Math.abs(v.total), 0)} uds. totales
+            {varPerdidas.reduce((s, v) => s + Math.abs(v.total), 0)} uds. totales
           </div>
         </div>
-        {costeTotal > 0 && (
+        {varCoste > 0 && (
           <div style={{ padding:"14px 16px", borderRadius:14, background:"#fff3e0", border:`1px solid ${C.warn}33` }}>
             <div style={{ fontSize:11, fontWeight:700, color:C.warn, letterSpacing:.5, marginBottom:6 }}>COSTE PÉRDIDAS</div>
-            <div style={{ fontSize:24, fontWeight:800, color:C.warn }}>{costeTotal.toFixed(2)}€</div>
+            <div style={{ fontSize:24, fontWeight:800, color:C.warn }}>{varCoste.toFixed(2)}€</div>
             <div style={{ fontSize:12, color:C.warn, opacity:.8, marginTop:2 }}>precio coste</div>
           </div>
         )}
-        {ganancias.length > 0 && (
+        {varGanancias.length > 0 && (
           <div style={{ padding:"14px 16px", borderRadius:14, background:C.okSoft, border:`1px solid ${C.ok}33` }}>
             <div style={{ fontSize:11, fontWeight:700, color:C.ok, letterSpacing:.5, marginBottom:6 }}>CON GANANCIA</div>
-            <div style={{ fontSize:24, fontWeight:800, color:C.ok }}>{ganancias.length}</div>
+            <div style={{ fontSize:24, fontWeight:800, color:C.ok }}>{varGanancias.length}</div>
             <div style={{ fontSize:12, color:C.ok, opacity:.8, marginTop:2 }}>
-              +{ganancias.reduce((s, v) => s + v.total, 0)} uds.
+              +{varGanancias.reduce((s, v) => s + v.total, 0)} uds.
             </div>
           </div>
         )}
@@ -1015,11 +1264,12 @@ function SubvistaAnalisis({ historico, materiales, pedidos = [], almacenes = [] 
 
 // ── Componente principal ───────────────────────────────────────────────────
 // MARK: - TabInventario [export default]
-export default function TabInventario({ materiales, setMateriales, empresa, modo, almacenes, sesion, pedidos = [] }) {
+export default function TabInventario({ materiales, setMateriales, empresa, modo, almacenes, sesion, pedidos = [], puedeEditar, L }) {
   const [subvista,      setSubvista]      = useState("recuento");
   const [sesiones,      setSesiones]      = useState([]);
   const [lineasActivas, setLineasActivas] = useState([]);
   const [historico,     setHistorico]     = useState({ sesiones: [], lineas: [] });
+  const [compras,       setCompras]       = useState([]);
   const [cargando,      setCargando]      = useState(true);
   const [modalNuevo,    setModalNuevo]    = useState(false);
   const [errMsg,        setErrMsg]        = useState(null);
@@ -1035,12 +1285,14 @@ export default function TabInventario({ materiales, setMateriales, empresa, modo
     (async () => {
       setCargando(true);
       try {
-        const [ses, hist] = await Promise.all([
+        const [ses, hist, cmp] = await Promise.all([
           cargarSesiones(companyId),
           cargarHistorico(companyId),
+          cargarCompras(companyId, modo),
         ]);
         setSesiones(ses);
         setHistorico(hist);
+        setCompras(cmp);
         const abierta = ses.find(s => s.estado === "abierta");
         if (abierta) {
           const lineas = await cargarLineasSesion(abierta.id);
@@ -1073,9 +1325,12 @@ export default function TabInventario({ materiales, setMateriales, empresa, modo
     if (!sesionActiva) return;
     try {
       await cerrarRecuento(sesionActiva.id, lineasActivas, setMateriales, userEmail, modo);
-      // Recargar historial
-      const hist = await cargarHistorico(companyId);
+      const [hist, cmp] = await Promise.all([
+        cargarHistorico(companyId),
+        cargarCompras(companyId, modo),
+      ]);
       setHistorico(hist);
+      setCompras(cmp);
       setSesiones(p => p.map(s => s.id === sesionActiva.id ? { ...s, estado: "cerrada", closed_at: new Date().toISOString() } : s));
       setLineasActivas([]);
     } catch (e) { setErrMsg(e.message); }
@@ -1165,7 +1420,7 @@ export default function TabInventario({ materiales, setMateriales, empresa, modo
           <SubvistaHistorial historico={historico} materiales={materiales}/>
         )}
         {subvista === "analisis" && (
-          <SubvistaAnalisis historico={historico} materiales={materiales} pedidos={pedidos} almacenes={almacenes}/>
+          <SubvistaAnalisis historico={historico} materiales={materiales} pedidos={pedidos} almacenes={almacenes} compras={compras}/>
         )}
       </div>
 

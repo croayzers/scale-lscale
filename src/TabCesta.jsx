@@ -3,6 +3,7 @@ import React, { useState, useCallback } from "react";
 import * as XLSX from "xlsx";
 import { ShoppingCart, Trash2, Plus, Minus, Download, Check, Loader, Package } from "lucide-react";
 import { actualizarMaterial } from "./lib/data.js";
+import { registrarCompra } from "./lib/dataRecuentos.js";
 
 const C = {
   bg:"var(--bg)", surface:"var(--surface)", s2:"var(--surface-2)",
@@ -70,7 +71,7 @@ function ConstructorColumnas({ cols, onChange }) {
 }
 
 /* ─── TabCesta ────────────────────────────────────────────────────────────── */
-export default function TabCesta({ cesta, setCesta, materiales, setMateriales, modo, empresa, L }) {
+export default function TabCesta({ cesta, setCesta, materiales, setMateriales, modo, empresa, sesion, L }) {
   const [comprando, setComprando] = useState(false);
   const [comprado,  setComprado]  = useState(false);
   const [cols,      setCols]      = useState(cargarCols);
@@ -114,6 +115,27 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, m
           return u ? { ...m, stock_actual: u.stock_actual } : m;
         }));
       }
+
+      // Registrar la compra en el historial
+      try {
+        const userEmail = sesion?.user?.email || null;
+        const itemsCompra = cesta.map(item => {
+          const mat = materiales.find(m =>
+            (item.material_id != null && m.id === item.material_id) ||
+            m.nombre?.trim().toLowerCase() === item.nombre?.trim().toLowerCase()
+          );
+          return {
+            nombre:      item.nombre,
+            cantidad:    item.cantidad,
+            unidad:      mat?.unidad || "ud",
+            material_id: mat?.id ?? item.material_id ?? null,
+          };
+        });
+        await registrarCompra(itemsCompra, empresa?.id, userEmail, modo);
+      } catch (e) {
+        console.warn("[TabCesta] registrarCompra:", e);
+      }
+
       setCesta([]);
       setComprado(true);
       setTimeout(() => setComprado(false), 2500);

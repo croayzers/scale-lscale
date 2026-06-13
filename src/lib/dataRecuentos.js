@@ -1,5 +1,6 @@
 // MARK: - CRUD recuentos (abrirRecuento, cerrarRecuento, cancelarRecuento, actualizarLinea)
 // MARK: - Historial y análisis (cargarSesiones, cargarLineasSesion, cargarHistorico)
+// MARK: - Compras (registrarCompra, cargarCompras)
 // MARK: - SEED demo
 import { lsc, supabaseConfigurado } from "./supabase.js";
 import { actualizarMaterial } from "./data.js";
@@ -36,6 +37,30 @@ function mapLinea(r) {
   };
 }
 
+// ── Mappers compras ────────────────────────────────────────────────────────
+
+function mapCompra(r, lineas = []) {
+  return {
+    id:         r.id,
+    company_id: r.company_id,
+    fecha:      r.fecha,
+    notas:      r.notas || null,
+    creado_por: r.creado_por || null,
+    lineas,
+  };
+}
+
+function mapCompraLinea(r) {
+  return {
+    id:          r.id,
+    compra_id:   r.compra_id,
+    material_id: r.material_id ?? null,
+    nombre:      r.nombre,
+    cantidad:    Number(r.cantidad) || 0,
+    unidad:      r.unidad || "ud",
+  };
+}
+
 // ── SEED demo ──────────────────────────────────────────────────────────────
 
 // MARK: - SEED demo
@@ -43,6 +68,28 @@ function hoyMas(n) {
   const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() + n);
   return d.toISOString();
 }
+
+export const COMPRAS_DEMO = [
+  {
+    id: 1, company_id: "demo",
+    fecha: new Date(Date.now() - 45 * 86400000).toISOString(),
+    notas: "Reposición tras recuento enero", creado_por: "demo@demo.com",
+    lineas: [
+      { id: 1, compra_id: 1, material_id: 1, nombre: "Silla Thonet",         cantidad: 10, unidad: "ud" },
+      { id: 2, compra_id: 1, material_id: 4, nombre: "Copa de agua cristal",  cantidad: 50, unidad: "ud" },
+    ],
+  },
+  {
+    id: 2, company_id: "demo",
+    fecha: new Date(Date.now() - 10 * 86400000).toISOString(),
+    notas: null, creado_por: "demo@demo.com",
+    lineas: [
+      { id: 3, compra_id: 2, material_id: 1, nombre: "Silla Thonet",         cantidad: 5,  unidad: "ud" },
+      { id: 4, compra_id: 2, material_id: 2, nombre: "Mesa redonda 180cm",   cantidad: 3,  unidad: "ud" },
+      { id: 5, compra_id: 2, material_id: 4, nombre: "Copa de agua cristal",  cantidad: 30, unidad: "ud" },
+    ],
+  },
+];
 
 export const SESIONES_DEMO = [
   {
@@ -225,4 +272,67 @@ export async function cancelarRecuento(sesionId, modo) {
   const { error } = await lsc().from("recuento_sesiones")
     .update({ estado: "cancelada" }).eq("id", sesionId);
   if (error) throw error;
+}
+
+// MARK: - Compras (registrarCompra, cargarCompras)
+
+// Registra una compra de Cesta en Supabase.
+// items = [{ nombre, cantidad, unidad, material_id }]
+export async function registrarCompra(items, companyId, userEmail, modo) {
+  if (modo !== "supabase") {
+    const nextId = Math.max(0, ...COMPRAS_DEMO.map(c => c.id)) + 1;
+    const lineas = items.map((it, i) => ({
+      id: nextId * 100 + i, compra_id: nextId,
+      material_id: it.material_id ?? null,
+      nombre: it.nombre, cantidad: it.cantidad, unidad: it.unidad || "ud",
+    }));
+    COMPRAS_DEMO.push({ id: nextId, company_id: companyId,
+      fecha: new Date().toISOString(), notas: null, creado_por: userEmail || null, lineas });
+    return;
+  }
+
+  const { data: compra, error: eC } = await lsc().from("compras").insert({
+    company_id: companyId, notas: null, creado_por: userEmail || null,
+  }).select().single();
+  if (eC) throw eC;
+
+  const lineasRows = items.map(it => ({
+    compra_id:   compra.id,
+    company_id:  companyId,
+    material_id: it.material_id ?? null,
+    nombre:      it.nombre,
+    cantidad:    Number(it.cantidad) || 0,
+    unidad:      it.unidad || "ud",
+  }));
+  if (lineasRows.length) {
+    const { error: eLin } = await lsc().from("compra_lineas").insert(lineasRows);
+    if (eLin) throw eLin;
+  }
+}
+
+// Carga todas las compras con sus líneas, opcionalmente desde una fecha
+export async function cargarCompras(companyId, modo, desdeIso = null) {
+  if (modo !== "supabase") {
+    const lista = desdeIso
+      ? COMPRAS_DEMO.filter(c => c.fecha >= desdeIso)
+      : [...COMPRAS_DEMO];
+    return lista.map(c => mapCompra(c, c.lineas.map(mapCompraLinea)));
+  }
+
+  let q = lsc().from("compras").select("*").eq("company_id", companyId).order("fecha", { ascending: false });
+  if (desdeIso) q = q.gte("fecha", desdeIso);
+  const { data: compras, error: eC } = await q;
+  if (eC) throw eC;
+  if (!compras?.length) return [];
+
+  const ids = compras.map(c => c.id);
+  const { data: lineas, error: eL } = await lsc().from("compra_lineas").select("*").in("compra_id", ids);
+  if (eL) throw eL;
+
+  const lineasByCompra = {};
+  for (const l of lineas || []) {
+    if (!lineasByCompra[l.compra_id]) lineasByCompra[l.compra_id] = [];
+    lineasByCompra[l.compra_id].push(mapCompraLinea(l));
+  }
+  return compras.map(c => mapCompra(c, lineasByCompra[c.id] || []));
 }
