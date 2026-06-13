@@ -386,6 +386,7 @@ function SubvistaRecuento({ sesionActiva, lineas, materiales, almacenes, modo, s
                 <th style={{ padding:"8px 10px", textAlign:"right", fontWeight:700, fontSize:11, color:C.sub, letterSpacing:.5, whiteSpace:"nowrap" }}>SISTEMA</th>
                 <th style={{ padding:"8px 10px", textAlign:"right", fontWeight:700, fontSize:11, color:C.sub, letterSpacing:.5, whiteSpace:"nowrap" }}>CONTADO</th>
                 <th style={{ padding:"8px 10px", textAlign:"center", fontWeight:700, fontSize:11, color:C.sub, letterSpacing:.5, whiteSpace:"nowrap" }}>DIF.</th>
+                <th style={{ padding:"8px 10px", textAlign:"center", fontWeight:700, fontSize:11, color:C.sub, letterSpacing:.5, whiteSpace:"nowrap" }}>%</th>
                 <th style={{ width:36 }}/>
               </tr>
             </thead>
@@ -439,6 +440,14 @@ function SubvistaRecuento({ sesionActiva, lineas, materiales, almacenes, modo, s
                           fontVariantNumeric:"tabular-nums", whiteSpace:"nowrap" }}>
                           {l.diferencia > 0 ? <TrendingUp size={11}/> : l.diferencia < 0 ? <TrendingDown size={11}/> : <Minus size={11}/>}
                           {difLabel(l.diferencia)}
+                        </span>
+                      ) : <span style={{ color:C.dim, fontSize:12 }}>—</span>}
+                    </td>
+                    {/* % diferencial */}
+                    <td style={{ padding:"6px 10px", textAlign:"center", verticalAlign:"middle" }}>
+                      {l.diferencia != null && l.cantidad_sistema > 0 ? (
+                        <span style={{ fontSize:12, fontWeight:600, color:dc.ink, fontVariantNumeric:"tabular-nums" }}>
+                          {(l.diferencia / l.cantidad_sistema * 100).toFixed(1)}%
                         </span>
                       ) : <span style={{ color:C.dim, fontSize:12 }}>—</span>}
                     </td>
@@ -570,9 +579,14 @@ function SubvistaHistorial({ historico, materiales }) {
                     <div style={{ fontWeight:400, color:C.sub, fontSize:10, letterSpacing:0 }}>{new Date(s.closed_at).getFullYear()}</div>
                   </th>
                   {i > 0 && (
-                    <th style={{ padding:"6px 10px", textAlign:"center", fontWeight:700, fontSize:10, color:C.sub, background:C.s2, minWidth:60 }}>
-                      DIF.
-                    </th>
+                    <>
+                      <th style={{ padding:"6px 10px", textAlign:"center", fontWeight:700, fontSize:10, color:C.sub, background:C.s2, minWidth:60 }}>
+                        DIF.
+                      </th>
+                      <th style={{ padding:"6px 8px", textAlign:"center", fontWeight:700, fontSize:10, color:C.sub, background:C.s2, minWidth:50 }}>
+                        %
+                      </th>
+                    </>
                   )}
                 </React.Fragment>
               ))}
@@ -597,15 +611,26 @@ function SubvistaHistorial({ historico, materiales }) {
                           : <span style={{ color:C.dim, fontSize:11 }}>—</span>}
                       </td>
                       {i > 0 && (
-                        <td style={{ padding:"6px 10px", textAlign:"center" }}>
-                          {dato?.diferencia != null ? (
-                            <span style={{ display:"inline-block", padding:"2px 7px", borderRadius:6,
-                              background:dc.bg, color:dc.ink, fontWeight:700, fontSize:12,
-                              fontVariantNumeric:"tabular-nums" }}>
-                              {difLabel(dato.diferencia)}
-                            </span>
-                          ) : <span style={{ color:C.dim }}>—</span>}
-                        </td>
+                        <>
+                          <td style={{ padding:"6px 10px", textAlign:"center" }}>
+                            {dato?.diferencia != null ? (
+                              <span style={{ display:"inline-block", padding:"2px 7px", borderRadius:6,
+                                background:dc.bg, color:dc.ink, fontWeight:700, fontSize:12,
+                                fontVariantNumeric:"tabular-nums" }}>
+                                {difLabel(dato.diferencia)}
+                              </span>
+                            ) : <span style={{ color:C.dim }}>—</span>}
+                          </td>
+                          <td style={{ padding:"6px 8px", textAlign:"center" }}>
+                            {(() => {
+                              if (dato?.diferencia == null) return <span style={{ color:C.dim }}>—</span>;
+                              const base = (dato.contada ?? 0) - dato.diferencia;
+                              if (base <= 0) return <span style={{ color:C.dim }}>—</span>;
+                              const pct = (dato.diferencia / base * 100).toFixed(1);
+                              return <span style={{ fontSize:11.5, fontWeight:600, color:dc.ink }}>{pct}%</span>;
+                            })()}
+                          </td>
+                        </>
                       )}
                     </React.Fragment>
                   );
@@ -718,11 +743,17 @@ function SubvistaAnalisis({ historico, materiales }) {
                   <div style={{ width:120, height:8, borderRadius:4, background:C.s2, overflow:"hidden", flexShrink:0 }}>
                     <div style={{ height:"100%", borderRadius:4, background:dc.ink, width:`${pct}%`, transition:"width .3s" }}/>
                   </div>
-                  {/* Valor */}
-                  <span style={{ width:48, textAlign:"right", fontWeight:700, fontSize:13.5,
-                    color:dc.ink, fontVariantNumeric:"tabular-nums", flexShrink:0 }}>
-                    {difLabel(v.total)}
-                  </span>
+                  {/* Valor + % */}
+                  <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", flexShrink:0, minWidth:56 }}>
+                    <span style={{ fontWeight:700, fontSize:13.5, color:dc.ink, fontVariantNumeric:"tabular-nums" }}>
+                      {difLabel(v.total)}
+                    </span>
+                    {v.mat?.stock_actual > 0 && (
+                      <span style={{ fontSize:11, color:dc.ink, opacity:.75, fontVariantNumeric:"tabular-nums" }}>
+                        {(v.total / (v.mat.stock_actual - v.total) * 100).toFixed(1)}%
+                      </span>
+                    )}
+                  </div>
                 </div>
               );
             })}
