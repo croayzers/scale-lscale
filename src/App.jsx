@@ -120,6 +120,7 @@ export default function App() {
   const [lang,  setLang]  = useState(() => localStorage.getItem("scale.lang")  || "es");
   const [tema,  setTema]  = useState(() => localStorage.getItem("scale.theme") || "light");
   const [tab,   setTab]   = useState("almacen");
+  const [planningFecha, setPlanningFecha] = useState(null);
   const [carga, setCarga] = useState(true);
   const [modo,  setModo]  = useState(null);
   const [empresa,       setEmpresa]       = useState(null);
@@ -423,7 +424,7 @@ export default function App() {
           {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} rolesImport={rolesImport} formatoFecha={formatoFecha} sesion={sesion} highlightedPedidoId={highlightedPedido?.id ?? highlightedPedido}
             highlightedCategoria={highlightedPedido?.categoria ?? null}
             puedeEditar={puedeEditar}
-            onPlanning={() => setTab("planning")}
+            onPlanning={(p) => { setPlanningFecha(p?.fecha_entrega || null); setTab("planning"); }}
             onNotificarStock={notificarStock}
             guardarPlantillaConf={(almId, pl) => guardarPlantillaConf("pedconf", almId, pl)}
             cargarPlantillasConf={(almId) => cargarPlantillasConf("pedconf", almId)}
@@ -436,6 +437,7 @@ export default function App() {
           {tab === "planning" && <TabPlanning pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha}
             materiales={materiales} almacenes={almacenes}
             puedeEditar={puedeEditar}
+            initialFecha={planningFecha}
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }}
             tramosIniciales={tramosIniciales}
             onSaveTramos={async (pid, tramos) => { if (modo === "supabase" && empresa?.id) await guardarTramos(pid, tramos, empresa.id); }}/>}

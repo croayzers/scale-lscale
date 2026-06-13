@@ -1071,11 +1071,11 @@ function ConflictoPopover({ pedido, conflictoItems, materiales, almacenes, onClo
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - TabPlanning [export default]
-export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, materiales = [], almacenes = [], formatoFecha = "DD/MM/YYYY", onSavePedido, onSaveTramos, tramosIniciales }) {
+export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, materiales = [], almacenes = [], formatoFecha = "DD/MM/YYYY", onSavePedido, onSaveTramos, tramosIniciales, initialFecha }) {
   const L = useL();
   const fmtD = iso => fmtFecha(iso, formatoFecha);
 
-  const [fecha,            setFecha]            = useState(() => hoyMas(0));
+  const [fecha,            setFecha]            = useState(() => initialFecha || hoyMas(0));
   const [vista,            setVista]            = useState("dia"); // "dia" | "semana" | "mes"
   const [tramoModal,       setTramoModal]       = useState(null);
   const [tramosOverride,   setTramosOverride]   = useState(() => tramosIniciales ?? {});
