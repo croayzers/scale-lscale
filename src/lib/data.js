@@ -189,9 +189,10 @@ export async function cargarDatos() {
 
     // Membresía del usuario: rol + apps permitidas (una sola query)
     let myRol = "owner";
+    let nivelApp = null; // ver | editar | admin
     if (empresas.length > 0) {
       const { data: memb } = await sb().from("company_members")
-        .select("rol, apps")
+        .select("rol, apps, app_permisos")
         .eq("company_id", empresas[0].id)
         .eq("user_id", user.id)
         .maybeSingle();
@@ -200,6 +201,8 @@ export async function cargarDatos() {
       if (myRol !== "owner" && memberApps !== null && !memberApps.includes("lscale")) {
         return { modo: "sin_acceso", empresas, materiales: [], pedidos: [], expediciones: [], rol: myRol };
       }
+      // Nivel de permiso en lscale: ver | editar | admin (null = sin restricción)
+      nivelApp = (memb?.app_permisos?.["lscale"]) ?? null;
     }
 
     const { data: mats, error: eMats } = await lsc().from("materiales").select("*");
@@ -230,7 +233,7 @@ export async function cargarDatos() {
                ?? (cc && (cc.almacenes || cc.vehiculos || cc.roles) ? cc : null)
                ?? dj ?? cc ?? {};
 
-    return { modo: "supabase", empresas, materiales, pedidos, expediciones, rol: myRol, prefs };
+    return { modo: "supabase", empresas, materiales, pedidos, expediciones, rol: myRol, prefs, nivelApp };
   } catch (e) {
     console.warn("[L-Scale] Error cargando de Supabase, uso demo:", e?.message);
     return { modo: "demo", empresas: [EMPRESA_DEMO], materiales: MATERIALES_DEMO, pedidos: [], expediciones: [] };

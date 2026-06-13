@@ -133,6 +133,7 @@ export default function App() {
   const [vehiculosEmpresa,  setVehiculosEmpresa]  = useState(DEFAULT_VEHICULOS_EMPRESA);
   const [rolesImport,       setRolesImport]       = useState(ROLES_DEFECTO);
   const [myRol,             setMyRol]             = useState("owner");
+  const [nivelApp,          setNivelApp]          = useState(null); // ver | editar | admin | null (sin restricción)
   const [formatoFecha,      setFormatoFecha]      = useState("DD/MM/YYYY");
   const [miembros,          setMiembros]          = useState([]);
   const [chatUnread,        setChatUnread]        = useState(0);
@@ -255,6 +256,12 @@ export default function App() {
     setLang(next); localStorage.setItem("scale.lang", next);
   };
 
+  // Permisos derivados de rol + nivelApp
+  // nivelApp null = sin restricción → mismos permisos que admin
+  const esAdmin = myRol === "owner" || myRol === "admin";
+  const puedeEditar = esAdmin || nivelApp === "editar" || nivelApp === "admin" || nivelApp === null;
+  const puedeAdmin  = esAdmin || nivelApp === "admin"  || nivelApp === null;
+
   useEffect(() => {
     if (!supabaseConfigurado) { setSesion(null); return; }
     sb().auth.getSession().then(({ data: { session } }) => setSesion(session));
@@ -271,6 +278,7 @@ export default function App() {
     setPedidos(res.pedidos || []);
     setExpediciones(res.expediciones || []);
     setMyRol(res.rol ?? "owner");
+    setNivelApp(res.nivelApp ?? null);
     // Aplicar prefs ya cargadas (evita segundo round-trip a Supabase)
     if (res.prefs) {
       if (Array.isArray(res.prefs.almacenes) && res.prefs.almacenes.length) setAlmacenes(res.prefs.almacenes);
@@ -378,6 +386,14 @@ export default function App() {
                     overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
                     {nombre}
                   </span>
+                  {nivelApp && (
+                    <span style={{ fontSize:9.5, fontWeight:700, padding:"1px 6px", borderRadius:999,
+                      background: nivelApp === "ver" ? C.warnSoft : C.okSoft,
+                      color: nivelApp === "ver" ? C.warn : C.ok,
+                      textTransform:"uppercase", letterSpacing:"0.05em" }}>
+                      {nivelApp}
+                    </span>
+                  )}
                 </div>
               );
             })()}
@@ -400,10 +416,12 @@ export default function App() {
         {/* Contenido */}
         <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column", minHeight:0 }}>
           {tab === "almacen"  && <TabAlmacen  materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} silenciados={silenciados}
+            puedeEditar={puedeEditar}
             guardarPlantillaConf={(almId, pl) => guardarPlantillaConf("almconf", almId, pl)}
             cargarPlantillasConf={(almId) => cargarPlantillasConf("almconf", almId)} L={L}/>}
           {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} rolesImport={rolesImport} formatoFecha={formatoFecha} sesion={sesion} highlightedPedidoId={highlightedPedido?.id ?? highlightedPedido}
             highlightedCategoria={highlightedPedido?.categoria ?? null}
+            puedeEditar={puedeEditar}
             onPlanning={() => setTab("planning")}
             onNotificarStock={notificarStock}
             guardarPlantillaConf={(almId, pl) => guardarPlantillaConf("pedconf", almId, pl)}
@@ -416,17 +434,19 @@ export default function App() {
             }}/>}
           {tab === "planning" && <TabPlanning pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha}
             materiales={materiales} almacenes={almacenes}
+            puedeEditar={puedeEditar}
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }}
             tramosIniciales={tramosIniciales}
             onSaveTramos={async (pid, tramos) => { if (modo === "supabase" && empresa?.id) await guardarTramos(pid, tramos, empresa.id); }}/>}
-          {tab === "inventario" && <TabInventario materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} sesion={sesion} pedidos={pedidos} L={L}/>}
+          {tab === "inventario" && <TabInventario materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} sesion={sesion} pedidos={pedidos} puedeEditar={puedeEditar} L={L}/>}
           {tab === "retorno"  && <TabRetorno  pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha}
             materiales={materiales} setMateriales={setMateriales} modo={modo} empresa={empresa}
+            puedeEditar={puedeEditar}
             onNotificarStock={notificarStock}
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} L={L}/>}
           {tab === "flota"     && <TabFlota pedidos={pedidos} vehiculosEmpresa={vehiculosEmpresa} empresa={empresa} formatoFecha={formatoFecha} L={L}/>}
           {tab === "simulacro" && <TabSimulacro pedidos={pedidos} materiales={materiales} setPedidos={setPedidos} setMateriales={setMateriales} L={L}/>}
-          {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={myRol === "owner" || myRol === "admin"} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} L={L}/>}
+          {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={puedeAdmin} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} L={L}/>}
         </div>
 
         {/* Chat flotante */}
