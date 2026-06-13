@@ -129,7 +129,7 @@ function TarjetaPedido({ pedido, veh }) {
           )}
           {pedido.hora_ida && (
             <div style={{ display:"flex", alignItems:"center", gap:5, fontSize:12.5, color:C.sub }}>
-              <Clock size={13} color="#f97316}"/>
+              <Clock size={13} color="#f97316"/>
               <span>Salida: <strong style={{ color:C.ink }}>{fmtHora(pedido.hora_ida)}</strong></span>
             </div>
           )}

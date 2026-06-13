@@ -178,7 +178,7 @@ export async function cargarDatos() {
   }
   try {
     const { data: { user }, error: eUser } = await sb().auth.getUser();
-    console.log("%c[L-Scale] Auth getUser", "color:#2563eb;font-weight:bold", user?.id ?? "null", eUser?.message ?? "ok");
+    if (import.meta.env?.DEV) console.log("%c[L-Scale] Auth getUser", "color:#2563eb;font-weight:bold", user?.id ?? "null", eUser?.message ?? "ok");
     if (!user) return { modo: "sin_sesion", empresas: [], materiales: [], pedidos: [], expediciones: [] };
 
     const { data: comps, error: eComps } = await sb().from("companies").select("*");
@@ -214,12 +214,14 @@ export async function cargarDatos() {
     const { data: exps, error: eExps } = await lsc().from("expediciones").select("*");
     const expediciones = (exps || []).map(mapExpedicion);
 
-    console.log("%c[L-Scale] Carga desde Supabase", "color:#16a34a;font-weight:bold");
-    console.log("  companies:", comps?.length ?? 0, eComps ? `❌ ${eComps.message}` : "ok");
-    console.log("  empresa_config:", cfgs?.length ?? 0, eCfgs ? `❌ ${eCfgs.message}` : "ok");
-    console.log("  materiales:", mats?.length ?? 0, eMats ? `❌ ${eMats.message}` : "ok");
-    console.log("  pedidos:", peds?.length ?? 0, ePeds ? `❌ ${ePeds.message}` : "ok");
-    console.log("  expediciones:", exps?.length ?? 0, eExps ? `❌ ${eExps.message}` : "ok");
+    if (import.meta.env?.DEV) {
+      console.log("%c[L-Scale] Carga desde Supabase", "color:#16a34a;font-weight:bold");
+      console.log("  companies:", comps?.length ?? 0, eComps ? `❌ ${eComps.message}` : "ok");
+      console.log("  empresa_config:", cfgs?.length ?? 0, eCfgs ? `❌ ${eCfgs.message}` : "ok");
+      console.log("  materiales:", mats?.length ?? 0, eMats ? `❌ ${eMats.message}` : "ok");
+      console.log("  pedidos:", peds?.length ?? 0, ePeds ? `❌ ${ePeds.message}` : "ok");
+      console.log("  expediciones:", exps?.length ?? 0, eExps ? `❌ ${eExps.message}` : "ok");
+    }
 
     if (!empresas.length) return { modo: "sin_empresa", empresas: [], materiales: [], pedidos: [], expediciones: [], rol: myRol };
     const tieneConfig = cfgs && cfgs.length > 0;

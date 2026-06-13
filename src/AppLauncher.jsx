@@ -26,8 +26,8 @@ function GridIcon({ size = 18, color = "currentColor" }) {
   const offset = (size - g * 2) / 2;
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} fill="none">
-      {positions.map(([x, y], i) => (
-        <circle key={i} cx={offset + x} cy={offset + y} r={r} fill={color} />
+      {positions.map(([x, y]) => (
+        <circle key={`dot-${x}-${y}`} cx={offset + x} cy={offset + y} r={r} fill={color} />
       ))}
     </svg>
   );
