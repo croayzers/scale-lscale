@@ -1,17 +1,18 @@
 import React, { useState, useRef, useEffect } from "react";
 import { C } from "./lib/ui.jsx";
 
-// Apps disponibles en Scale — igual que en el portal
+const IS_DEV = typeof import.meta !== "undefined" && import.meta.env?.DEV;
+
 const SCALE_APPS = [
-  { id: "lscale",  nombre: "L-Scale", emoji: "📦", color: "#f97316", urlEnv: "VITE_LSCALE_URL"  },
-  { id: "pscale",  nombre: "P-Scale", emoji: "👥", color: "#6366f1", urlEnv: "VITE_PSCALE_URL"  },
-  { id: "sscale",  nombre: "S-Scale", emoji: "📱", color: "#8b5cf6", urlEnv: "VITE_SSCALE_URL"  },
-  { id: "escale",  nombre: "E-Scale", emoji: "🏛️", color: "#10b981", urlEnv: "VITE_ESCALE_URL"  },
-  { id: "fscale",  nombre: "F-Scale", emoji: "💰", color: "#f59e0b", urlEnv: "VITE_FSCALE_URL"  },
-  { id: "rscale",  nombre: "R-Scale", emoji: "📊", color: "#ef4444", urlEnv: "VITE_RSCALE_URL"  },
+  { id: "lscale", nombre: "L-Scale", emoji: "📦", color: "#f97316", urlProd: "https://logistics.thescaleapps.com", urlDev: "http://localhost:5182", urlEnv: "VITE_LSCALE_URL" },
+  { id: "pscale", nombre: "P-Scale", emoji: "👥", color: "#6366f1", urlProd: "https://people.thescaleapps.com",    urlDev: "http://localhost:5181", urlEnv: "VITE_PSCALE_URL" },
+  { id: "sscale", nombre: "S-Scale", emoji: "📱", color: "#8b5cf6", urlProd: "https://social.thescaleapps.com",    urlDev: "http://localhost:3001", urlEnv: "VITE_SSCALE_URL" },
+  { id: "escale", nombre: "E-Scale", emoji: "🏛️", color: "#10b981", urlProd: "https://events.thescaleapps.com",   urlDev: "http://localhost:5173", urlEnv: "VITE_ESCALE_URL" },
+  { id: "fscale", nombre: "F-Scale", emoji: "💰", color: "#f59e0b", urlProd: null,                                 urlDev: null,                   urlEnv: "VITE_FSCALE_URL" },
+  { id: "rscale", nombre: "R-Scale", emoji: "📊", color: "#ef4444", urlProd: null,                                 urlDev: null,                   urlEnv: "VITE_RSCALE_URL" },
 ];
 
-const PORTAL_URL_DEFAULT = "http://localhost:3000";
+const PORTAL_URL_DEFAULT = IS_DEV ? "http://localhost:3000" : "https://thescaleapps.com";
 
 // Icono de 9 puntos estilo Google
 function GridIcon({ size = 18, color = "currentColor" }) {
@@ -38,11 +39,7 @@ export default function AppLauncher({ empresa, currentAppId = "lscale" }) {
 
   const portalUrl = import.meta.env?.VITE_PORTAL_URL || PORTAL_URL_DEFAULT;
 
-  // URLs de cada app desde env vars
-  const getUrl = (app) => {
-    const url = import.meta.env?.[app.urlEnv] || null;
-    return url;
-  };
+  const getUrl = (app) => import.meta.env?.[app.urlEnv] || (IS_DEV ? app.urlDev : app.urlProd) || null;
 
   // Apps que tiene contratadas la empresa
   const appsActivas = empresa?.apps || [];
