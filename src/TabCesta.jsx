@@ -82,6 +82,17 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
   const matchItem = (i, item) =>
     item.material_id != null ? i.material_id === item.material_id : i.nombre === item.nombre;
 
+  // Encuentra el material exacto de un item de cesta: por id, luego por
+  // almacén + nombre, y por último por nombre global (fallback).
+  const buscarMaterial = (item) => {
+    const nom = item.nombre?.trim().toLowerCase();
+    return materiales.find(m =>
+      (item.material_id != null && m.id === item.material_id) ||
+      ((m.almacen_id ?? null) === (item.almacen_id ?? null) &&
+       m.nombre?.trim().toLowerCase() === nom)
+    ) || materiales.find(m => m.nombre?.trim().toLowerCase() === nom);
+  };
+
   const setCantidad = (item, v) => {
     const n = Math.max(0, Number(v) || 0);
     if (n === 0) {
@@ -99,10 +110,7 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
     try {
       const updates = [];
       for (const item of cesta) {
-        const mat = materiales.find(m =>
-          (item.material_id != null && m.id === item.material_id) ||
-          m.nombre?.trim().toLowerCase() === item.nombre?.trim().toLowerCase()
-        );
+        const mat = buscarMaterial(item);
         if (!mat) continue;
         const nuevoStock = (Number(mat.stock_actual) || 0) + Number(item.cantidad);
         if (modo === "supabase") {
@@ -123,10 +131,7 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
       try {
         const userEmail = sesion?.user?.email || null;
         const itemsCompra = cesta.map(item => {
-          const mat = materiales.find(m =>
-            (item.material_id != null && m.id === item.material_id) ||
-            m.nombre?.trim().toLowerCase() === item.nombre?.trim().toLowerCase()
-          );
+          const mat = buscarMaterial(item);
           return {
             nombre:      item.nombre,
             cantidad:    item.cantidad,
@@ -153,10 +158,7 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
     const colsActivas = cols.filter(c => c.activa);
     const header = colsActivas.map(c => c.label);
     const rows = cesta.map(item => {
-      const mat = materiales.find(m =>
-        (item.material_id != null && m.id === item.material_id) ||
-        m.nombre?.trim().toLowerCase() === item.nombre?.trim().toLowerCase()
-      ) || {};
+      const mat = buscarMaterial(item) || {};
       return colsActivas.map(c => {
         if (c.key === "cantidad") return item.cantidad;
         if (c.key === "nombre")   return item.nombre;
@@ -207,7 +209,7 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
         display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
         <ShoppingCart size={16} color={C.brand}/>
         <span style={{ fontWeight:700, fontSize:15 }}>Cesta de compra</span>
-        <span style={{ fontSize:12, color:C.sub, background:C.brandSoft, color:C.brand,
+        <span style={{ fontSize:12, background:C.brandSoft, color:C.brand,
           padding:"2px 8px", borderRadius:999, fontWeight:600 }}>
           {cesta.length} {cesta.length === 1 ? "artículo" : "artículos"} · {total} uds
         </span>
@@ -229,10 +231,7 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
           </thead>
           <tbody>
             {cesta.map((item, idx) => {
-              const mat = materiales.find(m =>
-                (item.material_id != null && m.id === item.material_id) ||
-                m.nombre?.trim().toLowerCase() === item.nombre?.trim().toLowerCase()
-              ) || {};
+              const mat = buscarMaterial(item) || {};
               const almacenId = item.almacen_id ?? mat.almacen_id ?? null;
               const almacen   = almacenes.find(a => a.id === almacenId);
               const ubicacion = item.ubicacion ?? mat.ubicacion ?? null;

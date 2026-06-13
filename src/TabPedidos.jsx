@@ -992,13 +992,19 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                 {onAgregarCesta && (
                   <button onClick={() => {
                       const items = conflictos.map(c => {
-                        const mat = materiales?.find(m => m.id === c.material_id);
+                        // Buscar el material exacto: por id, o por almacén + nombre
+                        const nom = (c.nombre || "").trim().toLowerCase();
+                        const mat = materiales?.find(m =>
+                          (c.material_id != null && m.id === c.material_id) ||
+                          ((m.almacen_id ?? null) === (c.almacen_id ?? null) &&
+                           (m.nombre || "").trim().toLowerCase() === nom)
+                        ) || materiales?.find(m => (m.nombre || "").trim().toLowerCase() === nom);
                         return {
                           nombre:      c.nombre,
                           faltante:    c.faltante,
                           cantidad:    c.faltante,
-                          material_id: c.material_id ?? null,
-                          almacen_id:  mat?.almacen_id ?? null,
+                          material_id: mat?.id ?? c.material_id ?? null,
+                          almacen_id:  mat?.almacen_id ?? c.almacen_id ?? null,
                           ubicacion:   mat?.ubicacion  ?? null,
                         };
                       });
@@ -1569,7 +1575,8 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
       const nom = (l.nombre || "").toLowerCase().trim();
       if (!nom) continue;
       const existe = (materiales || []).some(m =>
-        (m.nombre || "").toLowerCase().trim() === nom && m.almacen_id === almacenId
+        (m.nombre || "").toLowerCase().trim() === nom &&
+        String(m.almacen_id ?? "") === String(almacenId ?? "")
       );
       if (!existe) {
         nuevos.push({

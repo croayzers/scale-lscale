@@ -4,7 +4,12 @@
 // Va acumulando el consumo por material; cuando el acumulado supera el stock
 // disponible, ese pedido recibe el conflicto con la cantidad faltante.
 //
-// Retorna: { [pedidoId]: [{ nombre, faltante }] }
+// IMPORTANTE: el material se identifica por (almacén + nombre) o por material_id.
+// El pedido se importa con el botón de un almacén concreto, así que cada línea
+// lleva su almacen_id. Buscar solo por nombre global mezcla materiales con el
+// mismo nombre en distintos almacenes (p.ej. "VASO SIDRA" en Torre y Almacén 3).
+//
+// Retorna: { [pedidoId]: [{ nombre, faltante, material_id, almacen_id }] }
 
 const ESTADOS_ACTIVOS = new Set(["reservado", "confirmado", "retorno"]);
 
@@ -14,18 +19,35 @@ const dec2hm = s => {
   return hh + (mm || 0) / 60;
 };
 
+const norm = s => (s ?? "").toString().trim().toLowerCase();
+
+// Clave de material para una línea de pedido: prioriza material_id; si no,
+// usa (almacen_id + nombre). El almacen_id de la línea cae al del pedido.
+function claveLinea(linea, pedidoAlmacenId) {
+  if (linea.material_id != null) return `id:${linea.material_id}`;
+  const nom = norm(linea.nombre);
+  if (!nom) return null;
+  const aid = linea.almacen_id ?? pedidoAlmacenId ?? "";
+  return `am:${aid}|${nom}`;
+}
+
 export function calcularConflictosStock(pedidos = [], materiales = []) {
   const activos = pedidos.filter(p =>
     ESTADOS_ACTIVOS.has(p.estado) && (p.lineas || []).length > 0
   );
 
-  // Índice de stock por id y por nombre normalizado
-  const stockById  = {};
-  const stockByNom = {};
+  // Índice de stock por material_id y por (almacen_id + nombre).
+  const stockPorClave = {};   // clave -> { stock, material_id, almacen_id, nombre }
   for (const m of materiales) {
-    stockById[m.id] = Number(m.stock_actual) || 0;
-    const nom = m.nombre?.trim().toLowerCase();
-    if (nom) stockByNom[nom] = { id: m.id, stock: Number(m.stock_actual) || 0 };
+    const stock = Number(m.stock_actual) || 0;
+    if (m.id != null) {
+      stockPorClave[`id:${m.id}`] = { stock, material_id: m.id, almacen_id: m.almacen_id ?? null, nombre: m.nombre };
+    }
+    const nom = norm(m.nombre);
+    if (nom) {
+      const aid = m.almacen_id ?? "";
+      stockPorClave[`am:${aid}|${nom}`] = { stock, material_id: m.id ?? null, almacen_id: m.almacen_id ?? null, nombre: m.nombre };
+    }
   }
 
   // Orden cronológico: fecha_entrega ASC → hora_ida ASC
@@ -47,28 +69,35 @@ export function calcularConflictosStock(pedidos = [], materiales = []) {
       const cant = Number(linea.cantidad) || 0;
       if (!cant) continue;
 
-      let key = null, stockTotal = 0;
-      if (linea.material_id != null && stockById[linea.material_id] != null) {
-        key = `id:${linea.material_id}`;
-        stockTotal = stockById[linea.material_id];
-      } else {
-        const nom = linea.nombre?.trim().toLowerCase();
-        if (nom && stockByNom[nom]) {
-          key = `nom:${nom}`;
-          stockTotal = stockByNom[nom].stock;
-        }
+      // Resolver la clave del material en el índice de stock.
+      let clave = claveLinea(linea, p.almacen_id);
+      if (clave == null) continue;
+
+      // Si la clave directa no existe (p.ej. material_id sin stock cargado o
+      // línea sin almacen_id), intentar fallback por nombre+almacén del pedido.
+      let info = stockPorClave[clave];
+      if (info == null && !clave.startsWith("am:")) {
+        const nom = norm(linea.nombre);
+        const aid = linea.almacen_id ?? p.almacen_id ?? "";
+        clave = `am:${aid}|${nom}`;
+        info = stockPorClave[clave];
       }
-      if (key == null) continue;
+      if (info == null) continue;
 
-      const prev     = consumido[key] || 0;
+      const prev     = consumido[clave] || 0;
       const nuevo    = prev + cant;
-      consumido[key] = nuevo;
+      consumido[clave] = nuevo;
 
-      if (nuevo > stockTotal) {
-        const faltante = Math.min(cant, nuevo - stockTotal);
+      if (nuevo > info.stock) {
+        const faltante = Math.min(cant, nuevo - info.stock);
         if (!resultado[pid]) resultado[pid] = [];
-        if (!resultado[pid].some(x => x.nombre === linea.nombre))
-          resultado[pid].push({ nombre: linea.nombre || "?", faltante: Math.ceil(faltante), material_id: linea.material_id ?? null });
+        if (!resultado[pid].some(x => norm(x.nombre) === norm(linea.nombre)))
+          resultado[pid].push({
+            nombre:      linea.nombre || "?",
+            faltante:    Math.ceil(faltante),
+            material_id: info.material_id ?? linea.material_id ?? null,
+            almacen_id:  info.almacen_id ?? linea.almacen_id ?? p.almacen_id ?? null,
+          });
       }
     }
   }
