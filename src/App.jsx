@@ -25,6 +25,7 @@ import TabSimulacro from "./TabSimulacro.jsx";
 import TabFlota from "./TabFlota.jsx";
 import ChatFloat from "./ChatFloat.jsx";
 import { Package, Shield, ClipboardCheck, FlaskConical, Truck } from "lucide-react";
+import AppLauncher from "./AppLauncher.jsx";
 import { ToastContainer, PanelAlertasStock, crearNotificacion } from "./StockNotificaciones.jsx";
 
 // MARK: - Constantes (ROLES_DEFECTO, DEFAULT_VEHICULOS_EMPRESA, TABS)
@@ -367,6 +368,7 @@ export default function App() {
                 )}
               </button>
             )}
+            <AppLauncher empresa={empresa} currentAppId="lscale" />
             <button onClick={cambiarLang} title={L("Cambiar idioma","Change language")} style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, padding:6, borderRadius:8, display:"flex" }}><Globe size={16}/></button>
             <button onClick={toggleTema} title={L("Cambiar tema","Toggle theme")} style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, padding:6, borderRadius:8, display:"flex" }}>
               {tema === "dark" ? <Sun size={16}/> : <Moon size={16}/>}
