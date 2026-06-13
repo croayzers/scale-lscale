@@ -190,13 +190,22 @@ function imprimirEtiqueta(config, pedido) {
 }
 
 /* ─── TabEtiquetas principal ─────────────────────────────────────────────── */
-export default function TabEtiquetas({ pedidos = [], L }) {
+export default function TabEtiquetas({ pedidos = [], plantillas: plantillasProp, onGuardarPlantillas, L }) {
   const [config, setConfig]       = useState({ ...CONFIG_DEFECTO });
   const [pedidoId, setPedidoId]   = useState(null);
-  const [plantillas, setPlantillas] = useState(cargarPlantillas);
+  // Las plantillas vienen del padre (Supabase, compartidas por la organización).
+  // Fallback a localStorage si se usa el componente sin esas props.
+  const controlado = typeof onGuardarPlantillas === "function";
+  const [plantillasLocal, setPlantillasLocal] = useState(cargarPlantillas);
+  const plantillas = controlado ? (plantillasProp || []) : plantillasLocal;
   const [nombrePlant, setNombrePlant] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [guardado, setGuardado]   = useState(false);
+
+  const persistir = (lista) => {
+    if (controlado) onGuardarPlantillas(lista);
+    else { guardarPlantillas(lista); setPlantillasLocal(lista); }
+  };
 
   const pedido = pedidos.find(p => String(p.id) === String(pedidoId)) || null;
 
@@ -221,16 +230,14 @@ export default function TabEtiquetas({ pedidos = [], L }) {
     const nueva = { nombre: nombrePlant.trim(), config: { ...config } };
     const lista = plantillas.filter(p => p.nombre !== nueva.nombre);
     lista.unshift(nueva);
-    guardarPlantillas(lista);
-    setPlantillas(lista);
+    persistir(lista);
     setGuardado(true);
     setTimeout(() => setGuardado(false), 1800);
   };
 
   const borrarPlantilla = (nombre) => {
     const lista = plantillas.filter(p => p.nombre !== nombre);
-    guardarPlantillas(lista);
-    setPlantillas(lista);
+    persistir(lista);
   };
 
   return (

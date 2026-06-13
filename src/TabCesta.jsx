@@ -41,7 +41,7 @@ function guardarCols(cols) {
 function ConstructorColumnas({ cols, onChange }) {
   const toggle = (k) => {
     const next = cols.map(c => c.key === k ? { ...c, activa: !c.activa } : c);
-    onChange(next); guardarCols(next);
+    onChange(next);
   };
   return (
     <div style={{ display:"flex", flexDirection:"column", gap:5, marginBottom:12 }}>
@@ -71,11 +71,22 @@ function ConstructorColumnas({ cols, onChange }) {
 }
 
 /* ─── TabCesta ────────────────────────────────────────────────────────────── */
-export default function TabCesta({ cesta, setCesta, materiales, setMateriales, almacenes = [], modo, empresa, sesion, L }) {
+export default function TabCesta({ cesta, setCesta, materiales, setMateriales, almacenes = [], modo, empresa, sesion, colsIniciales, onGuardarCols, L }) {
   const [comprando, setComprando] = useState(false);
   const [comprado,  setComprado]  = useState(false);
-  const [cols,      setCols]      = useState(cargarCols);
+  const [cols,      setCols]      = useState(() => colsIniciales || cargarCols());
   const [mostrarConstructor, setMostrarConstructor] = useState(false);
+
+  // Sincronizar columnas cuando llegan desde Supabase (cambio de empresa/carga)
+  React.useEffect(() => {
+    if (Array.isArray(colsIniciales) && colsIniciales.length) setCols(colsIniciales);
+  }, [colsIniciales]);
+
+  const persistirCols = (next) => {
+    setCols(next);
+    if (typeof onGuardarCols === "function") onGuardarCols(next);
+    else guardarCols(next);
+  };
 
   const total = cesta.reduce((s, i) => s + i.cantidad, 0);
 
@@ -321,7 +332,7 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
             <div style={{ position:"absolute", bottom:"100%", left:0, marginBottom:6,
               background:C.surface, border:`1px solid ${C.line}`, borderRadius:10,
               boxShadow:"0 4px 20px #0003", padding:14, minWidth:200, zIndex:50 }}>
-              <ConstructorColumnas cols={cols} onChange={setCols}/>
+              <ConstructorColumnas cols={cols} onChange={persistirCols}/>
             </div>
           )}
         </div>

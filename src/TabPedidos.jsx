@@ -18,7 +18,7 @@ import {
 import { useL } from "./lib/i18n.js";
 import { parsearExcelPedido } from "./lib/parseExcelPedido.js";
 import ExcelConfigurador from "./ExcelConfigurador.jsx";
-import { guardarPedido, borrarPedido, cargarMiembrosEmpresa, enviarNotificacionPedido, recargarMateriales } from "./lib/data.js";
+import { guardarPedido, borrarPedido, cargarMiembrosEmpresa, enviarNotificacionPedido, recargarMateriales, guardarPrefs } from "./lib/data.js";
 import { fmtFecha, siguienteCodigo } from "./lib/fechas.js";
 import { conflictosPedido, calcularConflictosStock } from "./lib/stockConflictos.js";
 
@@ -289,11 +289,17 @@ function cargarPlantillasExport(empresaId, almacenId) {
   try { return JSON.parse(localStorage.getItem(keyPlantillasExport(empresaId, almacenId))) || []; }
   catch { return []; }
 }
-function guardarPlantillaExport(empresaId, almacenId, tpl) {
+// Guarda en localStorage (lectura rápida) y en Supabase (compartido por la organización).
+async function guardarPlantillaExport(empresaId, almacenId, tpl, modo) {
   const lista = cargarPlantillasExport(empresaId, almacenId);
   const idx = lista.findIndex(p => p.nombre === tpl.nombre);
   if (idx >= 0) lista[idx] = tpl; else lista.push(tpl);
   localStorage.setItem(keyPlantillasExport(empresaId, almacenId), JSON.stringify(lista));
+  if (modo === "supabase" && empresaId) {
+    try { await guardarPrefs(empresaId, { [`plantillas_export_${almacenId}`]: lista }); }
+    catch (e) { console.warn("[L-Scale] guardarPlantillaExport supabase:", e?.message); }
+  }
+  return lista;
 }
 
 // Columnas disponibles para exportar (fijas + roles dinámicos se añaden desde fuera)
@@ -452,7 +458,7 @@ function exportarPDFCfg(pedido, almacenes, cfg) {
    MODAL CONFIGURADOR DE EXPORTACIÓN
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - ExportConfigurador
-function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato, onClose }) {
+function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato, modo, onClose }) {
   const almacenId = pedido.almacen_id;
   const [plantillas, setPlantillas] = useState(() => cargarPlantillasExport(empresaId, almacenId));
   const [tplNombre, setTplNombre] = useState("");
@@ -488,11 +494,11 @@ function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato
     setTplNombre(tpl.nombre);
   };
 
-  const guardar = () => {
+  const guardar = async () => {
     if (!tplNombre.trim()) return;
     const tpl = { nombre: tplNombre.trim(), cfg: { cols: cfg.cols.map(c => ({ key:c.key, visible:c.visible })), alias: cfg.alias } };
-    guardarPlantillaExport(empresaId, almacenId, tpl);
-    setPlantillas(cargarPlantillasExport(empresaId, almacenId));
+    const lista = await guardarPlantillaExport(empresaId, almacenId, tpl, modo);
+    setPlantillas(lista);
     setSavedOk(true);
     setTimeout(() => setSavedOk(false), 2000);
   };
@@ -793,7 +799,7 @@ function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato
    DETALLE / EDICIÓN DE PEDIDO
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - DetallePedido
-function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, onAgregarCesta, onComprobarStock, rolesImport, empresaId, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, L }) {
+function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, onAgregarCesta, onComprobarStock, rolesImport, empresaId, modo, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, L }) {
   const [exportModal, setExportModal] = useState(null); // null | "pdf" | "excel"
   const [p, setP] = useState({ ...pedido });
   const [editando, setEditando] = useState(false);
@@ -1327,6 +1333,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
           empresaId={empresaId}
           rolesImport={rolesImport}
           formato={exportModal}
+          modo={modo}
           onClose={() => setExportModal(null)}
         />
       )}
@@ -1817,6 +1824,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         }}
         rolesImport={rolesImport}
         empresaId={empresa?.id}
+        modo={modo}
         formatoFecha={formatoFecha}
         highlightedCategoria={highlightedCategoria}
         sesion={sesion}

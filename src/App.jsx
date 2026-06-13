@@ -267,6 +267,30 @@ export default function App() {
     return lista;
   }, [modo, empresa?.id]);
 
+  // Plantillas de etiquetas — compartidas por toda la organización (Supabase)
+  const [plantillasEtiquetas, setPlantillasEtiquetas] = useState([]);
+  const guardarPlantillasEtiquetas = useCallback(async (lista) => {
+    setPlantillasEtiquetas(lista);
+    if (modo === "supabase" && empresa?.id) {
+      try { await guardarPrefs(empresa.id, { plantillas_etiquetas: lista }); }
+      catch (e) { console.warn("[L-Scale] guardarPlantillasEtiquetas:", e?.message); }
+    } else {
+      try { localStorage.setItem("lscale.etiquetas.plantillas", JSON.stringify(lista)); } catch {}
+    }
+  }, [modo, empresa?.id]);
+
+  // Columnas del Excel de la cesta — compartidas por la organización (Supabase)
+  const [cestaCols, setCestaCols] = useState(null);
+  const guardarCestaCols = useCallback(async (cols) => {
+    setCestaCols(cols);
+    if (modo === "supabase" && empresa?.id) {
+      try { await guardarPrefs(empresa.id, { cesta_columnas: cols }); }
+      catch (e) { console.warn("[L-Scale] guardarCestaCols:", e?.message); }
+    } else {
+      try { localStorage.setItem("lscale.cesta.columnas", JSON.stringify(cols)); } catch {}
+    }
+  }, [modo, empresa?.id]);
+
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", tema); }, [tema]);
 
@@ -310,14 +334,37 @@ export default function App() {
       if (Array.isArray(res.prefs.vehiculos) && res.prefs.vehiculos.length) setVehiculosEmpresa(res.prefs.vehiculos);
       if (Array.isArray(res.prefs.roles)     && res.prefs.roles.length)     setRolesImport(res.prefs.roles);
       if (res.prefs.formatoFecha) setFormatoFecha(res.prefs.formatoFecha);
+      // Plantillas de etiquetas (compartidas por la organización)
+      if (Array.isArray(res.prefs.plantillas_etiquetas)) {
+        setPlantillasEtiquetas(res.prefs.plantillas_etiquetas);
+      } else {
+        // Fallback: migrar plantillas previas que quedaron en localStorage
+        try {
+          const prev = JSON.parse(localStorage.getItem("lscale.etiquetas.plantillas"));
+          if (Array.isArray(prev) && prev.length) setPlantillasEtiquetas(prev);
+        } catch {}
+      }
+      // Columnas de la cesta (compartidas por la organización)
+      if (Array.isArray(res.prefs.cesta_columnas)) {
+        setCestaCols(res.prefs.cesta_columnas);
+      } else {
+        try {
+          const prev = JSON.parse(localStorage.getItem("lscale.cesta.columnas"));
+          if (Array.isArray(prev) && prev.length) setCestaCols(prev);
+        } catch {}
+      }
       // Hidratar plantillas en localStorage para que los configuradores las lean al abrir
       const empId = res.empresas?.[0]?.id;
       if (empId) {
         for (const [k, v] of Object.entries(res.prefs)) {
           if (k.startsWith("plantillas_") && Array.isArray(v)) {
-            const parts = k.split("_"); // plantillas_pedconf_<almId> o plantillas_almconf_<almId>
+            const parts = k.split("_"); // plantillas_pedconf_<almId> | plantillas_almconf_<almId> | plantillas_export_<almId>
             const tipo = parts[1]; const almId = parts.slice(2).join("_");
-            localStorage.setItem(`lscale.${tipo}.${empId}.${almId}`, JSON.stringify(v));
+            // Plantillas de exportación usan la clave lscale.export_tpl.<emp>.<alm>
+            const lsKey = tipo === "export"
+              ? `lscale.export_tpl.${empId}.${almId}`
+              : `lscale.${tipo}.${empId}.${almId}`;
+            localStorage.setItem(lsKey, JSON.stringify(v));
           }
         }
       }
@@ -482,8 +529,8 @@ export default function App() {
             onNotificarStock={notificarStock}
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} L={L}/>}
           {tab === "flota"     && <TabFlota pedidos={pedidos} vehiculosEmpresa={vehiculosEmpresa} empresa={empresa} formatoFecha={formatoFecha} L={L}/>}
-          {tab === "etiquetas" && <TabEtiquetas pedidos={pedidos} L={L}/>}
-          {tab === "cesta"     && <TabCesta cesta={cesta} setCesta={setCesta} materiales={materiales} setMateriales={setMateriales} almacenes={almacenes} modo={modo} empresa={empresa} sesion={sesion} L={L}/>}
+          {tab === "etiquetas" && <TabEtiquetas pedidos={pedidos} plantillas={plantillasEtiquetas} onGuardarPlantillas={guardarPlantillasEtiquetas} L={L}/>}
+          {tab === "cesta"     && <TabCesta cesta={cesta} setCesta={setCesta} materiales={materiales} setMateriales={setMateriales} almacenes={almacenes} modo={modo} empresa={empresa} sesion={sesion} colsIniciales={cestaCols} onGuardarCols={guardarCestaCols} L={L}/>}
           {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={puedeAdmin} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} portalUrl={import.meta.env?.VITE_PORTAL_URL || "http://localhost:3000"} L={L}/>}
         </div>
 
