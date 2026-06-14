@@ -51,7 +51,8 @@ function guardarPlantillas(list) {
 /* ─── Componente preview de la etiqueta ──────────────────────────────────── */
 function PreviewEtiqueta({ config, pedido }) {
   const tam = TAMAÑOS.find(t => t.id === config.tamaño) || TAMAÑOS[0];
-  const escala = tam.w > 250 ? 1.4 : 1.6; // A3 vs A4
+  // Escala visual: que la etiqueta llene bien el panel. Menor divisor = más grande.
+  const escala = tam.w > 250 ? 0.62 : 0.78; // A3 vs A4
 
   const campos = config.campos
     .map(k => CAMPOS_PEDIDO.find(c => c.key === k))
@@ -62,8 +63,8 @@ function PreviewEtiqueta({ config, pedido }) {
     return pedido[k] ?? "—";
   };
 
-  const previewW = (tam.w / escala) * 0.9;
-  const previewH = (tam.h / escala) * 0.9;
+  const previewW = tam.w / escala;
+  const previewH = tam.h / escala;
   const fs = Math.max(8, (config.fontSize || 18) / escala);
 
   return (
@@ -211,6 +212,21 @@ export default function TabEtiquetas({ pedidos = [], plantillas: plantillasProp,
 
   const set = (k) => (v) => setConfig(prev => ({ ...prev, [k]: v }));
 
+  // Al elegir un pedido, el título de la etiqueta pasa a ser el nombre del pedido
+  // (salvo que el usuario ya lo haya personalizado a algo distinto del defecto).
+  const elegirPedido = (id) => {
+    setPedidoId(id || null);
+    const p = pedidos.find(x => String(x.id) === String(id));
+    if (p) {
+      const nombrePedido = p.nombre || p.codigo || `Pedido ${p.id}`;
+      setConfig(prev => {
+        const esDefecto = !prev.titulo || prev.titulo === CONFIG_DEFECTO.titulo
+          || pedidos.some(x => x.nombre === prev.titulo || x.codigo === prev.titulo);
+        return esDefecto ? { ...prev, titulo: nombrePedido } : prev;
+      });
+    }
+  };
+
   const toggleCampo = (k) => {
     setConfig(prev => {
       const arr = prev.campos.includes(k)
@@ -258,7 +274,7 @@ export default function TabEtiquetas({ pedidos = [], plantillas: plantillasProp,
           {/* Pedido */}
           <div>
             <Label>Pedido</Label>
-            <select value={pedidoId ?? ""} onChange={e => setPedidoId(e.target.value || null)}
+            <select value={pedidoId ?? ""} onChange={e => elegirPedido(e.target.value)}
               style={INPUT_STYLE}>
               <option value="">— Sin pedido (preview vacío) —</option>
               {pedidos.map(p => (
@@ -347,10 +363,10 @@ export default function TabEtiquetas({ pedidos = [], plantillas: plantillasProp,
             </div>
           </div>
 
-          {/* Tamaño de fuente */}
+          {/* Tamaño de fuente — hasta x3 (18 → 54) */}
           <div>
-            <Label>Tamaño de texto ({config.fontSize}px)</Label>
-            <input type="range" min={12} max={32} step={1}
+            <Label>Tamaño de texto ({config.fontSize}px · x{(config.fontSize / 18).toFixed(1)})</Label>
+            <input type="range" min={12} max={54} step={1}
               value={config.fontSize}
               onChange={e => set("fontSize")(Number(e.target.value))}
               style={{ width:"100%" }}/>
