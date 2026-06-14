@@ -48,11 +48,12 @@ function guardarPlantillas(list) {
   localStorage.setItem(LS_KEY, JSON.stringify(list));
 }
 
-/* ─── Componente preview de la etiqueta ──────────────────────────────────── */
-function PreviewEtiqueta({ config, pedido }) {
+/* ─── Componente preview de la etiqueta ──────────────────────────────────────
+   Réplica fiel de la impresión: la etiqueta se construye a TAMAÑO REAL (1px=1mm,
+   igual que @page e idénticos font-size que imprimirEtiqueta) y se reduce el
+   conjunto con transform:scale(). Así lo que se ve = lo que se imprime. */
+function PreviewEtiqueta({ config, pedido, escala }) {
   const tam = TAMAÑOS.find(t => t.id === config.tamaño) || TAMAÑOS[0];
-  // Escala visual: que la etiqueta llene bien el panel. Menor divisor = más grande.
-  const escala = tam.w > 250 ? 0.62 : 0.78; // A3 vs A4
 
   const campos = config.campos
     .map(k => CAMPOS_PEDIDO.find(c => c.key === k))
@@ -63,61 +64,63 @@ function PreviewEtiqueta({ config, pedido }) {
     return pedido[k] ?? "—";
   };
 
-  const previewW = tam.w / escala;
-  const previewH = tam.h / escala;
-  const fs = Math.max(8, (config.fontSize || 18) / escala);
+  const fs = config.fontSize || 18;               // px reales, como en impresión
+  const margin = 12;                              // mm, igual que @page margin
+  const innerW = tam.w - margin * 2;
 
   return (
     <div style={{
-      width: previewW, height: previewH, flexShrink:0,
-      border:`2px solid ${C.strong}`, borderRadius:8,
-      background:"#fff", padding: 16 / escala * 0.9,
-      display:"flex", flexDirection:"column", gap: 10 / escala,
-      overflow:"hidden", boxShadow:"0 2px 12px #0002",
-      fontFamily:"'Helvetica Neue', Arial, sans-serif",
+      width: tam.w * escala, height: tam.h * escala, flexShrink: 0,
+      boxShadow: "0 2px 16px #0002", borderRadius: 4 * escala, overflow: "hidden",
     }}>
-      {/* Título */}
+      {/* Hoja a tamaño real, escalada como bloque */}
       <div style={{
-        fontSize: fs * 0.9, fontWeight:800, textTransform:"uppercase",
-        letterSpacing:"0.08em", color:"#111", borderBottom:"2px solid #111",
-        paddingBottom: 6 / escala, marginBottom: 4 / escala,
+        width: tam.w, height: tam.h, background: "#fff",
+        transform: `scale(${escala})`, transformOrigin: "top left",
+        padding: margin, boxSizing: "border-box",
+        display: "flex", flexDirection: "column",
+        fontFamily: "'Helvetica Neue', Arial, sans-serif", color: "#111",
       }}>
-        {config.titulo || "ETIQUETA ALMACÉN"}
-      </div>
+        {/* Título — mismo tamaño que impresión (fs * 1.1) */}
+        <div style={{
+          fontSize: fs * 1.1, fontWeight: 800, textTransform: "uppercase",
+          letterSpacing: "0.08em", borderBottom: "2.5px solid #111",
+          paddingBottom: 8, marginBottom: 14, lineHeight: 1.1, wordBreak: "break-word",
+        }}>
+          {config.titulo || "ETIQUETA ALMACÉN"}
+        </div>
 
-      {/* Campos */}
-      <div style={{ flex:1, display:"flex", flexDirection:"column", gap: 8 / escala, overflow:"hidden" }}>
-        {campos.map(campo => (
-          <div key={campo.key} style={{ display:"flex", flexDirection:"column", gap:1 }}>
-            <span style={{ fontSize: fs * 0.55, fontWeight:700, color:"#888", textTransform:"uppercase", letterSpacing:"0.06em" }}>
-              {campo.label}
-            </span>
-            <span style={{ fontSize: fs * 0.85, fontWeight:600, color:"#111", lineHeight:1.2,
-              whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-              {val(campo.key)}
-            </span>
-          </div>
-        ))}
-      </div>
-
-      {/* Líneas de material */}
-      {config.mostrarLineas && pedido?.lineas?.length > 0 && (
-        <div style={{ borderTop:"1px solid #ccc", paddingTop: 6 / escala }}>
-          <div style={{ fontSize: fs * 0.55, fontWeight:700, color:"#888", textTransform:"uppercase", marginBottom: 3 / escala }}>
-            MATERIAL
-          </div>
-          {pedido.lineas.slice(0, 6).map((l, i) => (
-            <div key={i} style={{ fontSize: fs * 0.7, color:"#333", display:"flex", justifyContent:"space-between" }}>
-              <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:"70%" }}>{l.nombre}</span>
-              <span style={{ fontWeight:700 }}>{l.cantidad} {l.unidad || "ud"}</span>
+        {/* Campos */}
+        <div style={{ flex: 1 }}>
+          {campos.map(campo => (
+            <div key={campo.key} style={{ marginBottom: 12 }}>
+              <div style={{ fontSize: fs * 0.6, fontWeight: 700, color: "#888",
+                textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>
+                {campo.label}
+              </div>
+              <div style={{ fontSize: fs, fontWeight: 600, lineHeight: 1.2,
+                maxWidth: innerW, wordBreak: "break-word" }}>
+                {val(campo.key)}
+              </div>
             </div>
           ))}
-          {pedido.lineas.length > 6 && (
-            <div style={{ fontSize: fs * 0.6, color:"#888" }}>+{pedido.lineas.length - 6} más…</div>
-          )}
         </div>
-      )}
 
+        {/* Líneas de material */}
+        {config.mostrarLineas && pedido?.lineas?.length > 0 && (
+          <div style={{ borderTop: "1px solid #ccc", marginTop: 16, paddingTop: 10 }}>
+            <div style={{ fontSize: fs * 0.6, fontWeight: 700, color: "#888", textTransform: "uppercase", marginBottom: 4 }}>
+              MATERIAL
+            </div>
+            {pedido.lineas.map((l, i) => (
+              <div key={i} style={{ fontSize: fs * 0.75, color: "#333", display: "flex", justifyContent: "space-between", marginTop: 4 }}>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "75%" }}>{l.nombre}</span>
+                <span style={{ fontWeight: 700 }}>{l.cantidad} {l.unidad || "ud"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -407,7 +410,12 @@ export default function TabEtiquetas({ pedidos = [], plantillas: plantillasProp,
           </button>
         </div>
 
-        <PreviewEtiqueta config={config} pedido={pedido}/>
+        {(() => {
+          const tam = TAMAÑOS.find(t => t.id === config.tamaño) || TAMAÑOS[0];
+          // Escalar para que el folio quepa en el panel (alto disponible ~ 560px, ancho ~ 520px)
+          const escala = Math.min(520 / tam.w, 560 / tam.h);
+          return <PreviewEtiqueta config={config} pedido={pedido} escala={escala}/>;
+        })()}
 
         <div style={{ fontSize:12, color:C.dim }}>
           Vista previa — el resultado real se abrirá en el diálogo de impresión del navegador.
