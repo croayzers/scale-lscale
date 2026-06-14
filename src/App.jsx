@@ -494,7 +494,7 @@ export default function App() {
         {/* Topbar */}
         <div style={{ height:52, background:C.surface, borderBottom:`1px solid ${C.line}`, display:"flex", alignItems:"center", padding:"0 16px", gap:8, flexShrink:0, zIndex:100 }}>
           <div style={{ display:"flex", alignItems:"center", gap:8, marginRight:8 }}>
-            <div style={{ width:30, height:30, borderRadius:8, background:C.brand, color:"#fff", display:"grid", placeItems:"center", fontWeight:800, fontSize:15 }}>L</div>
+            <img src="/scale-iso.png" alt="SCALE" style={{ height:28, width:"auto", display:"block" }}/>
             <span style={{ fontWeight:700, fontSize:15.5 }}>L-scale</span>
             {modo === "demo" && <Badge color={C.warnSoft} ink={C.warn} size={10}>DEMO</Badge>}
           </div>
