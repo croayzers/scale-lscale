@@ -5,13 +5,14 @@
 // MARK: - SubvistaHistorial
 // MARK: - SubvistaAnalisis
 import React, { useState, useEffect, useRef, useMemo } from "react";
+import * as XLSX from "xlsx";
 import { ClipboardCheck, Plus, X, Check, AlertTriangle, ChevronRight,
   RotateCcw, TrendingDown, TrendingUp, Minus, Loader, Package,
-  BarChart2, Clock, ChevronDown, Trash2 } from "lucide-react";
+  BarChart2, Clock, ChevronDown, Trash2, Download, Upload } from "lucide-react";
 import {
   cargarSesiones, cargarLineasSesion, cargarHistorico,
   abrirRecuento, actualizarLinea, cerrarRecuento, cancelarRecuento, borrarSesion,
-  cargarCompras,
+  importarRecuento, cargarCompras,
   SESIONES_DEMO, LINEAS_DEMO,
 } from "./lib/dataRecuentos.js";
 
@@ -520,11 +521,74 @@ function SubvistaRecuento({ sesionActiva, lineas, materiales, almacenes, modo, s
 
 // ── Sub-vista Historial ────────────────────────────────────────────────────
 // MARK: - SubvistaHistorial
-function SubvistaHistorial({ historico, materiales, onBorrarSesion }) {
+function SubvistaHistorial({ historico, materiales, onBorrarSesion, onImportar }) {
   const { sesiones, lineas } = historico;
+  const importRef = useRef(null);
   const pedirBorrar = (s) => {
     if (window.confirm(`¿Eliminar el recuento "${s.nombre}"? Esta acción no se puede deshacer.`)) {
       onBorrarSesion?.(s.id);
+    }
+  };
+
+  // Exporta un recuento a Excel (copia de seguridad).
+  const exportarRecuento = (s) => {
+    const ls = lineas.filter(l => l.sesion_id === s.id);
+    const matById = Object.fromEntries((materiales || []).map(m => [m.id, m]));
+    const header = ["material_id", "referencia", "nombre", "cantidad_sistema", "cantidad_contada", "diferencia"];
+    const rows = ls.map(l => {
+      const m = matById[l.material_id] || {};
+      const contada = l.cantidad_contada;
+      const sistema = l.cantidad_sistema ?? 0;
+      return [
+        l.material_id ?? "",
+        m.referencia || "",
+        m.nombre || l.nombre || "",
+        sistema,
+        contada ?? "",
+        contada != null ? (contada - sistema) : "",
+      ];
+    });
+    // Metadatos en una segunda hoja para poder reimportar.
+    const meta = [
+      ["nombre", s.nombre || ""],
+      ["closed_at", s.closed_at || ""],
+      ["notas", s.notas || ""],
+    ];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([header, ...rows]), "Recuento");
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(meta), "Meta");
+    const fecha = s.closed_at ? s.closed_at.slice(0, 10) : new Date().toISOString().slice(0, 10);
+    const safe = (s.nombre || "recuento").replace(/[^\w\sáéíóúñ-]/gi, "").trim().replace(/\s+/g, "_");
+    XLSX.writeFile(wb, `recuento_${safe}_${fecha}.xlsx`);
+  };
+
+  // Lee un Excel exportado y lo restaura como recuento cerrado.
+  const onFileImport = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array" });
+      const hoja = wb.Sheets["Recuento"] || wb.Sheets[wb.SheetNames[0]];
+      const filas = XLSX.utils.sheet_to_json(hoja, { defval: "" });
+      const lineasImp = filas.map(r => ({
+        material_id: r.material_id !== "" ? Number(r.material_id) : null,
+        nombre: r.nombre || "",
+        cantidad_sistema: Number(r.cantidad_sistema) || 0,
+        cantidad_contada: r.cantidad_contada !== "" && r.cantidad_contada != null ? Number(r.cantidad_contada) : null,
+      }));
+      // Meta
+      let meta = { nombre: "", closed_at: "", notas: "" };
+      if (wb.Sheets["Meta"]) {
+        const m = XLSX.utils.sheet_to_json(wb.Sheets["Meta"], { header: 1 });
+        for (const [k, v] of m) if (k) meta[k] = v;
+      }
+      if (!meta.nombre) meta.nombre = file.name.replace(/\.xlsx?$/i, "");
+      await onImportar?.(meta, lineasImp);
+    } catch (err) {
+      console.error("[importarRecuento]", err);
+      alert("No se pudo importar el archivo: " + (err?.message || err));
     }
   };
   const cerradas = useMemo(() => [...sesiones].filter(s => s.estado === "cerrada")
@@ -564,6 +628,13 @@ function SubvistaHistorial({ historico, materiales, onBorrarSesion }) {
       <div style={{ padding:"10px 16px", borderBottom:`1px solid ${C.line}`, display:"flex", alignItems:"center", gap:10, flexShrink:0, flexWrap:"wrap" }}>
         <span style={{ fontSize:13.5, fontWeight:700, color:C.ink }}>Historial de recuentos</span>
         <span style={{ fontSize:12.5, color:C.sub }}>{cerradas.length} sesiones cerradas</span>
+        <button onClick={() => importRef.current?.click()}
+          style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 12px", borderRadius:999,
+            border:`1px solid ${C.strong}`, background:C.s2, color:C.ink, fontSize:12.5,
+            cursor:"pointer", fontFamily:"inherit", marginLeft:8 }}>
+          <Upload size={13}/> Importar recuento
+        </button>
+        <input ref={importRef} type="file" accept=".xlsx,.xls" style={{ display:"none" }} onChange={onFileImport}/>
         {cerradas.length > 6 && (
           <select value={maxSes} onChange={e => setMaxSes(Number(e.target.value))}
             style={{ marginLeft:"auto", padding:"4px 8px", borderRadius:8, border:`1px solid ${C.strong}`,
@@ -589,13 +660,22 @@ function SubvistaHistorial({ historico, materiales, onBorrarSesion }) {
                   <th style={{ padding:"6px 12px", textAlign:"center", fontWeight:700, fontSize:11, color:C.brand, background:C.s2, minWidth:80 }}>
                     {new Date(s.closed_at).toLocaleDateString("es-ES", { day:"2-digit", month:"2-digit" })}
                     <div style={{ fontWeight:400, color:C.sub, fontSize:10, letterSpacing:0 }}>{new Date(s.closed_at).getFullYear()}</div>
-                    <button onClick={() => pedirBorrar(s)} title={`Eliminar recuento "${s.nombre}"`}
-                      style={{ marginTop:3, background:"none", border:"none", cursor:"pointer", color:C.danger,
-                        padding:2, display:"inline-flex", opacity:.65 }}
-                      onMouseEnter={e => e.currentTarget.style.opacity = 1}
-                      onMouseLeave={e => e.currentTarget.style.opacity = .65}>
-                      <Trash2 size={12}/>
-                    </button>
+                    <div style={{ display:"flex", gap:6, justifyContent:"center", marginTop:3 }}>
+                      <button onClick={() => exportarRecuento(s)} title={`Exportar "${s.nombre}" a Excel`}
+                        style={{ background:"none", border:"none", cursor:"pointer", color:C.ok,
+                          padding:2, display:"inline-flex", opacity:.7 }}
+                        onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                        onMouseLeave={e => e.currentTarget.style.opacity = .7}>
+                        <Download size={12}/>
+                      </button>
+                      <button onClick={() => pedirBorrar(s)} title={`Eliminar recuento "${s.nombre}"`}
+                        style={{ background:"none", border:"none", cursor:"pointer", color:C.danger,
+                          padding:2, display:"inline-flex", opacity:.65 }}
+                        onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                        onMouseLeave={e => e.currentTarget.style.opacity = .65}>
+                        <Trash2 size={12}/>
+                      </button>
+                    </div>
                   </th>
                   {i > 0 && (
                     <>
@@ -1455,6 +1535,20 @@ export default function TabInventario({ materiales, setMateriales, empresa, modo
     } catch (e) { setErrMsg(e.message); }
   };
 
+  // Importar un recuento desde Excel (copia de seguridad) y recargar el histórico.
+  const handleImportarRecuento = async (meta, lineasImp) => {
+    try {
+      const userEmail = sesion?.user?.email || null;
+      await importarRecuento(meta, lineasImp, companyId, userEmail, modo);
+      const [ses, hist] = await Promise.all([
+        cargarSesiones(companyId),
+        cargarHistorico(companyId),
+      ]);
+      setSesiones(ses);
+      setHistorico(hist);
+    } catch (e) { setErrMsg(e.message); }
+  };
+
   if (cargando) {
     return (
       <div style={{ display:"flex", alignItems:"center", justifyContent:"center", flex:1, gap:10, color:C.sub }}>
@@ -1527,7 +1621,8 @@ export default function TabInventario({ materiales, setMateriales, empresa, modo
           />
         )}
         {subvista === "historial" && (
-          <SubvistaHistorial historico={historico} materiales={materiales} onBorrarSesion={handleBorrarSesion}/>
+          <SubvistaHistorial historico={historico} materiales={materiales}
+            onBorrarSesion={handleBorrarSesion} onImportar={handleImportarRecuento}/>
         )}
         {subvista === "analisis" && (
           <SubvistaAnalisis historico={historico} materiales={materiales} pedidos={pedidos} almacenes={almacenes} compras={compras}/>

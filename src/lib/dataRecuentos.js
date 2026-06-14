@@ -277,6 +277,55 @@ export async function cancelarRecuento(sesionId, modo) {
   if (error) throw error;
 }
 
+// Importa un recuento de copia de seguridad: crea una sesión CERRADA con sus
+// líneas. `meta` = { nombre, notas, closed_at }; `lineas` = [{ material_id,
+// nombre, cantidad_sistema, cantidad_contada }].
+export async function importarRecuento(meta, lineasIn, companyId, userEmail, modo) {
+  const lineas = (lineasIn || []).filter(l => l.nombre || l.material_id != null);
+  if (modo !== "supabase") {
+    const nextId = Math.max(0, ...SESIONES_DEMO.map(s => s.id)) + 1;
+    SESIONES_DEMO.push({
+      id: nextId, company_id: companyId, almacen_id: null,
+      nombre: meta.nombre || `Recuento importado`, estado: "cerrada",
+      notas: meta.notas || "Importado de copia de seguridad",
+      creado_por: userEmail, cerrado_por: userEmail,
+      created_at: meta.closed_at || new Date().toISOString(),
+      closed_at: meta.closed_at || new Date().toISOString(),
+    });
+    let lid = Math.max(0, ...LINEAS_DEMO.map(l => l.id)) + 1;
+    for (const l of lineas) {
+      LINEAS_DEMO.push({
+        id: lid++, sesion_id: nextId, company_id: companyId,
+        material_id: l.material_id ?? null,
+        cantidad_sistema: Number(l.cantidad_sistema) || 0,
+        cantidad_contada: l.cantidad_contada != null ? Number(l.cantidad_contada) : null,
+      });
+    }
+    return nextId;
+  }
+
+  const { data: ses, error: eS } = await lsc().from("recuento_sesiones").insert({
+    company_id: companyId, almacen_id: null,
+    nombre: meta.nombre || "Recuento importado", estado: "cerrada",
+    notas: meta.notas || "Importado de copia de seguridad",
+    creado_por: userEmail, cerrado_por: userEmail,
+    closed_at: meta.closed_at || new Date().toISOString(),
+  }).select().single();
+  if (eS) throw eS;
+
+  const rows = lineas.map(l => ({
+    sesion_id: ses.id, company_id: companyId,
+    material_id: l.material_id ?? null,
+    cantidad_sistema: Number(l.cantidad_sistema) || 0,
+    cantidad_contada: l.cantidad_contada != null ? Number(l.cantidad_contada) : null,
+  }));
+  if (rows.length) {
+    const { error: eL } = await lsc().from("recuento_lineas").insert(rows);
+    if (eL) throw eL;
+  }
+  return ses.id;
+}
+
 // Elimina por completo un recuento y sus líneas (irreversible).
 export async function borrarSesion(sesionId, modo) {
   if (modo !== "supabase") {
