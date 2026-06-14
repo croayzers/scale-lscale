@@ -412,8 +412,8 @@ export default function TabEtiquetas({ pedidos = [], plantillas: plantillasProp,
 
         {(() => {
           const tam = TAMAÑOS.find(t => t.id === config.tamaño) || TAMAÑOS[0];
-          // Escalar para que el folio quepa en el panel (alto disponible ~ 560px, ancho ~ 520px)
-          const escala = Math.min(520 / tam.w, 560 / tam.h);
+          // Escalar para que el folio llene bien el panel (mucho más grande).
+          const escala = Math.min(1400 / tam.w, 1500 / tam.h);
           return <PreviewEtiqueta config={config} pedido={pedido} escala={escala}/>;
         })()}
 

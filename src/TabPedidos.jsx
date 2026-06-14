@@ -1575,34 +1575,6 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
   }, [highlightedPedidoId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── Auto-crear materiales en almacén desde pedido ─────────────────────── */
-  const autoCrearMateriales = (lineas, almacenId) => {
-    if (!setMateriales) return 0;
-    const nuevos = [];
-    for (const l of (lineas || [])) {
-      const nom = (l.nombre || "").toLowerCase().trim();
-      if (!nom) continue;
-      const existe = (materiales || []).some(m =>
-        (m.nombre || "").toLowerCase().trim() === nom &&
-        String(m.almacen_id ?? "") === String(almacenId ?? "")
-      );
-      if (!existe) {
-        nuevos.push({
-          id: `m_${Date.now()}_${Math.random().toString(36).slice(2,6)}`,
-          emp: empresa?.id,
-          nombre: l.nombre,
-          categoria: l.categoria || null,
-          almacen_id: almacenId,
-          stock_actual: 0, stock_minimo: 0,
-          unidad: "ud", estado: "activo",
-          referencia: null, descripcion: null,
-          ubicacion: null, proveedor: null, precio_coste: null, notas: null,
-        });
-      }
-    }
-    if (nuevos.length) setMateriales(p => [...p, ...nuevos]);
-    return nuevos.length;
-  };
-
   /* ── Trigger file input ────────────────────────────────────────────────── */
   const triggerImport = (alm) => {
     setImportingAlm(alm);
@@ -1690,14 +1662,12 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         try {
           const guardado = await guardarPedido(pedidoActualizado, empresa?.id);
           setPedidos(p => p.map(x => x.id === guardado.id ? guardado : x));
-          autoCrearMateriales(nuevasLineas, parsed.almacen.id);
           setSaving(false);
           setParsed(null);
           setPedidoSel(guardado);
         } catch (err) { setErrMsg(`Error guardando: ${err.message}`); setSaving(false); }
       } else {
         setPedidos(p => p.map(x => x.id === pedidoBase.id ? pedidoActualizado : x));
-        autoCrearMateriales(nuevasLineas, parsed.almacen.id);
         setSaving(false);
         setParsed(null);
         setPedidoSel(pedidoActualizado);
@@ -1738,7 +1708,6 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         return;
       }
     }
-    autoCrearMateriales(pedido.lineas, pedido.almacen_id);
     setSaving(false);
     setParsed(null);
     setPedidoSel(nuevo);

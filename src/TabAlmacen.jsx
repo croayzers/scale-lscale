@@ -4,7 +4,7 @@ import React, { useState, useRef } from "react";
 import * as XLSX from "xlsx";
 import {
   Search, Columns3, MapPin, Upload, Download, FileDown,
-  Plus, Pencil, Trash2, X, Check, Loader, AlertTriangle,
+  Plus, Pencil, Trash2, X, Check, Loader, AlertTriangle, Combine,
 } from "lucide-react";
 import { C, Badge, Btn, ModalField } from "./lib/ui.jsx";
 import { crearMaterial, actualizarMaterial, borrarMaterial } from "./lib/data.js";
@@ -246,6 +246,66 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
     setDelConf(null);
   };
 
+  // ── Unificar duplicados del almacén actual ──────────────────────────────────
+  // Agrupa por nombre normalizado; suma stock al primero (conserva sus datos) y
+  // elimina los demás. Solo afecta al almacén seleccionado.
+  const [unificando, setUnificando] = useState(false);
+
+  const gruposDuplicados = () => {
+    const delAlmacen = materiales.filter(m =>
+      (m.almacen_id ?? primerAlmacenId) === almacenSel
+    );
+    const porNombre = new Map();
+    for (const m of delAlmacen) {
+      const k = (m.nombre || "").trim().toLowerCase();
+      if (!k) continue;
+      if (!porNombre.has(k)) porNombre.set(k, []);
+      porNombre.get(k).push(m);
+    }
+    return [...porNombre.values()].filter(g => g.length > 1);
+  };
+
+  const nDuplicados = () => gruposDuplicados().reduce((s, g) => s + (g.length - 1), 0);
+
+  const unificarDuplicados = async () => {
+    const grupos = gruposDuplicados();
+    if (!grupos.length) return;
+    const total = grupos.reduce((s, g) => s + (g.length - 1), 0);
+    if (!window.confirm(`Se unificarán ${total} material(es) duplicado(s) en ${grupos.length} grupo(s). Los stocks se suman. ¿Continuar?`)) return;
+
+    setUnificando(true);
+    try {
+      const idsBorrar = [];
+      const actualizados = [];
+      for (const grupo of grupos) {
+        // Conservar el de mayor stock como "principal" (más probable el real)
+        const orden = [...grupo].sort((a, b) => (Number(b.stock_actual)||0) - (Number(a.stock_actual)||0));
+        const principal = orden[0];
+        const sumaStock = grupo.reduce((s, m) => s + (Number(m.stock_actual) || 0), 0);
+        actualizados.push({ id: principal.id, stock_actual: sumaStock });
+        for (const m of grupo) if (m.id !== principal.id) idsBorrar.push(m.id);
+      }
+
+      if (modo !== "demo") {
+        for (const a of actualizados) await actualizarMaterial(a.id, { stock_actual: a.stock_actual });
+        for (const id of idsBorrar) await borrarMaterial(id);
+      }
+
+      setMateriales(prev => prev
+        .map(m => {
+          const u = actualizados.find(a => a.id === m.id);
+          return u ? { ...m, stock_actual: u.stock_actual } : m;
+        })
+        .filter(m => !idsBorrar.includes(m.id))
+      );
+    } catch (e) {
+      console.error("[unificarDuplicados]", e);
+      alert("Error al unificar: " + (e?.message || e));
+    } finally {
+      setUnificando(false);
+    }
+  };
+
   const importRef = useRef(null);
 
   const handleImportAlm = (e) => {
@@ -383,6 +443,13 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
         <Btn outline onClick={() => setShowUbicaciones(true)} style={{ padding:"8px 12px" }}>
           <MapPin size={15}/>{L("Ubicaciones","Locations")}
         </Btn>
+        {nDuplicados() > 0 && (
+          <Btn outline onClick={unificarDuplicados} disabled={unificando}
+            style={{ padding:"8px 12px", borderColor:"var(--warn)", color:"var(--warn)" }}>
+            {unificando ? <Loader size={15} className="spin"/> : <Combine size={15}/>}
+            {L("Unificar","Merge")} ({nDuplicados()})
+          </Btn>
+        )}
         <Btn outline onClick={() => importRef.current?.click()} style={{ padding:"8px 12px" }}>
           <Upload size={15}/>{L("Importar","Import")}
         </Btn>
