@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@scale/shared": "github:croayzers/scale-shared",
+    "@scale/shared": "https://github.com/croayzers/scale-shared/archive/refs/heads/main.tar.gz",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.107.0",
     "lucide-react": "^0.383.0",
