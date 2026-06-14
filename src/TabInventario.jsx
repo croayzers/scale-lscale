@@ -7,10 +7,10 @@
 import React, { useState, useEffect, useRef, useMemo } from "react";
 import { ClipboardCheck, Plus, X, Check, AlertTriangle, ChevronRight,
   RotateCcw, TrendingDown, TrendingUp, Minus, Loader, Package,
-  BarChart2, Clock, ChevronDown } from "lucide-react";
+  BarChart2, Clock, ChevronDown, Trash2 } from "lucide-react";
 import {
   cargarSesiones, cargarLineasSesion, cargarHistorico,
-  abrirRecuento, actualizarLinea, cerrarRecuento, cancelarRecuento,
+  abrirRecuento, actualizarLinea, cerrarRecuento, cancelarRecuento, borrarSesion,
   cargarCompras,
   SESIONES_DEMO, LINEAS_DEMO,
 } from "./lib/dataRecuentos.js";
@@ -520,8 +520,13 @@ function SubvistaRecuento({ sesionActiva, lineas, materiales, almacenes, modo, s
 
 // ── Sub-vista Historial ────────────────────────────────────────────────────
 // MARK: - SubvistaHistorial
-function SubvistaHistorial({ historico, materiales }) {
+function SubvistaHistorial({ historico, materiales, onBorrarSesion }) {
   const { sesiones, lineas } = historico;
+  const pedirBorrar = (s) => {
+    if (window.confirm(`¿Eliminar el recuento "${s.nombre}"? Esta acción no se puede deshacer.`)) {
+      onBorrarSesion?.(s.id);
+    }
+  };
   const cerradas = useMemo(() => [...sesiones].filter(s => s.estado === "cerrada")
     .sort((a, b) => new Date(a.closed_at) - new Date(b.closed_at)), [sesiones]);
   const [maxSes, setMaxSes] = useState(6);
@@ -584,6 +589,13 @@ function SubvistaHistorial({ historico, materiales }) {
                   <th style={{ padding:"6px 12px", textAlign:"center", fontWeight:700, fontSize:11, color:C.brand, background:C.s2, minWidth:80 }}>
                     {new Date(s.closed_at).toLocaleDateString("es-ES", { day:"2-digit", month:"2-digit" })}
                     <div style={{ fontWeight:400, color:C.sub, fontSize:10, letterSpacing:0 }}>{new Date(s.closed_at).getFullYear()}</div>
+                    <button onClick={() => pedirBorrar(s)} title={`Eliminar recuento "${s.nombre}"`}
+                      style={{ marginTop:3, background:"none", border:"none", cursor:"pointer", color:C.danger,
+                        padding:2, display:"inline-flex", opacity:.65 }}
+                      onMouseEnter={e => e.currentTarget.style.opacity = 1}
+                      onMouseLeave={e => e.currentTarget.style.opacity = .65}>
+                      <Trash2 size={12}/>
+                    </button>
                   </th>
                   {i > 0 && (
                     <>
@@ -1431,6 +1443,18 @@ export default function TabInventario({ materiales, setMateriales, empresa, modo
     } catch (e) { setErrMsg(e.message); }
   };
 
+  // Eliminar por completo un recuento (irreversible). Actualiza sesiones e histórico.
+  const handleBorrarSesion = async (sesionId) => {
+    try {
+      await borrarSesion(sesionId, modo);
+      setSesiones(p => p.filter(s => s.id !== sesionId));
+      setHistorico(h => ({
+        sesiones: h.sesiones.filter(s => s.id !== sesionId),
+        lineas:   h.lineas.filter(l => l.sesion_id !== sesionId),
+      }));
+    } catch (e) { setErrMsg(e.message); }
+  };
+
   if (cargando) {
     return (
       <div style={{ display:"flex", alignItems:"center", justifyContent:"center", flex:1, gap:10, color:C.sub }}>
@@ -1503,7 +1527,7 @@ export default function TabInventario({ materiales, setMateriales, empresa, modo
           />
         )}
         {subvista === "historial" && (
-          <SubvistaHistorial historico={historico} materiales={materiales}/>
+          <SubvistaHistorial historico={historico} materiales={materiales} onBorrarSesion={handleBorrarSesion}/>
         )}
         {subvista === "analisis" && (
           <SubvistaAnalisis historico={historico} materiales={materiales} pedidos={pedidos} almacenes={almacenes} compras={compras}/>

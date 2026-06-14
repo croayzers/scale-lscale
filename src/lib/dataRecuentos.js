@@ -277,6 +277,22 @@ export async function cancelarRecuento(sesionId, modo) {
   if (error) throw error;
 }
 
+// Elimina por completo un recuento y sus líneas (irreversible).
+export async function borrarSesion(sesionId, modo) {
+  if (modo !== "supabase") {
+    const idx = SESIONES_DEMO.findIndex(s => s.id === sesionId);
+    if (idx >= 0) SESIONES_DEMO.splice(idx, 1);
+    for (let i = LINEAS_DEMO.length - 1; i >= 0; i--) {
+      if (LINEAS_DEMO[i].sesion_id === sesionId) LINEAS_DEMO.splice(i, 1);
+    }
+    return;
+  }
+  // Borrar líneas primero (por si no hay ON DELETE CASCADE), luego la sesión.
+  await lsc().from("recuento_lineas").delete().eq("sesion_id", sesionId);
+  const { error } = await lsc().from("recuento_sesiones").delete().eq("id", sesionId);
+  if (error) throw error;
+}
+
 // MARK: - Compras (registrarCompra, cargarCompras)
 
 // Registra una compra de Cesta en Supabase.
