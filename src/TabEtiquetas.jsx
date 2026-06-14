@@ -118,15 +118,6 @@ function PreviewEtiqueta({ config, pedido }) {
         </div>
       )}
 
-      {/* Footer: código de barras simulado */}
-      <div style={{ display:"flex", alignItems:"flex-end", justifyContent:"space-between", marginTop:"auto" }}>
-        <div style={{ display:"flex", gap:1.5 }}>
-          {Array.from({length: 22}).map((_, i) => (
-            <div key={i} style={{ width: i % 3 === 0 ? 2 : 1, height: i % 5 === 0 ? 20 / escala : 14 / escala, background:"#222" }}/>
-          ))}
-        </div>
-        <span style={{ fontSize: fs * 0.55, color:"#888" }}>{pedido?.codigo || "—"}</span>
-      </div>
     </div>
   );
 }
@@ -162,11 +153,6 @@ function imprimirEtiqueta(config, pedido) {
   .campo-val { font-size:${fs}px; font-weight:600; }
   .lineas { border-top:1px solid #ccc; margin-top:16px; padding-top:10px; }
   .linea-row { display:flex; justify-content:space-between; font-size:${fs * 0.75}px; margin-top:4px; }
-  .barcode { display:flex; align-items:flex-end; gap:2px; margin-top:auto; padding-top:16px; }
-  .bar { background:#222; }
-  .codigo { font-size:${fs * 0.6}px; color:#888; margin-left:auto; }
-  .footer { display:flex; justify-content:space-between; align-items:flex-end; position:absolute;
-    bottom:12mm; left:12mm; right:12mm; }
   body { position:relative; min-height:calc(${tam.h}mm - 24mm); display:flex; flex-direction:column; }
   .campos { flex:1; }
 </style></head><body>
@@ -175,12 +161,6 @@ function imprimirEtiqueta(config, pedido) {
     ${campos.map(c => `<div class="campo"><div class="campo-label">${c.label}</div><div class="campo-val">${val(c.key)}</div></div>`).join("")}
   </div>
   ${lineasHtml}
-  <div class="footer">
-    <div class="barcode">
-      ${Array.from({length:22}).map((_, i) => `<div class="bar" style="width:${i%3===0?2:1}px;height:${i%5===0?20:14}px"></div>`).join("")}
-    </div>
-    <span class="codigo">${pedido?.codigo || "—"}</span>
-  </div>
 </body></html>`;
 
   const win = window.open("", "_blank", "width=800,height=600");
