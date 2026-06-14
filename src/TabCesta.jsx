@@ -1,7 +1,7 @@
 // MARK: - TabCesta — Cesta de compra para reposición de almacén
 import React, { useState, useCallback } from "react";
 import * as XLSX from "xlsx";
-import { ShoppingCart, Trash2, Plus, Minus, Download, Check, Loader, Package } from "lucide-react";
+import { ShoppingCart, Trash2, Plus, Minus, Download, Check, Loader, Package, ChevronDown, ChevronRight, AlertTriangle, FileText, Warehouse } from "lucide-react";
 import { actualizarMaterial } from "./lib/data.js";
 import { registrarCompra } from "./lib/dataRecuentos.js";
 
@@ -76,6 +76,16 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
   const [comprado,  setComprado]  = useState(false);
   const [cols,      setCols]      = useState(() => colsIniciales || cargarCols());
   const [mostrarConstructor, setMostrarConstructor] = useState(false);
+  const [colapsados, setColapsados] = useState(() => new Set());  // ids de almacén colapsados
+  const [avisoAlmacen, setAvisoAlmacen] = useState(null);
+
+  const toggleGrupo = (aid) => setColapsados(prev => {
+    const next = new Set(prev);
+    const key = aid == null ? "__null__" : aid;
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
+  const estaColapsado = (aid) => colapsados.has(aid == null ? "__null__" : aid);
 
   // Sincronizar columnas cuando llegan desde Supabase (cambio de empresa/carga)
   React.useEffect(() => {
@@ -115,8 +125,40 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
 
   const eliminar = (item) => setCesta(prev => prev.filter(i => !matchItem(i, item)));
 
+  // Asigna el almacén a un item (desde el selector inline del grupo "Sin almacén").
+  const asignarAlmacen = (item, almacenId) => {
+    const aid = almacenId === "" ? null : Number(almacenId);
+    setCesta(prev => prev.map(i => matchItem(i, item) ? { ...i, almacen_id: aid } : i));
+  };
+
+  // Resuelve el nombre del almacén de un item.
+  const nombreAlmacen = (almacenId) =>
+    almacenes.find(a => a.id === almacenId)?.nombre || null;
+
+  // Items sin almacén asignado → bloquean la compra.
+  const sinAlmacen = cesta.filter(i => (i.almacen_id ?? null) == null);
+
+  // Agrupa la cesta por almacén. Grupo null = "Sin almacén".
+  const grupos = (() => {
+    const map = new Map();
+    for (const item of cesta) {
+      const aid = item.almacen_id ?? null;
+      if (!map.has(aid)) map.set(aid, []);
+      map.get(aid).push(item);
+    }
+    // Orden: almacenes con nombre primero (por nombre), "Sin almacén" al final.
+    return [...map.entries()]
+      .map(([aid, items]) => ({ aid, nombre: aid == null ? "Sin almacén" : (nombreAlmacen(aid) || `Almacén ${aid}`), items }))
+      .sort((a, b) => (a.aid == null ? 1 : b.aid == null ? -1 : a.nombre.localeCompare(b.nombre)));
+  })();
+
   const comprar = async () => {
     if (!cesta.length) return;
+    if (sinAlmacen.length) {
+      setAvisoAlmacen(`Asigna almacén a ${sinAlmacen.length} material${sinAlmacen.length === 1 ? "" : "es"} antes de comprar.`);
+      setTimeout(() => setAvisoAlmacen(null), 4000);
+      return;
+    }
     setComprando(true);
     try {
       const updates = [];
@@ -138,16 +180,20 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
         }));
       }
 
-      // Registrar la compra en el historial
+      // Registrar la compra en el historial (con almacén + coste por línea)
       try {
         const userEmail = sesion?.user?.email || null;
         const itemsCompra = cesta.map(item => {
           const mat = buscarMaterial(item);
+          const aid = item.almacen_id ?? mat?.almacen_id ?? null;
           return {
-            nombre:      item.nombre,
-            cantidad:    item.cantidad,
-            unidad:      mat?.unidad || "ud",
-            material_id: mat?.id ?? item.material_id ?? null,
+            nombre:       item.nombre,
+            cantidad:     item.cantidad,
+            unidad:       mat?.unidad || "ud",
+            material_id:  mat?.id ?? item.material_id ?? null,
+            almacen_id:   aid,
+            almacen_nombre: nombreAlmacen(aid),
+            precio_coste: mat?.precio_coste ?? null,
           };
         });
         await registrarCompra(itemsCompra, empresa?.id, userEmail, modo);
@@ -167,22 +213,56 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
     }
   };
 
+  // Filas para export (agrupadas por almacén), con columna Almacén siempre.
+  const filasExport = () => grupos.flatMap(g => g.items.map(item => {
+    const mat = buscarMaterial(item) || {};
+    return { item, mat, almacen: g.nombre };
+  }));
+
   const exportarExcel = () => {
     const colsActivas = cols.filter(c => c.activa);
-    const header = colsActivas.map(c => c.label);
-    const rows = cesta.map(item => {
-      const mat = buscarMaterial(item) || {};
-      return colsActivas.map(c => {
+    const header = ["Almacén", ...colsActivas.map(c => c.label)];
+    const rows = filasExport().map(({ item, mat, almacen }) => [
+      almacen,
+      ...colsActivas.map(c => {
         if (c.key === "cantidad") return item.cantidad;
         if (c.key === "nombre")   return item.nombre;
         return mat[c.key] ?? "";
-      });
-    });
-
+      }),
+    ]);
     const ws = XLSX.utils.aoa_to_sheet([header, ...rows]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Cesta de compra");
     XLSX.writeFile(wb, `cesta_compra_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+
+  const exportarPDF = async () => {
+    const { jsPDF } = await import("jspdf");
+    const doc = new jsPDF();
+    const fecha = new Date().toLocaleDateString("es-ES");
+    doc.setFontSize(16); doc.text("Cesta de compra", 14, 18);
+    doc.setFontSize(10); doc.setTextColor(120);
+    doc.text(`${fecha} · ${cesta.length} artículos · ${total} uds`, 14, 25);
+    doc.setTextColor(0);
+
+    let y = 36;
+    const colsActivas = cols.filter(c => c.activa);
+    for (const g of grupos) {
+      if (y > 270) { doc.addPage(); y = 20; }
+      doc.setFontSize(12); doc.setFont(undefined, "bold");
+      const sub = g.items.reduce((s, i) => s + i.cantidad, 0);
+      doc.text(`${g.nombre}  (${sub} uds)`, 14, y); y += 7;
+      doc.setFont(undefined, "normal"); doc.setFontSize(10);
+      for (const item of g.items) {
+        if (y > 280) { doc.addPage(); y = 20; }
+        const mat = buscarMaterial(item) || {};
+        const ref = mat.referencia ? ` [${mat.referencia}]` : "";
+        doc.text(`• ${item.nombre}${ref} — ${item.cantidad} ${mat.unidad || "ud"}`, 18, y);
+        y += 6;
+      }
+      y += 4;
+    }
+    doc.save(`cesta_compra_${new Date().toISOString().slice(0,10)}.pdf`);
   };
 
   if (comprado) {
@@ -219,103 +299,124 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
 
       {/* Header */}
       <div style={{ padding:"14px 20px", background:C.surface, borderBottom:`1px solid ${C.line}`,
-        display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
+        display:"flex", alignItems:"center", gap:10, flexShrink:0, flexWrap:"wrap" }}>
         <ShoppingCart size={16} color={C.brand}/>
         <span style={{ fontWeight:700, fontSize:15 }}>Cesta de compra</span>
         <span style={{ fontSize:12, background:C.brandSoft, color:C.brand,
           padding:"2px 8px", borderRadius:999, fontWeight:600 }}>
-          {cesta.length} {cesta.length === 1 ? "artículo" : "artículos"} · {total} uds
+          {cesta.length} {cesta.length === 1 ? "artículo" : "artículos"} · {total} uds · {grupos.length} almacén{grupos.length === 1 ? "" : "es"}
         </span>
+        {sinAlmacen.length > 0 && (
+          <span style={{ fontSize:12, background:C.warnSoft, color:C.warn,
+            padding:"2px 8px", borderRadius:999, fontWeight:600, display:"flex", alignItems:"center", gap:4 }}>
+            <AlertTriangle size={12}/> {sinAlmacen.length} sin almacén
+          </span>
+        )}
       </div>
 
-      {/* Tabla */}
-      <div style={{ flex:1, overflowY:"auto", padding:20 }}>
-        <table style={{ width:"100%", borderCollapse:"collapse" }}>
-          <thead>
-            <tr style={{ background:C.s2 }}>
-              {["Material","Almacén / Ubicación","Faltante","Cantidad a pedir","Proveedor",""].map((h, i) => (
-                <th key={i} style={{ padding:"8px 12px", textAlign: i === 3 ? "center" : "left",
-                  fontSize:11, fontWeight:700, color:C.sub, textTransform:"uppercase",
-                  letterSpacing:0.4, borderBottom:`1px solid ${C.line}` }}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {cesta.map((item, idx) => {
-              const mat = buscarMaterial(item) || {};
-              const almacenId = item.almacen_id ?? mat.almacen_id ?? null;
-              const almacen   = almacenes.find(a => a.id === almacenId);
-              const ubicacion = item.ubicacion ?? mat.ubicacion ?? null;
-              return (
-                <tr key={item.nombre + idx}
-                  style={{ borderBottom:`1px solid ${C.line}`, background: idx % 2 === 0 ? C.surface : C.bg }}>
+      {/* Aviso de almacén faltante al comprar */}
+      {avisoAlmacen && (
+        <div style={{ padding:"10px 20px", background:C.warnSoft, color:C.warn,
+          fontSize:13, fontWeight:600, display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+          <AlertTriangle size={15}/> {avisoAlmacen}
+        </div>
+      )}
 
-                  <td style={{ padding:"10px 12px", fontSize:13.5, color:C.ink, fontWeight:600 }}>
-                    {item.nombre}
-                    {mat.referencia && (
-                      <div style={{ fontSize:11, color:C.dim, fontWeight:400 }}>{mat.referencia}</div>
-                    )}
-                  </td>
+      {/* Grupos por almacén (colapsables) */}
+      <div style={{ flex:1, overflowY:"auto", padding:20, display:"flex", flexDirection:"column", gap:14 }}>
+        {grupos.map(g => {
+          const colapsado = estaColapsado(g.aid);
+          const subUds = g.items.reduce((s, i) => s + i.cantidad, 0);
+          const sinAlm = g.aid == null;
+          return (
+            <div key={g.aid == null ? "null" : g.aid}
+              style={{ border:`1px solid ${sinAlm ? C.warn : C.line}`, borderRadius:12, overflow:"hidden",
+                background: C.surface }}>
+              {/* Cabecera de grupo */}
+              <button onClick={() => toggleGrupo(g.aid)}
+                style={{ width:"100%", display:"flex", alignItems:"center", gap:10, padding:"11px 14px",
+                  background: sinAlm ? C.warnSoft : C.s2, border:"none", cursor:"pointer",
+                  fontFamily:"inherit", textAlign:"left" }}>
+                {colapsado ? <ChevronRight size={16} color={C.sub}/> : <ChevronDown size={16} color={C.sub}/>}
+                {sinAlm ? <AlertTriangle size={15} color={C.warn}/> : <Warehouse size={15} color={C.brand}/>}
+                <span style={{ fontWeight:700, fontSize:14, color: sinAlm ? C.warn : C.ink }}>{g.nombre}</span>
+                <span style={{ fontSize:11.5, color:C.sub }}>
+                  {g.items.length} {g.items.length === 1 ? "material" : "materiales"} · {subUds} uds
+                </span>
+              </button>
 
-                  <td style={{ padding:"10px 12px" }}>
-                    <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
-                      {almacen ? (
-                        <span style={{ fontSize:12, background:C.brandSoft, color:C.brand,
-                          padding:"2px 7px", borderRadius:999, fontWeight:600, width:"fit-content" }}>
-                          {almacen.nombre}
-                        </span>
-                      ) : (
-                        <span style={{ fontSize:12, color:C.dim }}>—</span>
-                      )}
-                      {ubicacion && (
-                        <span style={{ fontSize:11, color:C.sub }}>{ubicacion}</span>
-                      )}
-                    </div>
-                  </td>
+              {/* Filas del grupo */}
+              {!colapsado && (
+                <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                  <tbody>
+                    {g.items.map((item, idx) => {
+                      const mat = buscarMaterial(item) || {};
+                      const ubicacion = item.ubicacion ?? mat.ubicacion ?? null;
+                      const pedidoRef = item.pedido_codigo || item.pedido || null;
+                      return (
+                        <tr key={item.nombre + idx}
+                          style={{ borderTop:`1px solid ${C.line}`, background: idx % 2 === 0 ? C.surface : C.bg }}>
+                          <td style={{ padding:"10px 12px", fontSize:13.5, color:C.ink, fontWeight:600 }}>
+                            {item.nombre}
+                            <div style={{ display:"flex", gap:6, alignItems:"center", marginTop:2, flexWrap:"wrap" }}>
+                              {mat.referencia && <span style={{ fontSize:11, color:C.dim, fontWeight:400 }}>{mat.referencia}</span>}
+                              {ubicacion && <span style={{ fontSize:11, color:C.sub }}>· {ubicacion}</span>}
+                              {pedidoRef && (
+                                <span style={{ fontSize:10.5, background:C.brandSoft, color:C.brand,
+                                  padding:"1px 6px", borderRadius:999, fontWeight:700 }}>→ {pedidoRef}</span>
+                              )}
+                            </div>
+                          </td>
 
-                  <td style={{ padding:"10px 12px" }}>
-                    <span style={{ fontSize:12.5, background:C.dangerSoft, color:C.danger,
-                      padding:"2px 8px", borderRadius:999, fontWeight:600 }}>
-                      -{item.faltante} uds
-                    </span>
-                  </td>
+                          {/* Selector de almacén SOLO en el grupo "Sin almacén" */}
+                          {sinAlm && (
+                            <td style={{ padding:"10px 12px" }}>
+                              <select value="" onChange={e => asignarAlmacen(item, e.target.value)}
+                                style={{ padding:"6px 8px", borderRadius:7, border:`1px solid ${C.warn}`,
+                                  background:C.surface, color:C.ink, fontSize:12.5, fontFamily:"inherit",
+                                  outline:"none", cursor:"pointer" }}>
+                                <option value="">Elegir almacén…</option>
+                                {almacenes.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                              </select>
+                            </td>
+                          )}
 
-                  <td style={{ padding:"10px 12px" }}>
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
-                      <button onClick={() => setCantidad(item, item.cantidad - 1)}
-                        style={ICON_BTN}>
-                        <Minus size={12}/>
-                      </button>
-                      <input type="number" min={1} value={item.cantidad}
-                        onChange={e => setCantidad(item, e.target.value)}
-                        style={{ width:60, textAlign:"center", padding:"5px 6px",
-                          border:`1px solid ${C.strong}`, borderRadius:7, fontSize:13.5,
-                          fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none" }}/>
-                      <button onClick={() => setCantidad(item, item.cantidad + 1)}
-                        style={ICON_BTN}>
-                        <Plus size={12}/>
-                      </button>
-                    </div>
-                  </td>
+                          {item.faltante > 0 && (
+                            <td style={{ padding:"10px 12px" }}>
+                              <span style={{ fontSize:12, background:C.dangerSoft, color:C.danger,
+                                padding:"2px 8px", borderRadius:999, fontWeight:600 }}>
+                                falta {item.faltante}
+                              </span>
+                            </td>
+                          )}
 
-                  <td style={{ padding:"10px 12px", fontSize:12.5, color:C.sub }}>
-                    {mat.proveedor || "—"}
-                  </td>
+                          <td style={{ padding:"10px 12px" }}>
+                            <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:4 }}>
+                              <button onClick={() => setCantidad(item, item.cantidad - 1)} style={ICON_BTN}><Minus size={12}/></button>
+                              <input type="number" min={1} value={item.cantidad}
+                                onChange={e => setCantidad(item, e.target.value)}
+                                style={{ width:60, textAlign:"center", padding:"5px 6px",
+                                  border:`1px solid ${C.strong}`, borderRadius:7, fontSize:13.5,
+                                  fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none" }}/>
+                              <button onClick={() => setCantidad(item, item.cantidad + 1)} style={ICON_BTN}><Plus size={12}/></button>
+                            </div>
+                          </td>
 
-                  <td style={{ padding:"10px 12px" }}>
-                    <button onClick={() => eliminar(item)}
-                      style={{ background:"none", border:"none", cursor:"pointer",
-                        color:C.danger, padding:4, display:"flex" }}>
-                      <Trash2 size={14}/>
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                          <td style={{ padding:"10px 12px", textAlign:"right" }}>
+                            <button onClick={() => eliminar(item)}
+                              style={{ background:"none", border:"none", cursor:"pointer", color:C.danger, padding:4 }}>
+                              <Trash2 size={14}/>
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          );
+        })}
       </div>
 
       {/* Footer con acciones */}
@@ -343,7 +444,14 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
           style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 14px",
             borderRadius:8, border:"none", background:"#16a34a", color:"#fff",
             fontWeight:600, fontSize:13, cursor:"pointer" }}>
-          <Download size={13}/>Exportar Excel
+          <Download size={13}/>Excel
+        </button>
+
+        <button onClick={exportarPDF}
+          style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 14px",
+            borderRadius:8, border:"none", background:"#dc2626", color:"#fff",
+            fontWeight:600, fontSize:13, cursor:"pointer" }}>
+          <FileText size={13}/>PDF
         </button>
 
         <div style={{ flex:1 }}/>
@@ -355,10 +463,13 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
           <Trash2 size={13}/>Vaciar
         </button>
 
-        <button onClick={comprar} disabled={comprando || !cesta.length}
+        <button onClick={comprar} disabled={comprando || !cesta.length || sinAlmacen.length > 0}
+          title={sinAlmacen.length > 0 ? "Asigna almacén a todos los materiales" : ""}
           style={{ display:"flex", alignItems:"center", gap:7, padding:"10px 22px",
-            borderRadius:999, border:"none", background:C.ok, color:"#fff",
-            fontWeight:700, fontSize:14, cursor:"pointer",
+            borderRadius:999, border:"none",
+            background: (sinAlmacen.length > 0) ? C.strong : C.ok, color:"#fff",
+            fontWeight:700, fontSize:14,
+            cursor: (comprando || sinAlmacen.length > 0) ? "not-allowed" : "pointer",
             opacity: comprando ? 0.7 : 1 }}>
           {comprando ? <Loader size={14} className="spin"/> : <Package size={14}/>}
           {comprando ? "Comprando…" : "Comprar — actualizar stock"}

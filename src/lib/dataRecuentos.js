@@ -46,18 +46,21 @@ function mapCompra(r, lineas = []) {
     fecha:      r.fecha,
     notas:      r.notas || null,
     creado_por: r.creado_por || null,
+    almacenes:  r.almacenes || null,
     lineas,
   };
 }
 
 function mapCompraLinea(r) {
   return {
-    id:          r.id,
-    compra_id:   r.compra_id,
-    material_id: r.material_id ?? null,
-    nombre:      r.nombre,
-    cantidad:    Number(r.cantidad) || 0,
-    unidad:      r.unidad || "ud",
+    id:           r.id,
+    compra_id:    r.compra_id,
+    material_id:  r.material_id ?? null,
+    nombre:       r.nombre,
+    cantidad:     Number(r.cantidad) || 0,
+    unidad:       r.unidad || "ud",
+    almacen_id:   r.almacen_id ?? null,
+    precio_coste: r.precio_coste != null ? Number(r.precio_coste) : null,
   };
 }
 
@@ -279,30 +282,41 @@ export async function cancelarRecuento(sesionId, modo) {
 // Registra una compra de Cesta en Supabase.
 // items = [{ nombre, cantidad, unidad, material_id }]
 export async function registrarCompra(items, companyId, userEmail, modo) {
+  // Nombres únicos de almacenes involucrados (CSV) para el listado de la compra.
+  const almacenesCsv = [...new Set(
+    items.map(it => (it.almacen_nombre || "").trim()).filter(Boolean)
+  )].join(", ") || null;
+
   if (modo !== "supabase") {
     const nextId = Math.max(0, ...COMPRAS_DEMO.map(c => c.id)) + 1;
     const lineas = items.map((it, i) => ({
       id: nextId * 100 + i, compra_id: nextId,
       material_id: it.material_id ?? null,
       nombre: it.nombre, cantidad: it.cantidad, unidad: it.unidad || "ud",
+      almacen_id: it.almacen_id ?? null,
+      precio_coste: it.precio_coste ?? null,
     }));
     COMPRAS_DEMO.push({ id: nextId, company_id: companyId,
-      fecha: new Date().toISOString(), notas: null, creado_por: userEmail || null, lineas });
+      fecha: new Date().toISOString(), notas: null, creado_por: userEmail || null,
+      almacenes: almacenesCsv, lineas });
     return;
   }
 
   const { data: compra, error: eC } = await lsc().from("compras").insert({
     company_id: companyId, notas: null, creado_por: userEmail || null,
+    almacenes: almacenesCsv,
   }).select().single();
   if (eC) throw eC;
 
   const lineasRows = items.map(it => ({
-    compra_id:   compra.id,
-    company_id:  companyId,
-    material_id: it.material_id ?? null,
-    nombre:      it.nombre,
-    cantidad:    Number(it.cantidad) || 0,
-    unidad:      it.unidad || "ud",
+    compra_id:    compra.id,
+    company_id:   companyId,
+    material_id:  it.material_id ?? null,
+    nombre:       it.nombre,
+    cantidad:     Number(it.cantidad) || 0,
+    unidad:       it.unidad || "ud",
+    almacen_id:   it.almacen_id ?? null,
+    precio_coste: it.precio_coste != null ? Number(it.precio_coste) : null,
   }));
   if (lineasRows.length) {
     const { error: eLin } = await lsc().from("compra_lineas").insert(lineasRows);

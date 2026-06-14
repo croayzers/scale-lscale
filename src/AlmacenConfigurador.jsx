@@ -30,6 +30,7 @@ const ROL_COLS = [
   { key:"colEstado",     label:"Estado",       color:"#64748b", req:false },
   { key:"colProveedor",  label:"Proveedor",    color:"#ec4899", req:false },
   { key:"colPrecio",     label:"Precio coste", color:"#10b981", req:false },
+  { key:"colPrecioVenta",label:"Precio (venta)", color:"#059669", req:false },
   { key:"colNotas",      label:"Notas",        color:"#94a3b8", req:false },
 ];
 
@@ -130,7 +131,7 @@ function procesarLibro(wb, hojasData, configs) {
     const hoja = hojasData[i];
     if (!cfg || cfg.tipo !== "materiales") continue;
     const { colNombre, colReferencia, colCategoria, colStock, colUnidad,
-            colStockMin, colUbicacion, colEstado, colProveedor, colPrecio, colNotas } = cfg.colMapping;
+            colStockMin, colUbicacion, colEstado, colProveedor, colPrecio, colPrecioVenta, colNotas } = cfg.colMapping;
     if (colNombre < 0) continue;
 
     const startIdx = Math.max(0, (cfg.startRow || 1) - 1);
@@ -154,6 +155,8 @@ function procesarLibro(wb, hojasData, configs) {
       const stockMin = parseCantidad(stockMinRaw, cfg.decimalSep);
       const precioRaw = getFmt(colPrecio);
       const precio = parseCantidad(precioRaw, cfg.decimalSep);
+      const precioVentaRaw = getFmt(colPrecioVenta);
+      const precioVenta = parseCantidad(precioVentaRaw, cfg.decimalSep);
 
       resultado.push({
         nombre,
@@ -166,6 +169,7 @@ function procesarLibro(wb, hojasData, configs) {
         estado:       get(colEstado)   || "activo",
         proveedor:    get(colProveedor),
         precio_coste: precio != null ? precio : null,
+        precio:       precioVenta != null ? precioVenta : null,
         notas:        get(colNotas),
       });
     }

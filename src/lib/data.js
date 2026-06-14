@@ -42,6 +42,7 @@ function mapMaterial(r) {
     estado:       r.estado       || "activo",
     proveedor:    r.proveedor    || null,
     precio_coste: r.precio_coste ?? null,
+    precio:       r.precio       ?? null,
     notas:        r.notas        || null,
     almacen_id:   r.almacen_id   ?? null,
   };
@@ -61,6 +62,7 @@ function materialToRow(m, companyId) {
     estado:       m.estado       ?? "activo",
     proveedor:    m.proveedor    ?? null,
     precio_coste: m.precio_coste != null ? Number(m.precio_coste) : null,
+    precio:       m.precio       != null ? Number(m.precio)       : null,
     notas:        m.notas        ?? null,
     almacen_id:   m.almacen_id   ?? null,
   };

@@ -152,17 +152,39 @@ export default function App() {
   const [resolveAppUrl, setResolveAppUrl] = useState(() => () => null);
 
   const agregarACesta = useCallback((items) => {
+    // Resuelve el almacén de un item: si ya trae almacen_id lo respeta; si no,
+    // y el material existe en un único almacén, lo autoasigna. Si no se puede
+    // determinar, queda null y TabCesta lo pedirá con un selector inline.
+    const resolverAlmacen = (item) => {
+      if (item.almacen_id != null) return item;
+      const nom = (item.nombre || "").trim().toLowerCase();
+      const candidatos = materiales.filter(m =>
+        (item.material_id != null && m.id === item.material_id) ||
+        (m.nombre || "").trim().toLowerCase() === nom
+      );
+      const almacenesUnicos = [...new Set(candidatos.map(m => m.almacen_id).filter(a => a != null))];
+      if (almacenesUnicos.length === 1) {
+        const mat = candidatos.find(m => m.almacen_id === almacenesUnicos[0]);
+        return { ...item, almacen_id: almacenesUnicos[0], material_id: item.material_id ?? mat?.id ?? null };
+      }
+      return item;
+    };
+
     setCesta(prev => {
       const next = [...prev];
-      for (const item of items) {
+      for (const raw of items) {
+        const item = resolverAlmacen(raw);
+        // Dedup por material_id; si no hay, por (almacen_id + nombre)
         const idx = next.findIndex(i =>
-          item.material_id != null ? i.material_id === item.material_id : i.nombre === item.nombre
+          item.material_id != null
+            ? i.material_id === item.material_id
+            : (i.nombre === item.nombre && (i.almacen_id ?? null) === (item.almacen_id ?? null))
         );
         if (idx >= 0) {
           next[idx] = {
             ...next[idx],
             cantidad: next[idx].cantidad + item.cantidad,
-            faltante: (next[idx].faltante || 0) + item.faltante,
+            faltante: (next[idx].faltante || 0) + (item.faltante || 0),
           };
         } else {
           next.push(item);
@@ -170,7 +192,7 @@ export default function App() {
       }
       return next;
     });
-  }, []);
+  }, [materiales]);
 
   const notificarStock = useCallback((pedido, matSnapshot, tipo = "pedido") => {
     const n = crearNotificacion(pedido, matSnapshot, tipo);
