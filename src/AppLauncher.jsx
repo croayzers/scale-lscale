@@ -1,16 +1,8 @@
 import React, { useState, useRef, useEffect } from "react";
 import { C } from "./lib/ui.jsx";
+import { cargarApps, appUrl } from "./lib/appsRegistry.js";
 
 const IS_DEV = typeof import.meta !== "undefined" && import.meta.env?.DEV;
-
-const SCALE_APPS = [
-  { id: "lscale", nombre: "L-Scale", emoji: "📦", color: "#f97316", urlProd: "https://logistics.thescaleapps.com", urlDev: "http://localhost:5182", urlEnv: "VITE_LSCALE_URL" },
-  { id: "pscale", nombre: "P-Scale", emoji: "👥", color: "#6366f1", urlProd: "https://people.thescaleapps.com",    urlDev: "http://localhost:5181", urlEnv: "VITE_PSCALE_URL" },
-  { id: "sscale", nombre: "S-Scale", emoji: "📱", color: "#8b5cf6", urlProd: "https://social.thescaleapps.com",    urlDev: "http://localhost:3001", urlEnv: "VITE_SSCALE_URL" },
-  { id: "escale", nombre: "E-Scale", emoji: "🏛️", color: "#10b981", urlProd: "https://events.thescaleapps.com",   urlDev: "http://localhost:5173", urlEnv: "VITE_ESCALE_URL" },
-  { id: "fscale", nombre: "F-Scale", emoji: "💰", color: "#f59e0b", urlProd: null,                                 urlDev: null,                   urlEnv: "VITE_FSCALE_URL" },
-  { id: "rscale", nombre: "R-Scale", emoji: "📊", color: "#ef4444", urlProd: null,                                 urlDev: null,                   urlEnv: "VITE_RSCALE_URL" },
-];
 
 const PORTAL_URL_DEFAULT = IS_DEV ? "http://localhost:3000" : "https://thescaleapps.com";
 
@@ -39,11 +31,11 @@ export default function AppLauncher({ empresa, currentAppId = "lscale" }) {
 
   const portalUrl = import.meta.env?.VITE_PORTAL_URL || PORTAL_URL_DEFAULT;
 
-  const getUrl = (app) => import.meta.env?.[app.urlEnv] || (IS_DEV ? app.urlDev : app.urlProd) || null;
-
-  // Apps que tiene contratadas la empresa
+  // Catálogo desde Supabase (apps_registry), filtrado por apps contratadas.
+  const [catalogo, setCatalogo] = useState([]);
+  useEffect(() => { cargarApps().then(setCatalogo); }, []);
   const appsActivas = empresa?.apps || [];
-  const apps = SCALE_APPS.filter(a => appsActivas.includes(a.id));
+  const apps = catalogo.filter(a => appsActivas.includes(a.id));
 
   // Cerrar al click fuera
   useEffect(() => {
@@ -87,8 +79,8 @@ export default function AppLauncher({ empresa, currentAppId = "lscale" }) {
           {/* Grid de apps */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4, marginBottom: 10 }}>
             {apps.map(app => {
-              const url = getUrl(app);
               const isCurrent = app.id === currentAppId;
+              const url = isCurrent ? null : appUrl(app);
               return (
                 <a
                   key={app.id}
