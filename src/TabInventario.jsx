@@ -26,6 +26,12 @@ const C = {
   danger:"var(--danger)", dangerSoft:"var(--danger-soft)",
 };
 
+const SELECT_STYLE = {
+  padding:"6px 10px", borderRadius:8, border:"1px solid var(--border-strong)",
+  background:"var(--surface-2)", color:"var(--text)", fontSize:12.5,
+  fontFamily:"inherit", outline:"none", cursor:"pointer",
+};
+
 // ── Helpers ─────────────────────────────────────────────────────────────────
 function Btn({ children, onClick, disabled, color = C.brand, outline = false, small = false, style: s = {} }) {
   return (
@@ -664,15 +670,40 @@ function BarraDoble({ salida, retorno, maxVal, colorS, colorR }) {
 
 function SubvistaAnalisis({ historico, materiales, pedidos = [], almacenes = [], compras = [] }) {
   const { sesiones, lineas } = historico;
-  const cerradas = sesiones.filter(s => s.estado === "cerrada");
+  const cerradas = useMemo(() =>
+    [...sesiones].filter(s => s.estado === "cerrada")
+      .sort((a, b) => new Date(b.closed_at) - new Date(a.closed_at)), // más reciente primero
+  [sesiones]);
 
-  // ── Último recuento cerrado (punto de partida del análisis) ───────────────
+  // ── Selector de período ───────────────────────────────────────────────────
+  // modo "recuento": entre dos recuentos cerrados · modo "fechas": rango manual.
+  const [modoPeriodo, setModoPeriodo] = useState("recuento");
+  const [recuentoIniId, setRecuentoIniId] = useState(null);  // null = último recuento
+  const [recuentoFinId, setRecuentoFinId] = useState("");    // "" = hasta hoy
+  const [fechaDesde, setFechaDesde] = useState("");
+  const [fechaHasta, setFechaHasta] = useState("");
+
+  // Recuento de inicio (el más reciente por defecto)
   const ultimoRecuento = useMemo(() => {
     if (!cerradas.length) return null;
-    return [...cerradas].sort((a, b) => new Date(b.closed_at) - new Date(a.closed_at))[0];
-  }, [cerradas]);
+    if (recuentoIniId) return cerradas.find(s => String(s.id) === String(recuentoIniId)) || cerradas[0];
+    return cerradas[0];
+  }, [cerradas, recuentoIniId]);
 
-  const fechaCorte = ultimoRecuento?.closed_at || null;
+  // Fecha de corte de inicio y fin según el modo elegido.
+  const fechaCorte = useMemo(() => {
+    if (modoPeriodo === "fechas") return fechaDesde ? `${fechaDesde}T00:00:00` : null;
+    return ultimoRecuento?.closed_at || null;
+  }, [modoPeriodo, fechaDesde, ultimoRecuento]);
+
+  const fechaFin = useMemo(() => {
+    if (modoPeriodo === "fechas") return fechaHasta ? `${fechaHasta}T23:59:59` : null;
+    if (recuentoFinId) {
+      const r = cerradas.find(s => String(s.id) === String(recuentoFinId));
+      return r?.closed_at || null;
+    }
+    return null;  // hasta hoy
+  }, [modoPeriodo, fechaHasta, recuentoFinId, cerradas]);
 
   // Líneas del último recuento
   const lineasUltimoRecuento = useMemo(() =>
@@ -691,10 +722,13 @@ function SubvistaAnalisis({ historico, materiales, pedidos = [], almacenes = [],
     return m;
   }, [lineasUltimoRecuento]);
 
-  // ── Compras desde el último recuento ─────────────────────────────────────
+  // ── Compras dentro del período (corte → fin) ─────────────────────────────
   const comprasDesdeCorte = useMemo(() =>
-    fechaCorte ? compras.filter(c => c.fecha >= fechaCorte) : compras,
-  [compras, fechaCorte]);
+    compras.filter(c =>
+      (!fechaCorte || c.fecha >= fechaCorte) &&
+      (!fechaFin   || c.fecha <= fechaFin)
+    ),
+  [compras, fechaCorte, fechaFin]);
 
   // Entradas por material desde el último recuento
   const entradasMat = useMemo(() => {
@@ -712,8 +746,9 @@ function SubvistaAnalisis({ historico, materiales, pedidos = [], almacenes = [],
   const ESTADOS_CONSUMO = new Set(["confirmado", "retorno", "finalizado"]);
   const pedidosConsumo = useMemo(() =>
     pedidos.filter(p => ESTADOS_CONSUMO.has(p.estado) && (p.lineas || []).length > 0 &&
-      (!fechaCorte || (p.fecha_entrega || "9999") >= fechaCorte.slice(0, 10))),
-  [pedidos, fechaCorte]);
+      (!fechaCorte || (p.fecha_entrega || "9999") >= fechaCorte.slice(0, 10)) &&
+      (!fechaFin   || (p.fecha_entrega || "0000") <= fechaFin.slice(0, 10))),
+  [pedidos, fechaCorte, fechaFin]);
 
   // Consumo por material_id o nombre
   const consumoMat = useMemo(() => {
@@ -896,18 +931,69 @@ function SubvistaAnalisis({ historico, materiales, pedidos = [], almacenes = [],
   return (
     <div style={{ height:"100%", overflowY:"auto", padding:"16px", display:"flex", flexDirection:"column", gap:20 }}>
 
-      {/* ── Informe cruzado: desde último recuento ────────────────────────── */}
-      {ultimoRecuento && (
+      {/* ── Selector de período ────────────────────────────────────────────── */}
+      <div style={{ background:C.surface, border:`1px solid ${C.line}`, borderRadius:12, padding:"12px 16px",
+        display:"flex", flexDirection:"column", gap:10 }}>
+        <div style={{ display:"flex", gap:6, alignItems:"center", flexWrap:"wrap" }}>
+          <span style={{ fontSize:11, fontWeight:700, color:C.sub, textTransform:"uppercase", letterSpacing:.5, marginRight:4 }}>Período</span>
+          {[
+            { id:"recuento", label:"Entre recuentos" },
+            { id:"fechas",   label:"Por fechas" },
+          ].map(opt => (
+            <button key={opt.id} onClick={() => setModoPeriodo(opt.id)}
+              style={{ padding:"5px 14px", borderRadius:999,
+                border:`1.5px solid ${modoPeriodo === opt.id ? C.brand : C.strong}`,
+                background: modoPeriodo === opt.id ? C.brandSoft : "transparent",
+                color: modoPeriodo === opt.id ? C.brand : C.sub,
+                fontWeight:600, fontSize:12.5, cursor:"pointer", fontFamily:"inherit" }}>
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        {modoPeriodo === "recuento" && (
+          <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
+            <label style={{ fontSize:12, color:C.sub }}>Desde recuento:</label>
+            <select value={recuentoIniId ?? ""} onChange={e => setRecuentoIniId(e.target.value || null)}
+              style={SELECT_STYLE}>
+              <option value="">Último ({cerradas[0]?.nombre || "—"})</option>
+              {cerradas.map(s => (
+                <option key={s.id} value={s.id}>{s.nombre} · {new Date(s.closed_at).toLocaleDateString("es-ES")}</option>
+              ))}
+            </select>
+            <label style={{ fontSize:12, color:C.sub }}>hasta:</label>
+            <select value={recuentoFinId} onChange={e => setRecuentoFinId(e.target.value)}
+              style={SELECT_STYLE}>
+              <option value="">Hoy</option>
+              {cerradas.map(s => (
+                <option key={s.id} value={s.id}>{s.nombre} · {new Date(s.closed_at).toLocaleDateString("es-ES")}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {modoPeriodo === "fechas" && (
+          <div style={{ display:"flex", gap:10, alignItems:"center", flexWrap:"wrap" }}>
+            <label style={{ fontSize:12, color:C.sub }}>Desde:</label>
+            <input type="date" value={fechaDesde} onChange={e => setFechaDesde(e.target.value)} style={SELECT_STYLE}/>
+            <label style={{ fontSize:12, color:C.sub }}>Hasta:</label>
+            <input type="date" value={fechaHasta} onChange={e => setFechaHasta(e.target.value)} style={SELECT_STYLE}/>
+          </div>
+        )}
+      </div>
+
+      {/* ── Informe cruzado ────────────────────────────────────────────────── */}
+      {(ultimoRecuento || modoPeriodo === "fechas") && (
         <>
           {/* Cabecera del período */}
           <div style={{ background:C.brandSoft, border:`1px solid ${C.brand}44`, borderRadius:12,
             padding:"12px 16px", display:"flex", alignItems:"center", gap:10, flexWrap:"wrap" }}>
             <div style={{ fontSize:13, fontWeight:700, color:C.brand }}>
-              Período analizado: desde el recuento <strong>{ultimoRecuento.nombre}</strong>
+              {modoPeriodo === "fechas"
+                ? <>Período analizado: {fechaDesde ? new Date(fechaDesde+"T00:00").toLocaleDateString("es-ES") : "inicio"} → {fechaHasta ? new Date(fechaHasta+"T00:00").toLocaleDateString("es-ES") : "hoy"}</>
+                : <>Período analizado: desde el recuento <strong>{ultimoRecuento?.nombre}</strong>{recuentoFinId ? <> hasta <strong>{cerradas.find(s=>String(s.id)===String(recuentoFinId))?.nombre}</strong></> : ""}</>}
             </div>
             <div style={{ fontSize:12, color:C.brand, opacity:.8 }}>
-              {new Date(ultimoRecuento.closed_at).toLocaleDateString("es-ES", { day:"2-digit", month:"short", year:"numeric" })}
-              {" · "}
               {pedidosConsumo.length} pedidos consumidos · {comprasDesdeCorte.length} compras registradas
             </div>
           </div>
