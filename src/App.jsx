@@ -6,7 +6,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import {
   CalendarDays, RotateCcw, Warehouse, Settings,
   Sun, Moon, Globe, Loader, ArrowRight,
-  Building2, ShoppingBag, ClipboardList, Bell,
+  Building2, ShoppingBag, ClipboardList,
 } from "lucide-react";
 import { LangContext, IDIOMAS } from "./lib/i18n.js";
 import { sb, supabaseConfigurado } from "./lib/supabase.js";
@@ -23,7 +23,8 @@ import TabInventario from "./TabInventario.jsx";
 import TabFlota from "./TabFlota.jsx";
 import TabEtiquetas from "./TabEtiquetas.jsx";
 import TabCesta from "./TabCesta.jsx";
-import ChatFloat from "./ChatFloat.jsx";
+import { ChatBase, BellButton, leerCmdDeUrl } from "@scale/shared/chat";
+import { cargarApps, crearResolveAppUrl } from "@scale/shared/registry";
 import { Package, Shield, ClipboardCheck, Truck, Tag, ShoppingCart } from "lucide-react";
 import AppLauncher from "./AppLauncher.jsx";
 import { ToastContainer, PanelAlertasStock, crearNotificacion } from "./StockNotificaciones.jsx";
@@ -148,6 +149,7 @@ export default function App() {
     catch { return new Set(); }
   });
   const chatRef = useRef();
+  const [resolveAppUrl, setResolveAppUrl] = useState(() => () => null);
 
   const agregarACesta = useCallback((items) => {
     setCesta(prev => {
@@ -193,6 +195,46 @@ export default function App() {
       setTimeout(() => setHighlightedPedido(null), 8000);
     }
   }, [pedidos]);
+
+  // Comandos del chat propios de L-Scale: /pedido y #categoría
+  const comandosChat = useMemo(() => [
+    {
+      tipo: "pedido", trigger: "/",
+      sugerencias: (q) => (pedidos || [])
+        .filter(p => {
+          const cod = (p.codigo || p.referencia || "").toUpperCase();
+          return q ? cod.startsWith(q.toUpperCase()) : !!cod;
+        })
+        .slice(0, 5)
+        .map(p => ({ valor: p.codigo || p.referencia, label: p.codigo || p.referencia, sub: p.nombre || p.destino || "—" })),
+      ejecutar: (codigo) => handlePedidoRef(codigo, null),
+    },
+    {
+      tipo: "categoria", trigger: "#",
+      sugerencias: (q) => [...new Set((materiales || []).map(m => (m.categoria || "").trim()).filter(Boolean))]
+        .filter(c => c.toLowerCase().includes(q.toLowerCase()))
+        .sort().slice(0, 8)
+        .map(c => ({ valor: c, label: c })),
+      ejecutar: () => setTab("almacen"),
+    },
+  ], [pedidos, materiales, handlePedidoRef]);
+
+  // Deep-link de entrada: si vengo de otra app con ?cmd=, ejecutar el comando
+  useEffect(() => {
+    if (!pedidos.length && !materiales.length) return;  // esperar a tener datos
+    const cmd = leerCmdDeUrl();
+    if (!cmd) return;
+    const c = comandosChat.find(x => x.trigger === cmd.trigger);
+    c?.ejecutar?.(cmd.valor);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedidos.length, materiales.length]);
+
+  // Cargar catálogo de apps para resolver deep-links cross-app
+  useEffect(() => {
+    cargarApps(sb()).then(apps => {
+      setResolveAppUrl(() => crearResolveAppUrl(apps, { dev: import.meta.env?.DEV }));
+    });
+  }, []);
 
   const tramosIniciales = useMemo(() => {
     const r = {};
@@ -432,21 +474,7 @@ export default function App() {
           <div style={{ display:"flex", alignItems:"center", gap:6, marginLeft:"auto" }}>
             {/* Campana de mensajes */}
             {supabaseConfigurado && empresa?.id && (
-              <button onClick={() => chatRef.current?.openPanel()}
-                title={L("Mensajes","Messages")}
-                style={{ position:"relative", background:"none", border:"none", cursor:"pointer", color:C.sub, padding:6, borderRadius:8, display:"flex" }}>
-                <Bell size={16}/>
-                {chatUnread > 0 && (
-                  <span style={{
-                    position:"absolute", top:2, right:2,
-                    minWidth:15, height:15, borderRadius:999,
-                    background:"#ef4444", color:"#fff",
-                    fontSize:9, fontWeight:800,
-                    display:"grid", placeItems:"center", padding:"0 3px",
-                    lineHeight:1,
-                  }}>{chatUnread > 9 ? "9+" : chatUnread}</span>
-                )}
-              </button>
+              <BellButton unread={chatUnread} onClick={() => chatRef.current?.openPanel()} title={L("Mensajes","Messages")} />
             )}
             <AppLauncher empresa={empresa} currentAppId="lscale" />
             <button onClick={cambiarLang} title={L("Cambiar idioma","Change language")} style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, padding:6, borderRadius:8, display:"flex" }}><Globe size={16}/></button>
@@ -534,17 +562,18 @@ export default function App() {
           {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={puedeAdmin} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} portalUrl={import.meta.env?.VITE_PORTAL_URL || "http://localhost:3000"} L={L}/>}
         </div>
 
-        {/* Chat flotante */}
+        {/* Chat flotante cross-app (paquete @scale/shared) */}
         {supabaseConfigurado && empresa?.id && sesion?.user && (
-          <ChatFloat
+          <ChatBase
             ref={chatRef}
+            sb={sb()}
+            appId="lscale"
             empresa={empresa}
-            miembros={miembros}
             currentUser={sesion.user}
+            miembros={miembros}
+            comandos={comandosChat}
+            resolveAppUrl={resolveAppUrl}
             onUnreadChange={setChatUnread}
-            pedidos={pedidos}
-            materiales={materiales}
-            onPedidoRef={handlePedidoRef}
           />
         )}
 

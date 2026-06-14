@@ -52,7 +52,7 @@ export default function AppLauncher({ empresa, currentAppId = "lscale" }) {
         onClick={() => setOpen(v => !v)}
         title="Cambiar de app"
         style={{
-          background: "none", border: "none", cursor: "pointer",
+          border: "none", cursor: "pointer",
           padding: 6, borderRadius: 8, display: "flex",
           color: open ? C.brand : C.sub,
           background: open ? C.brandSoft : "none",
