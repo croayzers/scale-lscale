@@ -1547,7 +1547,7 @@ function ModalNotificaciones({ pedido, companyId, onClose }) {
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - TabPedidos [export default]
-export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, onNotificarStock, onAgregarCesta, guardarPlantillaConf, cargarPlantillasConf, highlightedPedidoId, highlightedCategoria, puedeEditar }) {
+export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, onNotificarStock, onAgregarCesta, guardarPlantillaConf, cargarPlantillasConf, highlightedPedidoId, highlightedCategoria, puedeEditar, onNotificarEvento }) {
   const L = useL();
   const fileRef = useRef(null);
 
@@ -1742,6 +1742,9 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
     setSaving(false);
     setParsed(null);
     setPedidoSel(nuevo);
+    // Notificación in-app a la empresa (campanita de todas las apps)
+    const codigoPed = nuevo?.codigo || nuevo?.referencia || "";
+    onNotificarEvento?.("pedido", "Nuevo pedido creado", nuevo?.nombre || codigoPed, codigoPed);
     // Abrir modal de notificaciones solo en modo supabase
     if (modo === "supabase" && empresa?.id) {
       setNotifModal({ pedido: nuevo, companyId: empresa.id });

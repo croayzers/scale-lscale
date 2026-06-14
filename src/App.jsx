@@ -23,7 +23,7 @@ import TabInventario from "./TabInventario.jsx";
 import TabFlota from "./TabFlota.jsx";
 import TabEtiquetas from "./TabEtiquetas.jsx";
 import TabCesta from "./TabCesta.jsx";
-import { ChatBase, BellButton, leerCmdDeUrl } from "@scale/shared/chat";
+import { ChatBase, BellButton, leerCmdDeUrl, crearNotificacion as crearNotifEvento, serializarToken } from "@scale/shared/chat";
 import { cargarApps, crearResolveAppUrl } from "@scale/shared/registry";
 import { Package, Shield, ClipboardCheck, Truck, Tag, ShoppingCart } from "lucide-react";
 import AppLauncher from "./AppLauncher.jsx";
@@ -235,6 +235,30 @@ export default function App() {
       setResolveAppUrl(() => crearResolveAppUrl(apps, { dev: import.meta.env?.DEV }));
     });
   }, []);
+
+  // Notifica a la empresa un evento de L-Scale (pedido/compra/retorno creado).
+  // Aparece en la campanita de todas las apps. tipo: 'pedido'|'compra'|'retorno'.
+  const notificarEvento = useCallback((tipo, titulo, recursoLabel, codigo) => {
+    if (modo !== "supabase" || !empresa?.id) return;
+    const nombre = sesion?.user?.email?.split("@")[0]?.replace(/[._]/g, " ") || "Alguien";
+    crearNotifEvento(sb(), {
+      companyId: empresa.id,
+      actorId: sesion?.user?.id ?? null,
+      actorNombre: nombre,
+      appId: "lscale",
+      tipo,
+      titulo,
+      recursoLabel: recursoLabel || null,
+      cmd: codigo ? `s.${String(codigo).trim().replace(/\s+/g, "~")}` : null,
+    }).catch(() => {});
+  }, [modo, empresa?.id, sesion?.user?.id, sesion?.user?.email]);
+
+  // Evento de L-Scale pulsado en el feed de la campanita → abrir el pedido.
+  const onEventoLocal = useCallback(({ valor, tipo }) => {
+    if (tipo === "pedido" || tipo === "compra" || tipo === "retorno") {
+      handlePedidoRef(valor, null);
+    }
+  }, [handlePedidoRef]);
 
   const tramosIniciales = useMemo(() => {
     const r = {};
@@ -542,7 +566,8 @@ export default function App() {
                 const nombre = sesion.user.email.split("@")[0].split(".")[0];
                 await registrarVistoPor(pid, sesion.user.id, nombre);
               }
-            }}/>}
+            }}
+            onNotificarEvento={notificarEvento}/>}
           {tab === "planning" && <TabPlanning pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha}
             materiales={materiales} almacenes={almacenes}
             puedeEditar={puedeEditar}
@@ -574,6 +599,7 @@ export default function App() {
             comandos={comandosChat}
             resolveAppUrl={resolveAppUrl}
             onUnreadChange={setChatUnread}
+            onEventoLocal={onEventoLocal}
           />
         )}
 
