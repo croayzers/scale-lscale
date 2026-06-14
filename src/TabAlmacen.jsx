@@ -201,6 +201,14 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
 
   const primerAlmacenId = almacenes?.[0]?.id ?? null;
 
+  // Categorías y proveedores existentes (para autocompletar en el formulario).
+  const categoriasExistentes = [...new Set(
+    (materiales || []).map(m => (m.categoria || "").trim()).filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b));
+  const proveedoresExistentes = [...new Set(
+    (materiales || []).map(m => (m.proveedor || "").trim()).filter(Boolean)
+  )].sort((a, b) => a.localeCompare(b));
+
   const filtrados = materiales.filter((m) => {
     // Materiales con almacen_id explícito: solo mostrar en su almacén
     if (m.almacen_id != null && m.almacen_id !== almacenSel) return false;
@@ -524,12 +532,14 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
             <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12 }}>
               <ModalField label={L("Nombre *","Name *")} value={editObj.nombre} onChange={(v) => setEditObj((p) => ({ ...p, nombre:v }))} style={{ gridColumn:"1 / -1" }}/>
               <ModalField label="Referencia / SKU"   value={editObj.referencia}   onChange={(v) => setEditObj((p) => ({ ...p, referencia:v }))}/>
-              <ModalField label={L("Categoría","Category")}      value={editObj.categoria}   onChange={(v) => setEditObj((p) => ({ ...p, categoria:v }))}/>
+              <ComboField label={L("Categoría","Category")} value={editObj.categoria} opciones={categoriasExistentes}
+                onChange={(v) => setEditObj((p) => ({ ...p, categoria:v }))} placeholder={L("Elegir o escribir…","Pick or type…")}/>
               <ModalField label={L("Unidad","Unit")}             value={editObj.unidad}      onChange={(v) => setEditObj((p) => ({ ...p, unidad:v }))} placeholder="ud, kg, L, m…"/>
               <ModalField label={L("Ubicación","Location")}      value={editObj.ubicacion}   onChange={(v) => setEditObj((p) => ({ ...p, ubicacion:v }))} placeholder="A-01, Pasillo 3…"/>
               <ModalField label="Stock actual" value={editObj.stock_actual} onChange={(v) => setEditObj((p) => ({ ...p, stock_actual:v }))} type="number"/>
               <ModalField label={L("Stock mínimo","Min stock")}  value={editObj.stock_minimo} onChange={(v) => setEditObj((p) => ({ ...p, stock_minimo:v }))} type="number"/>
-              <ModalField label={L("Proveedor","Supplier")}      value={editObj.proveedor}   onChange={(v) => setEditObj((p) => ({ ...p, proveedor:v }))}/>
+              <ComboField label={L("Proveedor","Supplier")} value={editObj.proveedor} opciones={proveedoresExistentes}
+                onChange={(v) => setEditObj((p) => ({ ...p, proveedor:v }))} placeholder={L("Elegir o escribir…","Pick or type…")}/>
               <ModalField label={L("Coste (€)","Cost (€)")}      value={editObj.precio_coste} onChange={(v) => setEditObj((p) => ({ ...p, precio_coste:v }))} type="number" placeholder="0.00"/>
               <div style={{ gridColumn:"1 / -1" }}>
                 <label style={{ fontSize:11.5, fontWeight:600, color:C.sub, letterSpacing:.5 }}>{L("ALMACÉN","WAREHOUSE")}</label>
@@ -604,6 +614,30 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
           cargarPlantillasConf={cargarPlantillasConf ? (almId) => cargarPlantillasConf(almId) : undefined}
         />
       )}
+    </div>
+  );
+}
+
+/* ─── ComboField: input con autocompletar (datalist) ──────────────────────────
+   Permite elegir de las opciones existentes o escribir una nueva. */
+let _comboSeq = 0;
+function ComboField({ label, value, onChange, opciones = [], placeholder, style }) {
+  const listId = React.useMemo(() => `combo-${++_comboSeq}`, []);
+  return (
+    <div style={style}>
+      <label style={{ fontSize:11.5, fontWeight:600, color:"var(--text-2)", letterSpacing:.5 }}>{label}</label>
+      <input
+        list={listId}
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        style={{ width:"100%", marginTop:6, padding:"9px 11px", border:"1px solid var(--border-strong)",
+          borderRadius:10, fontSize:13.5, fontFamily:"inherit", background:"var(--surface-2)",
+          color:"var(--text)", outline:"none", boxSizing:"border-box" }}
+      />
+      <datalist id={listId}>
+        {opciones.map((o) => <option key={o} value={o} />)}
+      </datalist>
     </div>
   );
 }
