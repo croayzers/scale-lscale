@@ -196,7 +196,7 @@ function RetornoModal({ pedido, materiales, onConfirm, onCancel, saving }) {
 /* ─── TabRetorno ──────────────────────────────────────────────────────────── */
 export default function TabRetorno({ pedidos = [], setPedidos, vehiculosEmpresa = [],
     materiales = [], setMateriales, modo = "demo", empresa,
-    onSavePedido, onNotificarStock, formatoFecha = "DD/MM/YYYY", L }) {
+    onSavePedido, onNotificarStock, onNotificarEvento, formatoFecha = "DD/MM/YYYY", L }) {
   const [filtro,       setFiltro]      = useState("activos");
   const [saving,       setSaving]      = useState(null);
   const [retornoModal, setRetornoModal]= useState(null); // pedido a registrar
@@ -274,6 +274,9 @@ export default function TabRetorno({ pedidos = [], setPedidos, vehiculosEmpresa 
     if (onNotificarStock) {
       onNotificarStock(updated, nuevosMateriales, "retorno");
     }
+    // Notificación in-app a la empresa (campanita cross-app)
+    const codigoPed = updated.codigo || updated.referencia || "";
+    onNotificarEvento?.("retorno", "Retorno registrado", updated.nombre || codigoPed, codigoPed);
 
     setSaving(null);
     setRetornoModal(null);

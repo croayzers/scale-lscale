@@ -580,10 +580,11 @@ export default function App() {
             materiales={materiales} setMateriales={setMateriales} modo={modo} empresa={empresa}
             puedeEditar={puedeEditar}
             onNotificarStock={notificarStock}
+            onNotificarEvento={notificarEvento}
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} L={L}/>}
           {tab === "flota"     && <TabFlota pedidos={pedidos} vehiculosEmpresa={vehiculosEmpresa} empresa={empresa} formatoFecha={formatoFecha} L={L}/>}
           {tab === "etiquetas" && <TabEtiquetas pedidos={pedidos} plantillas={plantillasEtiquetas} onGuardarPlantillas={guardarPlantillasEtiquetas} L={L}/>}
-          {tab === "cesta"     && <TabCesta cesta={cesta} setCesta={setCesta} materiales={materiales} setMateriales={setMateriales} almacenes={almacenes} modo={modo} empresa={empresa} sesion={sesion} colsIniciales={cestaCols} onGuardarCols={guardarCestaCols} L={L}/>}
+          {tab === "cesta"     && <TabCesta cesta={cesta} setCesta={setCesta} materiales={materiales} setMateriales={setMateriales} almacenes={almacenes} modo={modo} empresa={empresa} sesion={sesion} colsIniciales={cestaCols} onGuardarCols={guardarCestaCols} onNotificarEvento={notificarEvento} L={L}/>}
           {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={puedeAdmin} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} portalUrl={import.meta.env?.VITE_PORTAL_URL || "http://localhost:3000"} L={L}/>}
         </div>
 

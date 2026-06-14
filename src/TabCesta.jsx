@@ -71,7 +71,7 @@ function ConstructorColumnas({ cols, onChange }) {
 }
 
 /* ─── TabCesta ────────────────────────────────────────────────────────────── */
-export default function TabCesta({ cesta, setCesta, materiales, setMateriales, almacenes = [], modo, empresa, sesion, colsIniciales, onGuardarCols, L }) {
+export default function TabCesta({ cesta, setCesta, materiales, setMateriales, almacenes = [], modo, empresa, sesion, colsIniciales, onGuardarCols, onNotificarEvento, L }) {
   const [comprando, setComprando] = useState(false);
   const [comprado,  setComprado]  = useState(false);
   const [cols,      setCols]      = useState(() => colsIniciales || cargarCols());
@@ -151,6 +151,8 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
           };
         });
         await registrarCompra(itemsCompra, empresa?.id, userEmail, modo);
+        const nArt = itemsCompra.length;
+        onNotificarEvento?.("compra", "Nueva compra registrada", `${nArt} artículo${nArt === 1 ? "" : "s"}`, null);
       } catch (e) {
         console.warn("[TabCesta] registrarCompra:", e);
       }
