@@ -45,6 +45,7 @@ function mapMaterial(r) {
     precio:       r.precio       ?? null,
     notas:        r.notas        || null,
     almacen_id:   r.almacen_id   ?? null,
+    imagen_url:   r.imagen_url   || null,
   };
 }
 
@@ -65,6 +66,7 @@ function materialToRow(m, companyId) {
     precio:       m.precio       != null ? Number(m.precio)       : null,
     notas:        m.notas        ?? null,
     almacen_id:   m.almacen_id   ?? null,
+    imagen_url:   m.imagen_url   ?? null,
   };
 }
 
@@ -255,7 +257,7 @@ export async function crearMaterial(m, companyId) {
 
 export async function actualizarMaterial(id, cambios) {
   const permitidas = ["referencia","nombre","descripcion","categoria","unidad","stock_actual",
-    "stock_minimo","ubicacion","estado","proveedor","precio_coste","notas"];
+    "stock_minimo","ubicacion","estado","proveedor","precio_coste","notas","imagen_url"];
   const patch = {};
   for (const k of permitidas) if (k in cambios) patch[k] = cambios[k];
   if ("stock_actual" in patch) patch.stock_actual = Number(patch.stock_actual) || 0;
@@ -274,6 +276,23 @@ export async function recargarMateriales() {
   const { data, error } = await lsc().from("materiales").select("*");
   if (error) throw error;
   return (data || []).map(mapMaterial);
+}
+
+export async function subirImagenMaterial(file, companyId) {
+  const ext = file.name.split(".").pop().toLowerCase() || "jpg";
+  const path = `${companyId}/${crypto.randomUUID()}.${ext}`;
+  const { error } = await sb().storage.from("material-images").upload(path, file, { upsert: true });
+  if (error) throw error;
+  const { data } = sb().storage.from("material-images").getPublicUrl(path);
+  return data.publicUrl;
+}
+
+export async function borrarImagenMaterial(publicUrl) {
+  const marker = "/material-images/";
+  const idx = publicUrl.indexOf(marker);
+  if (idx === -1) return;
+  const path = publicUrl.slice(idx + marker.length);
+  await sb().storage.from("material-images").remove([path]);
 }
 
 // MARK: - Pedidos CRUD (guardarPedido, borrarPedido, registrarVistoPor)

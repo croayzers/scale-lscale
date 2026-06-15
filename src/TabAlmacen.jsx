@@ -4,14 +4,15 @@ import React, { useState, useRef } from "react";
 import * as XLSX from "xlsx";
 import {
   Search, Columns3, MapPin, Upload, Download, FileDown,
-  Plus, Pencil, Trash2, X, Check, Loader, AlertTriangle, Combine,
+  Plus, Pencil, Trash2, X, Check, Loader, AlertTriangle, Combine, ImageIcon,
 } from "lucide-react";
 import { C, Badge, Btn, ModalField } from "./lib/ui.jsx";
-import { crearMaterial, actualizarMaterial, borrarMaterial } from "./lib/data.js";
+import { crearMaterial, actualizarMaterial, borrarMaterial, subirImagenMaterial, borrarImagenMaterial } from "./lib/data.js";
 import AlmacenConfigurador from "./AlmacenConfigurador.jsx";
 
 const TODAS_COLS = [
-  { id: "referencia",   label: "REFERENCIA",   fija: false, def: true  },
+  { id: "imagen",       label: "IMG",           fija: false, def: false, w: "52px" },
+  { id: "referencia",   label: "REFERENCIA",    fija: false, def: true  },
   { id: "nombre",       label: "NOMBRE",        fija: true,  def: true  },
   { id: "categoria",    label: "CATEGORÍA",     fija: false, def: true  },
   { id: "unidad",       label: "UNIDAD",        fija: false, def: true  },
@@ -179,6 +180,8 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
   const [almacenSel, setAlmacenSel] = useState(() => almacenes?.[0]?.id ?? 1);
   const [showUbicaciones, setShowUbicaciones] = useState(false);
   const [importFile, setImportFile] = useState(null);
+  const [lightbox, setLightbox]     = useState(null); // URL a mostrar en grande
+  const imgInputRef = useRef(null);
 
   // Columnas fijas al principio, luego las visibles en el orden guardado
   const colsActivas = [
@@ -223,23 +226,37 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
         || (m.proveedor||"").toLowerCase().includes(q);
   });
 
-  const blankMaterial = { referencia:"", nombre:"", descripcion:"", categoria:"", unidad:"ud", stock_actual:0, stock_minimo:0, ubicacion:"", estado:"activo", proveedor:"", precio_coste:"", notas:"", almacen_id: almacenSel };
+  const blankMaterial = { referencia:"", nombre:"", descripcion:"", categoria:"", unidad:"ud", stock_actual:0, stock_minimo:0, ubicacion:"", estado:"activo", proveedor:"", precio_coste:"", notas:"", almacen_id: almacenSel, imagen_url: null, _imgFile: null };
 
   const guardarEdit = async () => {
     if (!editObj.nombre?.trim()) return;
     setSaving(true);
     try {
-      const esNuevo = !editObj.id;
+      let obj = { ...editObj };
+      const urlAnterior = obj._originalImagenUrl;
+      delete obj._originalImagenUrl;
+
+      // Si hay imagen nueva, subirla
+      if (obj._imgFile && modo !== "demo") {
+        obj.imagen_url = await subirImagenMaterial(obj._imgFile, empresa.id);
+      }
+      delete obj._imgFile;
+
+      // Borrar imagen anterior del bucket si cambió o fue eliminada
+      if (urlAnterior && urlAnterior !== obj.imagen_url && modo !== "demo") {
+        borrarImagenMaterial(urlAnterior).catch(() => {});
+      }
+      const esNuevo = !obj.id;
       if (modo === "demo") {
         if (esNuevo) {
-          const nuevo = { ...editObj, id: Date.now(), emp: empresa.id, stock_actual: Number(editObj.stock_actual)||0, stock_minimo: Number(editObj.stock_minimo)||0, precio_coste: editObj.precio_coste !== "" ? Number(editObj.precio_coste) : null };
+          const nuevo = { ...obj, id: Date.now(), emp: empresa.id, stock_actual: Number(obj.stock_actual)||0, stock_minimo: Number(obj.stock_minimo)||0, precio_coste: obj.precio_coste !== "" ? Number(obj.precio_coste) : null };
           setMateriales((p) => [nuevo, ...p]);
         } else {
-          setMateriales((p) => p.map((m) => m.id === editObj.id ? { ...m, ...editObj, stock_actual: Number(editObj.stock_actual)||0, stock_minimo: Number(editObj.stock_minimo)||0 } : m));
+          setMateriales((p) => p.map((m) => m.id === obj.id ? { ...m, ...obj, stock_actual: Number(obj.stock_actual)||0, stock_minimo: Number(obj.stock_minimo)||0 } : m));
         }
       } else {
         const fn = esNuevo ? crearMaterial : actualizarMaterial;
-        const result = esNuevo ? await fn(editObj, empresa.id) : await fn(editObj.id, editObj);
+        const result = esNuevo ? await fn(obj, empresa.id) : await fn(obj.id, obj);
         if (esNuevo) setMateriales((p) => [result, ...p]);
         else setMateriales((p) => p.map((m) => m.id === result.id ? result : m));
       }
@@ -375,6 +392,16 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
 
   const renderCel = (m, colId) => {
     switch (colId) {
+      case "imagen":
+        return m.imagen_url
+          ? <img src={m.imagen_url} alt={m.nombre}
+              onClick={(e) => { e.stopPropagation(); setLightbox(m.imagen_url); }}
+              style={{ width:40, height:40, objectFit:"cover", borderRadius:6,
+                cursor:"zoom-in", border:`1px solid ${C.line}`, display:"block" }}/>
+          : <div style={{ width:40, height:40, borderRadius:6, border:`1px dashed ${C.strong}`,
+              display:"flex", alignItems:"center", justifyContent:"center", color:C.dim }}>
+              <ImageIcon size={16}/>
+            </div>;
       case "stock_actual": {
         const bajo = m.stock_actual <= m.stock_minimo;
         return <span style={{ fontWeight:600, color: bajo ? C.warn : C.ok }}>{m.stock_actual}</span>;
@@ -390,7 +417,7 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
     }
   };
 
-  const gtc = `1.4fr ${colsActivas.filter((c) => c.id !== "nombre").map(() => "1fr").join(" ")} auto 44px`;
+  const gtc = `1.4fr ${colsActivas.filter((c) => c.id !== "nombre").map((c) => c.w || "1fr").join(" ")} auto 44px`;
 
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"100%", minHeight:0 }}>
@@ -466,7 +493,7 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
           <Btn outline onClick={handleExportAlmExcel} style={{ padding:"8px 12px" }}><Download size={15}/>Excel</Btn>
           <Btn outline onClick={handleExportAlmPdf} style={{ padding:"8px 12px" }}><FileDown size={15}/>PDF</Btn>
         </div>
-        <Btn onClick={() => setEditObj({ ...blankMaterial })}><Plus size={15}/>{L("Nuevo","New")}</Btn>
+        <Btn onClick={() => setEditObj({ ...blankMaterial, _originalImagenUrl: null })}><Plus size={15}/>{L("Nuevo","New")}</Btn>
       </div>
 
       <div style={{ flex:1, overflow:"auto" }}>
@@ -508,7 +535,7 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
                     style={{ fontSize:10, color:C.dim, borderRadius:6, padding:"2px 4px" }}>🔇</span>}
               </div>
               <div style={{ display:"flex", gap:4, padding:"10px 4px", justifyContent:"flex-end" }}>
-                <button title={L("Editar","Edit")} onClick={() => setEditObj({ ...m })}
+                <button title={L("Editar","Edit")} onClick={() => setEditObj({ ...m, _imgFile: null, _originalImagenUrl: m.imagen_url ?? null })}
                   style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, borderRadius:8, padding:5, display:"flex" }}>
                   <Pencil size={15}/>
                 </button>
@@ -541,6 +568,50 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
               <ComboField label={L("Proveedor","Supplier")} value={editObj.proveedor} opciones={proveedoresExistentes}
                 onChange={(v) => setEditObj((p) => ({ ...p, proveedor:v }))} placeholder={L("Elegir o escribir…","Pick or type…")}/>
               <ModalField label={L("Coste (€)","Cost (€)")}      value={editObj.precio_coste} onChange={(v) => setEditObj((p) => ({ ...p, precio_coste:v }))} type="number" placeholder="0.00"/>
+              {/* Imagen */}
+              <div style={{ gridColumn:"1 / -1" }}>
+                <label style={{ fontSize:11.5, fontWeight:600, color:C.sub, letterSpacing:.5 }}>IMAGEN</label>
+                <div style={{ display:"flex", alignItems:"center", gap:12, marginTop:6 }}>
+                  {/* Preview / zona de subida */}
+                  <div
+                    onClick={() => imgInputRef.current?.click()}
+                    style={{ width:80, height:80, borderRadius:10, flexShrink:0,
+                      border: editObj.imagen_url || editObj._imgFile ? `1px solid ${C.line}` : `2px dashed ${C.strong}`,
+                      overflow:"hidden", cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center",
+                      background:C.s2, position:"relative" }}>
+                    {editObj._imgFile
+                      ? <img src={URL.createObjectURL(editObj._imgFile)} alt=""
+                          style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+                      : editObj.imagen_url
+                        ? <img src={editObj.imagen_url} alt=""
+                            style={{ width:"100%", height:"100%", objectFit:"cover" }}/>
+                        : <ImageIcon size={24} color={C.dim}/>}
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+                    <Btn outline onClick={() => imgInputRef.current?.click()} style={{ fontSize:12, padding:"5px 12px" }}>
+                      <Upload size={13}/>{editObj.imagen_url || editObj._imgFile ? L("Cambiar","Change") : L("Subir foto","Upload photo")}
+                    </Btn>
+                    {(editObj.imagen_url || editObj._imgFile) && (
+                      <button
+                        onClick={() => setEditObj(p => ({ ...p, imagen_url: null, _imgFile: null }))}
+                        style={{ background:"none", border:"none", cursor:"pointer", color:C.danger,
+                          fontSize:12, textAlign:"left", padding:0, fontFamily:"inherit" }}>
+                        <X size={11} style={{ verticalAlign:"middle", marginRight:3 }}/>
+                        {L("Quitar imagen","Remove image")}
+                      </button>
+                    )}
+                    <span style={{ fontSize:11, color:C.dim }}>JPG, PNG, WebP · máx 5 MB</span>
+                  </div>
+                </div>
+                <input ref={imgInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif"
+                  style={{ display:"none" }}
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) setEditObj(p => ({ ...p, _imgFile: f, imagen_url: null }));
+                    e.target.value = "";
+                  }}/>
+              </div>
+
               <div style={{ gridColumn:"1 / -1" }}>
                 <label style={{ fontSize:11.5, fontWeight:600, color:C.sub, letterSpacing:.5 }}>{L("ALMACÉN","WAREHOUSE")}</label>
                 <div style={{ display:"flex", gap:8, marginTop:6, flexWrap:"wrap" }}>
@@ -601,6 +672,23 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
           almacenNombre={almacenes?.find(a => a.id === almacenSel)?.nombre || "Almacén"}
           onClose={() => setShowUbicaciones(false)}
         />
+      )}
+
+      {/* Lightbox */}
+      {lightbox && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.85)", zIndex:900,
+          display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}
+          onClick={() => setLightbox(null)}>
+          <button onClick={() => setLightbox(null)}
+            style={{ position:"absolute", top:16, right:16, background:"rgba(255,255,255,.15)",
+              border:"none", cursor:"pointer", color:"#fff", borderRadius:999, padding:8, display:"flex" }}>
+            <X size={20}/>
+          </button>
+          <img src={lightbox} alt=""
+            style={{ maxWidth:"100%", maxHeight:"90vh", borderRadius:12, objectFit:"contain",
+              boxShadow:"0 20px 60px rgba(0,0,0,.5)" }}
+            onClick={(e) => e.stopPropagation()}/>
+        </div>
       )}
 
       {importFile && (

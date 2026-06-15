@@ -458,7 +458,7 @@ function exportarPDFCfg(pedido, almacenes, cfg) {
    MODAL CONFIGURADOR DE EXPORTACIÓN
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - ExportConfigurador
-function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato, modo, onClose }) {
+function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato, modo, formatoFecha = "DD/MM/YYYY", onClose }) {
   const almacenId = pedido.almacen_id;
   const [plantillas, setPlantillas] = useState(() => cargarPlantillasExport(empresaId, almacenId));
   const [tplNombre, setTplNombre] = useState("");
@@ -1334,6 +1334,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
           rolesImport={rolesImport}
           formato={exportModal}
           modo={modo}
+          formatoFecha={formatoFecha}
           onClose={() => setExportModal(null)}
         />
       )}
