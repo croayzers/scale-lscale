@@ -20,8 +20,9 @@ const TODAS_COLS = [
   { id: "stock_minimo", label: "MÍN.",          fija: false, def: false },
   { id: "ubicacion",    label: "UBICACIÓN",     fija: false, def: true  },
   { id: "estado",       label: "ESTADO",        fija: false, def: true  },
-  { id: "proveedor",    label: "PROVEEDOR",     fija: false, def: false },
-  { id: "precio_coste", label: "COSTE",         fija: false, def: false },
+  { id: "proveedor",             label: "PROVEEDOR",      fija: false, def: true  },
+  { id: "referencia_proveedor", label: "REF. PROVEEDOR", fija: false, def: true  },
+  { id: "precio_coste",         label: "COSTE",          fija: false, def: false },
   { id: "notas",        label: "NOTAS",         fija: false, def: false },
 ];
 
@@ -235,10 +236,11 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
         || (m.referencia||"").toLowerCase().includes(q)
         || (m.categoria||"").toLowerCase().includes(q)
         || (m.ubicacion||"").toLowerCase().includes(q)
-        || (m.proveedor||"").toLowerCase().includes(q);
+        || (m.proveedor||"").toLowerCase().includes(q)
+        || (m.referencia_proveedor||"").toLowerCase().includes(q);
   });
 
-  const blankMaterial = { referencia:"", nombre:"", descripcion:"", categoria:"", unidad:"ud", stock_actual:0, stock_minimo:0, ubicacion:"", estado:"activo", proveedor:"", precio_coste:"", notas:"", almacen_id: almacenSel, imagen_url: null, _imgFile: null };
+  const blankMaterial = { referencia:"", nombre:"", descripcion:"", categoria:"", unidad:"ud", stock_actual:0, stock_minimo:0, ubicacion:"", estado:"activo", proveedor:"", referencia_proveedor:"", precio_coste:"", notas:"", almacen_id: almacenSel, imagen_url: null, _imgFile: null };
 
   const guardarEdit = async () => {
     if (!editObj.nombre?.trim()) return;
@@ -374,7 +376,7 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
   };
 
   const handleExportAlmExcel = () => {
-    const cols = ["referencia","nombre","descripcion","categoria","unidad","stock_actual","stock_minimo","ubicacion","estado","proveedor","precio_coste","notas"];
+    const cols = ["referencia","nombre","descripcion","categoria","unidad","stock_actual","stock_minimo","ubicacion","estado","proveedor","referencia_proveedor","precio_coste","notas"];
     const alm = almacenes?.find(a => a.id === almacenSel);
     const rows = filtrados.map(m => Object.fromEntries(cols.map(k => [k, m[k] ?? ""])));
     const ws = XLSX.utils.json_to_sheet(rows, { header: cols });
@@ -619,6 +621,8 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
               <ModalField label={L("Stock mínimo","Min stock")}  value={editObj.stock_minimo} onChange={(v) => setEditObj((p) => ({ ...p, stock_minimo:v }))} type="number"/>
               <ComboField label={L("Proveedor","Supplier")} value={editObj.proveedor} opciones={proveedoresExistentes}
                 onChange={(v) => setEditObj((p) => ({ ...p, proveedor:v }))} placeholder={L("Elegir o escribir…","Pick or type…")}/>
+              <ModalField label={L("Ref. Proveedor","Supplier Ref.")} value={editObj.referencia_proveedor}
+                onChange={(v) => setEditObj((p) => ({ ...p, referencia_proveedor:v }))} placeholder="SKU, código proveedor…"/>
               <ModalField label={L("Coste (€)","Cost (€)")}      value={editObj.precio_coste} onChange={(v) => setEditObj((p) => ({ ...p, precio_coste:v }))} type="number" placeholder="0.00"/>
               {/* Imagen */}
               <div style={{ gridColumn:"1 / -1" }}>

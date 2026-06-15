@@ -40,7 +40,8 @@ function mapMaterial(r) {
     stock_minimo: r.stock_minimo ?? 0,
     ubicacion:    r.ubicacion    || null,
     estado:       r.estado       || "activo",
-    proveedor:    r.proveedor    || null,
+    proveedor:             r.proveedor             || null,
+    referencia_proveedor:  r.referencia_proveedor  || null,
     precio_coste: r.precio_coste ?? null,
     precio:       r.precio       ?? null,
     notas:        r.notas        || null,
@@ -61,7 +62,8 @@ function materialToRow(m, companyId) {
     stock_minimo: Number(m.stock_minimo) || 0,
     ubicacion:    m.ubicacion    ?? null,
     estado:       m.estado       ?? "activo",
-    proveedor:    m.proveedor    ?? null,
+    proveedor:            m.proveedor            ?? null,
+    referencia_proveedor: m.referencia_proveedor ?? null,
     precio_coste: m.precio_coste != null ? Number(m.precio_coste) : null,
     precio:       m.precio       != null ? Number(m.precio)       : null,
     notas:        m.notas        ?? null,
@@ -257,7 +259,7 @@ export async function crearMaterial(m, companyId) {
 
 export async function actualizarMaterial(id, cambios) {
   const permitidas = ["referencia","nombre","descripcion","categoria","unidad","stock_actual",
-    "stock_minimo","ubicacion","estado","proveedor","precio_coste","notas","imagen_url"];
+    "stock_minimo","ubicacion","estado","proveedor","referencia_proveedor","precio_coste","notas","imagen_url"];
   const patch = {};
   for (const k of permitidas) if (k in cambios) patch[k] = cambios[k];
   if ("stock_actual" in patch) patch.stock_actual = Number(patch.stock_actual) || 0;
