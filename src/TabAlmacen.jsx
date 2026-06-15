@@ -167,7 +167,7 @@ function UbicacionesModal({ materiales, setMateriales, empresaId, almacenId, alm
   );
 }
 
-function useCatsAbiertas(filtrados) {
+function useCatsAbiertas() {
   const [cerradas, setCerradas] = useState(() => new Set());
   const toggle = (cat) => setCerradas(p => {
     const next = new Set(p);
@@ -193,7 +193,7 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
   const [importFile, setImportFile] = useState(null);
   const [lightbox, setLightbox]     = useState(null); // URL a mostrar en grande
   const imgInputRef = useRef(null);
-  const [catsCerradas, toggleCat]   = useCatsAbiertas(filtrados);
+  const [catsCerradas, toggleCat]   = useCatsAbiertas();
 
   // Columnas fijas al principio, luego las visibles en el orden guardado
   const colsActivas = [
