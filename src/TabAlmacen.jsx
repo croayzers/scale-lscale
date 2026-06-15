@@ -4,7 +4,7 @@ import React, { useState, useRef } from "react";
 import * as XLSX from "xlsx";
 import {
   Search, Columns3, MapPin, Upload, Download, FileDown,
-  Plus, Pencil, Trash2, X, Check, Loader, AlertTriangle, Combine, ImageIcon,
+  Plus, Pencil, Trash2, X, Check, Loader, AlertTriangle, Combine, ImageIcon, SlidersHorizontal,
 } from "lucide-react";
 import { C, Badge, Btn, ModalField } from "./lib/ui.jsx";
 import { crearMaterial, actualizarMaterial, borrarMaterial, subirImagenMaterial, borrarImagenMaterial } from "./lib/data.js";
@@ -195,6 +195,9 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
   const [lightbox, setLightbox]     = useState(null); // URL a mostrar en grande
   const imgInputRef = useRef(null);
   const [catsCerradas, toggleCat]   = useCatsAbiertas();
+  const [showFiltros, setShowFiltros] = useState(false);
+  const [filtros, setFiltros]         = useState({ categoria:"", proveedor:"", estado:"" });
+  const nFiltrosActivos = Object.values(filtros).filter(Boolean).length;
 
   // Columnas fijas al principio, luego las visibles en el orden guardado
   const colsActivas = [
@@ -226,10 +229,11 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
   )].sort((a, b) => a.localeCompare(b));
 
   const filtrados = materiales.filter((m) => {
-    // Materiales con almacen_id explícito: solo mostrar en su almacén
     if (m.almacen_id != null && m.almacen_id !== almacenSel) return false;
-    // Materiales sin almacen_id: solo mostrar en el primer almacén
     if (m.almacen_id == null && almacenSel !== primerAlmacenId) return false;
+    if (filtros.categoria && (m.categoria||"").trim() !== filtros.categoria) return false;
+    if (filtros.proveedor && (m.proveedor||"").trim() !== filtros.proveedor) return false;
+    if (filtros.estado   && (m.estado   ||"activo")   !== filtros.estado)    return false;
     if (!busqueda) return true;
     const q = busqueda.toLowerCase();
     return (m.nombre||"").toLowerCase().includes(q)
@@ -456,6 +460,20 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
           <input value={busqueda} onChange={(e) => setBusqueda(e.target.value)} placeholder={L("Buscar material…","Search material…")} style={{ border:"none", outline:"none", background:"transparent", fontSize:13.5, color:C.ink, width:"100%", fontFamily:"inherit" }}/>
           {busqueda && <button onClick={() => setBusqueda("")} style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, padding:0, display:"flex" }}><X size={13}/></button>}
         </div>
+        {/* Botón Filtros */}
+        <div style={{ position:"relative" }}>
+          <Btn outline onClick={() => setShowFiltros(v => !v)}
+            style={{ padding:"8px 12px", borderColor: nFiltrosActivos ? C.brand : undefined, color: nFiltrosActivos ? C.brand : undefined }}>
+            <SlidersHorizontal size={15}/>
+            {L("Filtros","Filters")}
+            {nFiltrosActivos > 0 && (
+              <span style={{ background:C.brand, color:"#fff", borderRadius:999,
+                fontSize:10, fontWeight:700, padding:"1px 6px", marginLeft:2 }}>
+                {nFiltrosActivos}
+              </span>
+            )}
+          </Btn>
+        </div>
         <div style={{ position:"relative" }}>
           <Btn outline onClick={() => setShowColCfg((v) => !v)} style={{ padding:"8px 12px" }}><Columns3 size={15}/>{L("Columnas","Columns")}</Btn>
           {showColCfg && (
@@ -509,6 +527,40 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
         </div>
         <Btn onClick={() => setEditObj({ ...blankMaterial, _originalImagenUrl: null })}><Plus size={15}/>{L("Nuevo","New")}</Btn>
       </div>
+
+      {/* Barra de filtros por columna */}
+      {showFiltros && (
+        <div style={{ display:"flex", alignItems:"center", gap:8, padding:"10px 20px",
+          borderBottom:`1px solid ${C.line}`, background:C.s2, flexShrink:0, flexWrap:"wrap" }}>
+          {[
+            { key:"categoria", label:L("Categoría","Category"),   opciones: categoriasExistentes },
+            { key:"proveedor", label:L("Proveedor","Supplier"),   opciones: proveedoresExistentes },
+            { key:"estado",    label:L("Estado","Status"),        opciones: ESTADOS_MATERIAL },
+          ].map(({ key, label, opciones }) => (
+            <div key={key} style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <span style={{ fontSize:11, fontWeight:600, color:C.sub, letterSpacing:.3 }}>{label}:</span>
+              <select value={filtros[key]} onChange={e => setFiltros(p => ({ ...p, [key]: e.target.value }))}
+                style={{ padding:"5px 28px 5px 9px", border:`1px solid ${filtros[key] ? C.brand : C.strong}`,
+                  borderRadius:8, fontSize:12.5, fontFamily:"inherit", outline:"none", cursor:"pointer",
+                  background: filtros[key] ? C.brandSoft : C.surface, color: filtros[key] ? C.brand : C.ink,
+                  fontWeight: filtros[key] ? 600 : 400 }}>
+                <option value="">— {L("Todas","All")} —</option>
+                {opciones.map(o => <option key={o} value={o}>{key === "estado" ? ESTADO_LABEL[o] || o : o}</option>)}
+              </select>
+            </div>
+          ))}
+          {nFiltrosActivos > 0 && (
+            <button onClick={() => setFiltros({ categoria:"", proveedor:"", estado:"" })}
+              style={{ background:"none", border:"none", cursor:"pointer", color:C.danger,
+                fontSize:12, fontFamily:"inherit", display:"flex", alignItems:"center", gap:4, padding:"4px 6px" }}>
+              <X size={12}/>{L("Limpiar","Clear")}
+            </button>
+          )}
+          <span style={{ marginLeft:"auto", fontSize:11, color:C.dim }}>
+            {filtrados.length} {L("material(es)","material(s)")}
+          </span>
+        </div>
+      )}
 
       <div style={{ flex:1, overflow:"auto" }}>
         <div style={{ display:"grid", gridTemplateColumns:gtc, gap:0, position:"sticky", top:0, zIndex:10, background:C.surface, borderBottom:`1px solid ${C.line}`, padding:"0 20px" }}>
