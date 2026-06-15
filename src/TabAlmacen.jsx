@@ -167,6 +167,17 @@ function UbicacionesModal({ materiales, setMateriales, empresaId, almacenId, alm
   );
 }
 
+function useCatsAbiertas(filtrados) {
+  const [cerradas, setCerradas] = useState(() => new Set());
+  const toggle = (cat) => setCerradas(p => {
+    const next = new Set(p);
+    next.has(cat) ? next.delete(cat) : next.add(cat);
+    return next;
+  });
+  // Si hay búsqueda activa, expandir todo automáticamente devolviendo set vacío
+  return [cerradas, toggle];
+}
+
 // MARK: - TabAlmacen
 export default function TabAlmacen({ materiales, setMateriales, empresa, modo, almacenes, silenciados, guardarPlantillaConf, cargarPlantillasConf, L }) {
   const EMP_ID = `lscale.cols.${empresa?.id}`;
@@ -182,6 +193,7 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
   const [importFile, setImportFile] = useState(null);
   const [lightbox, setLightbox]     = useState(null); // URL a mostrar en grande
   const imgInputRef = useRef(null);
+  const [catsCerradas, toggleCat]   = useCatsAbiertas(filtrados);
 
   // Columnas fijas al principio, luego las visibles en el orden guardado
   const colsActivas = [
@@ -509,44 +521,84 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
             {busqueda ? L("Sin resultados","No results") : L("Sin materiales. Pulsa «Nuevo» para añadir.","No materials yet. Press «New» to add one.")}
           </div>
         )}
-        {filtrados.map((m) => {
-          const bajoPorDebajo = m.stock_minimo > 0 && m.stock_actual < m.stock_minimo;
-          const alertaActiva  = bajoPorDebajo && !(silenciados?.has(String(m.id)));
-          return (
-            <div key={m.id}
-              style={{ display:"grid", gridTemplateColumns:gtc, gap:0, padding:"0 20px",
-                borderBottom: alertaActiva ? `1px solid #fca5a5` : `1px solid ${C.line}`,
-                alignItems:"center", transition:"background .12s",
-                background: alertaActiva ? "#fff5f5" : "" }}
-              onMouseEnter={(e) => { e.currentTarget.style.background = alertaActiva ? "#fee2e2" : C.s2; }}
-              onMouseLeave={(e) => { e.currentTarget.style.background = alertaActiva ? "#fff5f5" : ""; }}>
-              {colsActivas.map((c) => (
-                <div key={c.id} style={{ padding:"10px 8px", fontSize:13.5, overflow:"hidden" }}>
-                  {renderCel(m, c.id)}
+        {(() => {
+          // Agrupar por categoría manteniendo el orden de aparición
+          const grupos = [];
+          const idxCat = {};
+          for (const m of filtrados) {
+            const cat = m.categoria?.trim() || L("(sin categoría)","(no category)");
+            if (idxCat[cat] === undefined) { idxCat[cat] = grupos.length; grupos.push({ cat, items: [] }); }
+            grupos[idxCat[cat]].items.push(m);
+          }
+          // Cuando hay búsqueda activa, ignorar cerradas y mostrar todo
+          const cerradasEfectivas = busqueda ? new Set() : catsCerradas;
+
+          return grupos.map(({ cat, items }) => {
+            const abierta = !cerradasEfectivas.has(cat);
+            const nAlertas = items.filter(m => m.stock_minimo > 0 && m.stock_actual < m.stock_minimo && !silenciados?.has(String(m.id))).length;
+            return (
+              <div key={cat}>
+                {/* Cabecera de categoría */}
+                <div onClick={() => !busqueda && toggleCat(cat)}
+                  style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 20px",
+                    background:C.s2, borderBottom:`1px solid ${C.line}`,
+                    cursor: busqueda ? "default" : "pointer", userSelect:"none",
+                    position:"sticky", top:37, zIndex:5 }}>
+                  <span style={{ fontSize:11, color:C.sub, transition:"transform .15s",
+                    display:"inline-block", transform: abierta ? "rotate(90deg)" : "rotate(0deg)" }}>▶</span>
+                  <span style={{ fontSize:12, fontWeight:700, color:C.ink, letterSpacing:.4, textTransform:"uppercase" }}>{cat}</span>
+                  <span style={{ fontSize:11, color:C.dim, marginLeft:2 }}>({items.length})</span>
+                  {nAlertas > 0 && (
+                    <span style={{ fontSize:10, fontWeight:700, background:"#fee2e2", color:"#dc2626",
+                      borderRadius:6, padding:"1px 6px", border:"1px solid #fca5a5", marginLeft:4 }}>
+                      ⚠ {nAlertas}
+                    </span>
+                  )}
                 </div>
-              ))}
-              <div style={{ padding:"10px 4px" }}>
-                {alertaActiva &&
-                  <span title={L("Stock bajo el mínimo","Stock below minimum")}
-                    style={{ fontSize:10, fontWeight:700, background:"#fee2e2", color:"#dc2626",
-                      borderRadius:6, padding:"2px 6px", border:"1px solid #fca5a5" }}>⚠</span>}
-                {bajoPorDebajo && !alertaActiva &&
-                  <span title={L("Advertencia silenciada","Warning silenced")}
-                    style={{ fontSize:10, color:C.dim, borderRadius:6, padding:"2px 4px" }}>🔇</span>}
+
+                {/* Filas */}
+                {abierta && items.map((m) => {
+                  const bajoPorDebajo = m.stock_minimo > 0 && m.stock_actual < m.stock_minimo;
+                  const alertaActiva  = bajoPorDebajo && !(silenciados?.has(String(m.id)));
+                  return (
+                    <div key={m.id}
+                      style={{ display:"grid", gridTemplateColumns:gtc, gap:0, padding:"0 20px",
+                        borderBottom: alertaActiva ? `1px solid #fca5a5` : `1px solid ${C.line}`,
+                        alignItems:"center", transition:"background .12s",
+                        background: alertaActiva ? "#fff5f5" : "" }}
+                      onMouseEnter={(e) => { e.currentTarget.style.background = alertaActiva ? "#fee2e2" : C.s2; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.background = alertaActiva ? "#fff5f5" : ""; }}>
+                      {colsActivas.map((c) => (
+                        <div key={c.id} style={{ padding:"10px 8px", fontSize:13.5, overflow:"hidden" }}>
+                          {renderCel(m, c.id)}
+                        </div>
+                      ))}
+                      <div style={{ padding:"10px 4px" }}>
+                        {alertaActiva &&
+                          <span title={L("Stock bajo el mínimo","Stock below minimum")}
+                            style={{ fontSize:10, fontWeight:700, background:"#fee2e2", color:"#dc2626",
+                              borderRadius:6, padding:"2px 6px", border:"1px solid #fca5a5" }}>⚠</span>}
+                        {bajoPorDebajo && !alertaActiva &&
+                          <span title={L("Advertencia silenciada","Warning silenced")}
+                            style={{ fontSize:10, color:C.dim, borderRadius:6, padding:"2px 4px" }}>🔇</span>}
+                      </div>
+                      <div style={{ display:"flex", gap:4, padding:"10px 4px", justifyContent:"flex-end" }}>
+                        <button title={L("Editar","Edit")} onClick={() => setEditObj({ ...m, _imgFile: null, _originalImagenUrl: m.imagen_url ?? null })}
+                          style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, borderRadius:8, padding:5, display:"flex" }}>
+                          <Pencil size={15}/>
+                        </button>
+                        <button title={L("Eliminar","Delete")} onClick={() => setDelConf(m.id)}
+                          style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, borderRadius:8, padding:5, display:"flex" }}>
+                          <Trash2 size={15}/>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <div style={{ display:"flex", gap:4, padding:"10px 4px", justifyContent:"flex-end" }}>
-                <button title={L("Editar","Edit")} onClick={() => setEditObj({ ...m, _imgFile: null, _originalImagenUrl: m.imagen_url ?? null })}
-                  style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, borderRadius:8, padding:5, display:"flex" }}>
-                  <Pencil size={15}/>
-                </button>
-                <button title={L("Eliminar","Delete")} onClick={() => setDelConf(m.id)}
-                  style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, borderRadius:8, padding:5, display:"flex" }}>
-                  <Trash2 size={15}/>
-                </button>
-              </div>
-            </div>
-          );
-        })}
+            );
+          });
+        })()}
       </div>
 
       {editObj && (
