@@ -8,7 +8,19 @@ import {
 } from "lucide-react";
 import { C, Badge, Btn, ModalField } from "./lib/ui.jsx";
 import { crearMaterial, actualizarMaterial, borrarMaterial, subirImagenMaterial, borrarImagenMaterial } from "./lib/data.js";
+import { sb } from "./lib/supabase.js";
 import AlmacenConfigurador from "./AlmacenConfigurador.jsx";
+import { OrigenDatosPanel } from "@scale/shared/connectors";
+
+// Decodifica el base64 devuelto por /api/sharepoint/files/content a un File
+// real, para reusar AlmacenConfigurador (FileReader.readAsArrayBuffer) sin
+// tocar su parser — igual que si el usuario hubiera subido el archivo local.
+function base64AFile(base64, filename) {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new File([bytes], filename, { type: "application/octet-stream" });
+}
 
 const TODAS_COLS = [
   { id: "imagen",       label: "IMG",           fija: false, def: false, w: "52px" },
@@ -451,6 +463,19 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
               {a.nombre}
             </button>
           ))}
+        </div>
+      )}
+
+      {empresa?.id && modo === "supabase" && (
+        <div style={{ padding:"14px 20px 0" }}>
+          <OrigenDatosPanel empId={empresa.id} companyId={empresa.id} L={L}
+            titulo={L("Origen de datos de materiales","Materials data source")}
+            fuentesDisponibles={[
+              { id:"sharepoint-file", label:"Excel en SharePoint", labelEn:"Excel on SharePoint", desc:"Busca el archivo en tu SharePoint", descEn:"Find the file in your SharePoint", color:"#0078D4", ready:true },
+              { id:"businesscentral", label:"Business Central", labelEn:"Business Central", desc:"Conecta tu Dynamics 365", descEn:"Connect your Dynamics 365", color:"#7A1F3D", ready:true },
+            ]}
+            getAccessToken={async () => { const { data } = await sb().auth.getSession(); return data?.session?.access_token || null; }}
+            onSharePointFile={({ contentBase64, filename }) => setImportFile(base64AFile(contentBase64, filename))}/>
         </div>
       )}
 
