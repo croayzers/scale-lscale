@@ -23,7 +23,7 @@ import TabInventario from "./TabInventario.jsx";
 import TabFlota from "./TabFlota.jsx";
 import TabEtiquetas from "./TabEtiquetas.jsx";
 import TabCesta from "./TabCesta.jsx";
-import { ChatBase, BellButton, leerCmdDeUrl, crearNotificacion as crearNotifEvento, serializarToken } from "@scale/shared/chat";
+import { ChatBase, BellButton, PresenceAvatars, leerCmdDeUrl, crearNotificacion as crearNotifEvento, serializarToken } from "@scale/shared/chat";
 import { cargarApps, crearResolveAppUrl } from "@scale/shared/registry";
 import { Package, Shield, ClipboardCheck, Truck, Tag, ShoppingCart } from "lucide-react";
 import AppLauncher from "./AppLauncher.jsx";
@@ -518,7 +518,10 @@ export default function App() {
           </div>
 
           <div style={{ display:"flex", alignItems:"center", gap:6, marginLeft:"auto" }}>
-            {/* Campana de mensajes */}
+            {/* Quién está conectado ahora (cross-app) + campana de mensajes */}
+            {supabaseConfigurado && empresa?.id && sesion?.user && (
+              <PresenceAvatars sb={sb()} companyId={empresa.id} currentUser={sesion.user} appId="lscale" />
+            )}
             {supabaseConfigurado && empresa?.id && (
               <BellButton unread={chatUnread} onClick={() => chatRef.current?.openPanel()} title={L("Mensajes","Messages")} />
             )}
