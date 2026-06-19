@@ -1,10 +1,11 @@
-import React, { useState, useEffect, useRef } from "react";
-import { Plus, Trash2, Search, Upload, X, Check, Building2, Edit2, Save, Info } from "lucide-react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { Plus, Trash2, Search, Upload, X, Check, Building2, Edit2, Save, Info, Tag, ChevronDown } from "lucide-react";
 import * as XLSX from "xlsx";
 import { C, Btn } from "./lib/ui.jsx";
 
 const KEY_PROVS      = (cid) => `lscale.dist_provs.${cid}`;
 const KEY_FILAS      = (cid) => `lscale.dist_filas.${cid}`;
+const KEY_ALIAS      = (cid) => `lscale.dist_alias.${cid}`;
 const KEY_PLANTILLAS = (cid) => `lscale.dist_plantillas.${cid}`;
 
 function uid() { return `d_${Date.now()}_${Math.random().toString(36).slice(2,7)}`; }
@@ -14,7 +15,6 @@ function norm(s) {
 
 const COLORES_PROV = ["#3b82f6","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#f97316","#ec4899"];
 
-// Roles disponibles en el wizard — extensibles
 const ROLES_WIZARD = [
   { key:"nombre",    label:"Nombre",      color:"#0e7490", req:true  },
   { key:"ref",       label:"Referencia",  color:"#7c3aed", req:false },
@@ -23,9 +23,298 @@ const ROLES_WIZARD = [
   { key:"descuento", label:"% Descuento", color:"#ef4444", req:false },
 ];
 
-// Datos por fila/proveedor: { nombre, ref, stock, coste, descuento }
-// filas: [{ id, alias, proveedores: { provId: { nombre, ref, stock, coste, descuento } } }]
-// plantillas: [{ provId, headerRow, colMap: { nombre: idx, ref: idx, ... } }]
+// ══════════════════════════════════════════════════════════════════
+// AliasSelect — selector desplegable con búsqueda
+// ══════════════════════════════════════════════════════════════════
+function AliasSelect({ value, aliases, onChange }) {
+  const [open,   setOpen]   = useState(false);
+  const [q,      setQ]      = useState("");
+  const ref      = useRef();
+  const inputRef = useRef();
+
+  useEffect(() => {
+    if (open && inputRef.current) inputRef.current.focus();
+  }, [open]);
+
+  useEffect(() => {
+    function onClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) { setOpen(false); setQ(""); }
+    }
+    document.addEventListener("mousedown", onClick);
+    return () => document.removeEventListener("mousedown", onClick);
+  }, []);
+
+  const filtrados = q.trim()
+    ? aliases.filter(a => norm(a.nombre).includes(norm(q)))
+    : aliases;
+
+  function select(nombre) {
+    onChange(nombre);
+    setOpen(false);
+    setQ("");
+  }
+
+  return (
+    <div ref={ref} style={{ position:"relative", width:"100%" }}>
+      {/* Trigger */}
+      <div onClick={()=>setOpen(o=>!o)}
+        style={{ display:"flex", alignItems:"center", padding:"5px 8px",
+          border:`1px solid ${open?C.brand:C.strong}`, borderRadius:7, cursor:"pointer",
+          background:C.bg, minHeight:30, gap:4, userSelect:"none" }}>
+        <span style={{ flex:1, fontSize:13, color:value?C.ink:C.dim,
+          fontWeight:value?600:400, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+          {value || "— seleccionar alias —"}
+        </span>
+        {value && (
+          <button onClick={e=>{ e.stopPropagation(); onChange(""); }}
+            style={{ background:"none", border:"none", color:C.dim, cursor:"pointer",
+              padding:0, display:"flex", flexShrink:0 }}
+            onMouseEnter={e=>e.currentTarget.style.color=C.danger}
+            onMouseLeave={e=>e.currentTarget.style.color=C.dim}>
+            <X size={11}/>
+          </button>
+        )}
+        <ChevronDown size={12} color={C.dim} style={{ flexShrink:0, transition:"transform .15s",
+          transform:open?"rotate(180deg)":"rotate(0deg)" }}/>
+      </div>
+
+      {/* Dropdown */}
+      {open && (
+        <div style={{ position:"absolute", top:"calc(100% + 3px)", left:0, zIndex:50,
+          background:C.surface, border:`1px solid ${C.line}`, borderRadius:10,
+          boxShadow:"var(--shadow-lg)", minWidth:220, maxWidth:320, overflow:"hidden" }}>
+          {/* Buscador */}
+          <div style={{ padding:"8px 8px 4px", borderBottom:`1px solid ${C.line}` }}>
+            <div style={{ position:"relative" }}>
+              <Search size={12} style={{ position:"absolute", left:7, top:"50%",
+                transform:"translateY(-50%)", color:C.dim }}/>
+              <input ref={inputRef} value={q} onChange={e=>setQ(e.target.value)}
+                placeholder="Buscar alias…"
+                style={{ width:"100%", padding:"5px 8px 5px 22px", border:`1px solid ${C.strong}`,
+                  borderRadius:6, fontSize:12.5, fontFamily:"inherit",
+                  background:C.bg, color:C.ink, outline:"none" }}/>
+            </div>
+          </div>
+          {/* Lista */}
+          <div style={{ maxHeight:220, overflowY:"auto" }}>
+            {aliases.length === 0 ? (
+              <div style={{ padding:"14px 12px", fontSize:12.5, color:C.dim, textAlign:"center" }}>
+                Sin aliases. Créalos en la pestaña <strong>Alias</strong>.
+              </div>
+            ) : filtrados.length === 0 ? (
+              <div style={{ padding:"14px 12px", fontSize:12.5, color:C.dim, textAlign:"center" }}>
+                Sin resultados para "{q}"
+              </div>
+            ) : (
+              filtrados.map(a => (
+                <button key={a.id} onClick={()=>select(a.nombre)}
+                  style={{ display:"flex", alignItems:"center", width:"100%", padding:"8px 12px",
+                    background: a.nombre===value?C.brandSoft:"none",
+                    border:"none", cursor:"pointer", textAlign:"left", fontFamily:"inherit",
+                    fontSize:13, color: a.nombre===value?C.brand:C.ink }}
+                  onMouseEnter={e=>{ if(a.nombre!==value) e.currentTarget.style.background=C.s2; }}
+                  onMouseLeave={e=>{ if(a.nombre!==value) e.currentTarget.style.background="none"; }}>
+                  {a.nombre===value && <Check size={11} style={{ marginRight:6, flexShrink:0 }}/>}
+                  {a.nombre}
+                </button>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
+// PanelAlias — lista maestra de aliases + import desde Excel
+// ══════════════════════════════════════════════════════════════════
+function PanelAlias({ aliases, setAliases }) {
+  const [nuevo,     setNuevo]     = useState("");
+  const [importando,setImportando]= useState(false);
+  const [preview,   setPreview]   = useState(null); // { items, colIdx, headerRow, datos, archivo }
+  const inputRef = useRef();
+
+  function agregar() {
+    const n = nuevo.trim();
+    if (!n) return;
+    if (aliases.some(a => norm(a.nombre)===norm(n))) return; // duplicado
+    setAliases(as => [...as, { id:uid(), nombre:n }]);
+    setNuevo("");
+  }
+
+  function eliminar(id) {
+    setAliases(as => as.filter(a => a.id!==id));
+  }
+
+  // ── Import Excel ──────────────────────────────────────────────
+  function leerExcel(file) {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target.result, { type:"array" });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const datos = XLSX.utils.sheet_to_json(ws, { header:1, defval:"" });
+
+        // Buscar automáticamente columna "Nombre" (case-insensitive)
+        let colIdx = null;
+        let headerRow = 0;
+        for (let ri = 0; ri < Math.min(5, datos.length); ri++) {
+          const row = datos[ri];
+          for (let ci = 0; ci < row.length; ci++) {
+            if (norm(String(row[ci]))===norm("Nombre")) { colIdx=ci; headerRow=ri; break; }
+          }
+          if (colIdx!==null) break;
+        }
+
+        // Si no encontramos "Nombre", usar la primera columna con datos
+        if (colIdx===null && datos[0]?.length > 0) { colIdx=0; headerRow=0; }
+
+        const items = datos.slice(headerRow+1)
+          .map(r => String(r[colIdx??0]??"").trim())
+          .filter(Boolean);
+
+        setPreview({ items, colIdx, headerRow, datos, archivo:file.name });
+      } catch(e) { alert("Error leyendo el archivo: "+e.message); }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function confirmarImport() {
+    if (!preview) return;
+    setImportando(true);
+    const nuevos = preview.items.filter(n =>
+      !aliases.some(a => norm(a.nombre)===norm(n))
+    ).map(n => ({ id:uid(), nombre:n }));
+    setAliases(as => [...as, ...nuevos]);
+    setPreview(null);
+    setImportando(false);
+  }
+
+  return (
+    <div style={{ maxWidth:680, margin:"0 auto", padding:24 }}>
+      <h3 style={{ fontSize:18, color:C.ink, marginBottom:4 }}>Lista maestra de Aliases</h3>
+      <p style={{ fontSize:13, color:C.sub, marginBottom:20 }}>
+        Nombres internos de tu empresa para cada material. Son los que aparecen como selector
+        en la columna izquierda de la tabla de correlación.
+      </p>
+
+      {/* Añadir manual */}
+      <div style={{ display:"flex", gap:8, marginBottom:16 }}>
+        <input value={nuevo} onChange={e=>setNuevo(e.target.value)}
+          onKeyDown={e=>e.key==="Enter"&&agregar()}
+          placeholder="Ej: Silla Redonda 2m, Mesa Coctelera…"
+          style={{ flex:1, padding:"8px 10px", border:`1px solid ${C.strong}`, borderRadius:8,
+            fontSize:13.5, fontFamily:"inherit", background:C.bg, color:C.ink }}/>
+        <Btn onClick={agregar} disabled={!nuevo.trim()}><Plus size={14}/> Añadir</Btn>
+      </div>
+
+      {/* Import Excel */}
+      <div style={{ marginBottom:20 }}>
+        <div onClick={()=>inputRef.current?.click()}
+          style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px",
+            border:`1px dashed ${C.strong}`, borderRadius:10, cursor:"pointer",
+            background:C.s2, transition:"border-color .15s" }}
+          onMouseEnter={e=>e.currentTarget.style.borderColor=C.brand}
+          onMouseLeave={e=>e.currentTarget.style.borderColor=C.strong}
+          onDragOver={e=>e.preventDefault()}
+          onDrop={e=>{ e.preventDefault(); const f=e.dataTransfer.files[0]; if(f) leerExcel(f); }}>
+          <Upload size={16} color={C.brand}/>
+          <div>
+            <span style={{ fontSize:13.5, color:C.ink, fontWeight:600 }}>Importar desde Excel</span>
+            <span style={{ fontSize:12, color:C.sub, marginLeft:8 }}>
+              .xlsx · columna <strong>Nombre</strong> detectada automáticamente
+            </span>
+          </div>
+        </div>
+        <input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" style={{ display:"none" }}
+          onChange={e=>{ if(e.target.files[0]) leerExcel(e.target.files[0]); }}/>
+      </div>
+
+      {/* Preview import */}
+      {preview && (
+        <div style={{ marginBottom:20, border:`1px solid ${C.line}`, borderRadius:12,
+          overflow:"hidden" }}>
+          <div style={{ padding:"12px 16px", background:C.s2, borderBottom:`1px solid ${C.line}`,
+            display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+            <div>
+              <span style={{ fontSize:13.5, fontWeight:600, color:C.ink }}>{preview.archivo}</span>
+              <span style={{ fontSize:12.5, color:C.sub, marginLeft:8 }}>
+                {preview.items.length} aliases detectados
+              </span>
+              {preview.colIdx!==null && (
+                <span style={{ fontSize:12, color:C.ok, marginLeft:8 }}>
+                  ✓ columna "{preview.datos[preview.headerRow]?.[preview.colIdx]||`col ${preview.colIdx+1}`}" detectada
+                </span>
+              )}
+            </div>
+            <button onClick={()=>setPreview(null)}
+              style={{ background:"none", border:"none", color:C.dim, cursor:"pointer", padding:4 }}>
+              <X size={14}/>
+            </button>
+          </div>
+          <div style={{ maxHeight:180, overflowY:"auto" }}>
+            {preview.items.slice(0,50).map((n,i) => {
+              const existe = aliases.some(a=>norm(a.nombre)===norm(n));
+              return (
+                <div key={i} style={{ display:"flex", alignItems:"center", gap:8,
+                  padding:"6px 16px", borderBottom:`1px solid ${C.line}`,
+                  background: existe?C.s2:"inherit", opacity:existe?0.5:1 }}>
+                  <span style={{ fontSize:13, color:C.ink, flex:1 }}>{n}</span>
+                  {existe && <span style={{ fontSize:11, color:C.dim }}>ya existe</span>}
+                </div>
+              );
+            })}
+            {preview.items.length>50 && (
+              <div style={{ padding:"8px 16px", fontSize:12, color:C.dim }}>
+                … y {preview.items.length-50} más
+              </div>
+            )}
+          </div>
+          <div style={{ padding:"10px 16px", borderTop:`1px solid ${C.line}`,
+            display:"flex", justifyContent:"flex-end", gap:8 }}>
+            <Btn outline onClick={()=>setPreview(null)}>Cancelar</Btn>
+            <Btn onClick={confirmarImport} disabled={importando}>
+              {importando?"Importando…":`Importar ${preview.items.filter(n=>!aliases.some(a=>norm(a.nombre)===norm(n))).length} nuevos`}
+            </Btn>
+          </div>
+        </div>
+      )}
+
+      {/* Lista */}
+      {aliases.length===0 ? (
+        <div style={{ textAlign:"center", padding:"40px 24px", color:C.sub,
+          border:`1px dashed ${C.line}`, borderRadius:10 }}>
+          <Tag size={32} style={{ opacity:.3, marginBottom:10 }}/>
+          <p style={{ fontSize:14 }}>Sin aliases. Añade el primero o importa desde Excel.</p>
+        </div>
+      ) : (
+        <div>
+          <div style={{ fontSize:11, fontWeight:700, color:C.sub, letterSpacing:".06em",
+            textTransform:"uppercase", marginBottom:6 }}>
+            {aliases.length} alias{aliases.length!==1?"es":""}
+          </div>
+          <div style={{ display:"flex", flexDirection:"column", gap:4 }}>
+            {aliases.map(a => (
+              <div key={a.id} style={{ display:"flex", alignItems:"center", gap:10,
+                background:C.surface, border:`1px solid ${C.line}`, borderRadius:8,
+                padding:"8px 12px" }}>
+                <span style={{ flex:1, fontSize:13.5, color:C.ink }}>{a.nombre}</span>
+                <button onClick={()=>eliminar(a.id)}
+                  style={{ background:"none", border:"none", color:C.dim, cursor:"pointer",
+                    padding:3, display:"flex" }}
+                  onMouseEnter={e=>e.currentTarget.style.color=C.danger}
+                  onMouseLeave={e=>e.currentTarget.style.color=C.dim}>
+                  <Trash2 size={12}/>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ══════════════════════════════════════════════════════════════════
 // PanelProveedores
@@ -79,7 +368,7 @@ function PanelProveedores({ proveedores, setProveedores }) {
         <Btn onClick={agregar} disabled={!nuevo.nombre.trim()}><Plus size={14}/> Añadir</Btn>
       </div>
 
-      {proveedores.length === 0 ? (
+      {proveedores.length===0 ? (
         <div style={{ textAlign:"center", padding:"40px 24px", color:C.sub,
           border:`1px dashed ${C.line}`, borderRadius:10 }}>
           <Building2 size={32} style={{ opacity:.3, marginBottom:10 }}/>
@@ -132,9 +421,9 @@ function PanelProveedores({ proveedores, setProveedores }) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// EditableCell
+// EditableCell — celda inline editable (columnas de proveedor)
 // ══════════════════════════════════════════════════════════════════
-function EditableCell({ value, placeholder, bold, active, onActivate, onDeactivate, onChange }) {
+function EditableCell({ value, placeholder, active, onActivate, onDeactivate, onChange }) {
   const ref = useRef();
   useEffect(() => { if (active && ref.current) ref.current.select(); }, [active]);
   if (active) {
@@ -144,15 +433,13 @@ function EditableCell({ value, placeholder, bold, active, onActivate, onDeactiva
         onKeyDown={e=>{ if(e.key==="Enter"||e.key==="Escape") onDeactivate(); }}
         placeholder={placeholder}
         style={{ width:"100%", padding:"5px 6px", border:`1px solid ${C.brand}`, borderRadius:6,
-          fontSize:13, fontFamily:"inherit", fontWeight:bold?600:400,
-          background:C.bg, color:C.ink, outline:"none" }}/>
+          fontSize:13, fontFamily:"inherit", background:C.bg, color:C.ink, outline:"none" }}/>
     );
   }
   return (
     <div onClick={onActivate}
       style={{ padding:"5px 6px", fontSize:13, color:value?C.ink:C.dim,
-        fontWeight:bold&&value?600:400, cursor:"text", borderRadius:6,
-        border:"1px solid transparent", minHeight:28,
+        cursor:"text", borderRadius:6, border:"1px solid transparent", minHeight:28,
         whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
       {value||placeholder}
     </div>
@@ -160,7 +447,7 @@ function EditableCell({ value, placeholder, bold, active, onActivate, onDeactiva
 }
 
 // ══════════════════════════════════════════════════════════════════
-// Tooltip de datos extra del proveedor
+// Tooltip datos extra proveedor
 // ══════════════════════════════════════════════════════════════════
 function TooltipDatos({ datos }) {
   const [show, setShow] = useState(false);
@@ -174,7 +461,7 @@ function TooltipDatos({ datos }) {
         <div style={{ position:"absolute", bottom:"calc(100% + 4px)", left:0, zIndex:50,
           background:C.surface, border:`1px solid ${C.line}`, borderRadius:8, padding:"8px 12px",
           boxShadow:"var(--shadow-lg)", minWidth:160, fontSize:12, color:C.ink, whiteSpace:"nowrap" }}>
-          {extras.map(r => (
+          {extras.map(r=>(
             <div key={r.key} style={{ display:"flex", justifyContent:"space-between", gap:12, padding:"2px 0" }}>
               <span style={{ color:C.sub }}>{r.label}</span>
               <span style={{ fontWeight:600 }}>{datos[r.key]}</span>
@@ -189,7 +476,7 @@ function TooltipDatos({ datos }) {
 // ══════════════════════════════════════════════════════════════════
 // TablaCorrelacion
 // ══════════════════════════════════════════════════════════════════
-function TablaCorrelacion({ filas, setFilas, proveedores, onImportar }) {
+function TablaCorrelacion({ filas, setFilas, proveedores, aliases, onImportar }) {
   const [buscar,   setBuscar]   = useState("");
   const [editCell, setEditCell] = useState(null);
 
@@ -200,8 +487,9 @@ function TablaCorrelacion({ filas, setFilas, proveedores, onImportar }) {
   function actualizarNombreProv(filaId, provId, valor) {
     setFilas(fs => fs.map(f => {
       if (f.id!==filaId) return f;
-      const datosPrev = f.proveedores?.[provId] || {};
-      return { ...f, proveedores:{ ...f.proveedores, [provId]:{ ...datosPrev, nombre:valor } } };
+      const prev = f.proveedores?.[provId]||{};
+      return { ...f, proveedores:{ ...f.proveedores,
+        [provId]:{ ...(typeof prev==="string"?{nombre:prev}:prev), nombre:valor } } };
     }));
   }
 
@@ -217,13 +505,13 @@ function TablaCorrelacion({ filas, setFilas, proveedores, onImportar }) {
     ? filas.filter(f => {
         const q = norm(buscar);
         return norm(f.alias).includes(q) ||
-          Object.values(f.proveedores||{}).some(d =>
+          Object.values(f.proveedores||{}).some(d=>
             norm(typeof d==="string"?d:d?.nombre||"").includes(q)
           );
       })
     : filas;
 
-  const ALIAS_W = 220;
+  const ALIAS_W = 230;
   const COL_W   = 190;
 
   return (
@@ -233,13 +521,13 @@ function TablaCorrelacion({ filas, setFilas, proveedores, onImportar }) {
         <div>
           <h3 style={{ fontSize:18, color:C.ink, marginBottom:3 }}>Correlación de materiales</h3>
           <p style={{ fontSize:13, color:C.sub }}>
-            {filas.length} alias · {proveedores.length} proveedor{proveedores.length!==1?"es":""}
+            {filas.length} filas · {proveedores.length} proveedor{proveedores.length!==1?"es":""}
           </p>
         </div>
         <div style={{ display:"flex", gap:8 }}>
           <Btn outline onClick={agregarFila}><Plus size={13}/> Nueva fila</Btn>
           {proveedores.length>0 && (
-            <Btn onClick={onImportar}><Upload size={13}/> Importar Excel</Btn>
+            <Btn onClick={onImportar}><Upload size={13}/> Importar Excel proveedor</Btn>
           )}
         </div>
       </div>
@@ -258,7 +546,10 @@ function TablaCorrelacion({ filas, setFilas, proveedores, onImportar }) {
           border:`1px dashed ${C.line}`, borderRadius:10 }}>
           <Building2 size={36} style={{ opacity:.3, marginBottom:12 }}/>
           <p style={{ fontSize:15, marginBottom:6 }}>Sin proveedores</p>
-          <p style={{ fontSize:13 }}>Añade proveedores en la pestaña <strong>Proveedores</strong>.</p>
+          <p style={{ fontSize:13 }}>
+            Añade proveedores en la pestaña <strong>Proveedores</strong> y aliases en{" "}
+            <strong>Alias</strong> para empezar.
+          </p>
         </div>
       ) : (
         <div style={{ flex:1, overflow:"auto", borderRadius:10, border:`1px solid ${C.line}` }}>
@@ -272,7 +563,7 @@ function TablaCorrelacion({ filas, setFilas, proveedores, onImportar }) {
                   borderRight:`2px solid ${C.line}` }}>
                   Alias (nombre interno)
                 </th>
-                {proveedores.map(p => (
+                {proveedores.map(p=>(
                   <th key={p.id}
                     style={{ width:COL_W, minWidth:COL_W, padding:"10px 14px", textAlign:"left",
                       fontSize:12, fontWeight:700, color:"#fff", background:p.color,
@@ -294,23 +585,21 @@ function TablaCorrelacion({ filas, setFilas, proveedores, onImportar }) {
                     : "Sin resultados para la búsqueda."}
                 </td></tr>
               )}
-              {filtradas.map((fila,idx) => (
-                <tr key={fila.id}
-                  style={{ background:idx%2===0?C.bg:C.surface }}
-                  onMouseEnter={e=>e.currentTarget.style.background=C.brandSoft}
-                  onMouseLeave={e=>e.currentTarget.style.background=idx%2===0?C.bg:C.surface}>
+              {filtradas.map((fila,idx)=>(
+                <tr key={fila.id} style={{ background:idx%2===0?C.bg:C.surface }}>
+                  {/* Alias — selector desplegable */}
                   <td style={{ position:"sticky", left:0, zIndex:1, background:"inherit",
                     padding:"4px 8px", borderBottom:`1px solid ${C.line}`,
                     borderRight:`2px solid ${C.line}` }}>
-                    <EditableCell value={fila.alias} placeholder="Nombre interno…" bold
-                      active={editCell?.filaId===fila.id && editCell?.campo==="alias"}
-                      onActivate={()=>setEditCell({filaId:fila.id,campo:"alias"})}
-                      onDeactivate={()=>setEditCell(null)}
+                    <AliasSelect
+                      value={fila.alias}
+                      aliases={aliases}
                       onChange={v=>actualizarAlias(fila.id,v)}/>
                   </td>
-                  {proveedores.map(p => {
+                  {/* Columnas por proveedor — edición inline */}
+                  {proveedores.map(p=>{
                     const datos = fila.proveedores?.[p.id];
-                    const nombre = typeof datos==="string" ? datos : datos?.nombre || "";
+                    const nombre = typeof datos==="string"?datos:datos?.nombre||"";
                     return (
                       <td key={p.id} style={{ padding:"4px 8px", borderBottom:`1px solid ${C.line}`,
                         borderRight:`1px solid ${C.line}` }}>
@@ -346,18 +635,17 @@ function TablaCorrelacion({ filas, setFilas, proveedores, onImportar }) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// Wizard de Importación
+// Wizard de Importación de proveedor (sin cambios estructurales)
 // ══════════════════════════════════════════════════════════════════
-function WizardImport({ proveedores, filas, setFilas, plantillas, setPlantillas, onCerrar }) {
+function WizardImport({ proveedores, aliases, filas, setFilas, plantillas, setPlantillas, onCerrar }) {
   const [paso,       setPaso]      = useState(0);
   const [provId,     setProvId]    = useState(proveedores[0]?.id||"");
   const [hojas,      setHojas]     = useState([]);
   const [hojaIdx,    setHojaIdx]   = useState(0);
   const [datos,      setDatos]     = useState([]);
   const [headerRow,  setHeaderRow] = useState(0);
-  // colMap: { nombre: idx|null, ref: idx|null, stock: idx|null, coste: idx|null, descuento: idx|null }
   const [colMap,     setColMap]    = useState({});
-  const [activeRole, setActiveRole]= useState("nombre"); // rol que se asignará en el próximo clic
+  const [activeRole, setActiveRole]= useState("nombre");
   const [items,      setItems]     = useState([]);
   const [selec,      setSelec]     = useState([]);
   const [importando, setImportando]= useState(false);
@@ -367,152 +655,115 @@ function WizardImport({ proveedores, filas, setFilas, plantillas, setPlantillas,
   const prov            = proveedores.find(p=>p.id===provId);
   const plantillaExiste = plantillas.find(pl=>pl.provId===provId);
 
-  useEffect(() => {
+  useEffect(()=>{
     const pl = plantillas.find(p=>p.provId===provId);
-    if (pl) {
-      setHeaderRow(pl.headerRow??0);
-      setColMap(pl.colMap??{});
-    } else {
-      setHeaderRow(0); setColMap({});
-    }
+    if(pl){ setHeaderRow(pl.headerRow??0); setColMap(pl.colMap??{}); }
+    else { setHeaderRow(0); setColMap({}); }
     setActiveRole("nombre");
-  }, [provId]);
+  },[provId]);
 
   function leerArchivo(file) {
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload=(ev)=>{
       try {
-        const wb = XLSX.read(ev.target.result, { type:"array" });
-        const sheets = wb.SheetNames.map(name => ({
-          name, data:XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:""}),
+        const wb=XLSX.read(ev.target.result,{type:"array"});
+        const sheets=wb.SheetNames.map(name=>({
+          name,data:XLSX.utils.sheet_to_json(wb.Sheets[name],{header:1,defval:""}),
         }));
-        setHojas(sheets); setHojaIdx(0);
-        setDatos(sheets[0]?.data||[]);
-        setPaso(1);
-      } catch(e) { alert("Error leyendo el archivo: "+e.message); }
+        setHojas(sheets);setHojaIdx(0);setDatos(sheets[0]?.data||[]);setPaso(1);
+      } catch(e){alert("Error leyendo el archivo: "+e.message);}
     };
     reader.readAsArrayBuffer(file);
   }
 
-  function onHojaChange(idx) {
-    setHojaIdx(idx); setDatos(hojas[idx]?.data||[]);
-    setColMap({}); setActiveRole("nombre");
+  function onHojaChange(idx){ setHojaIdx(idx);setDatos(hojas[idx]?.data||[]);setColMap({});setActiveRole("nombre"); }
+
+  function asignarCol(colIdx){
+    const rolesRev=Object.entries(colMap).find(([,v])=>v===colIdx);
+    if(rolesRev){ const [r]=rolesRev; setColMap(m=>{const n={...m};delete n[r];return n;}); return; }
+    setColMap(m=>({...m,[activeRole]:colIdx}));
+    const ordered=ROLES_WIZARD.map(r=>r.key);
+    const nextFree=ordered.find(k=>k!==activeRole&&colMap[k]==null);
+    if(nextFree) setActiveRole(nextFree);
   }
 
-  function asignarCol(colIdx) {
-    // Si la columna ya tiene un rol, quitar ese rol
-    const rolesRev = Object.entries(colMap).find(([,v])=>v===colIdx);
-    if (rolesRev) {
-      const [rolExistente] = rolesRev;
-      setColMap(m=>{ const n={...m}; delete n[rolExistente]; return n; });
-      return;
-    }
-    // Si el rol activo ya tiene columna, solo reasigna
-    setColMap(m=>({ ...m, [activeRole]: colIdx }));
-    // Avanzar al siguiente rol no asignado
-    const ordered = ROLES_WIZARD.map(r=>r.key);
-    const nextFree = ordered.find(k=>k!==activeRole && colMap[k]==null);
-    if (nextFree) setActiveRole(nextFree);
-  }
+  function rolDeCol(colIdx){ return Object.entries(colMap).find(([,v])=>v===colIdx)?.[0]||null; }
 
-  function rolDeCol(colIdx) {
-    return Object.entries(colMap).find(([,v])=>v===colIdx)?.[0]||null;
-  }
+  const headers=datos[headerRow]||[];
+  const preview=datos.slice(headerRow+1,headerRow+6);
 
-  const headers = datos[headerRow]||[];
-  const preview = datos.slice(headerRow+1, headerRow+6);
-
-  function irARevision() {
-    if (colMap.nombre==null) return;
-    const rows = datos.slice(headerRow+1).filter(r=>r.some(c=>String(c).trim()));
-    const parsed = rows.map(r => {
-      const obj = {};
-      ROLES_WIZARD.forEach(rol => {
-        if (colMap[rol.key]!=null) obj[rol.key]=String(r[colMap[rol.key]]??"").trim();
-      });
+  function irARevision(){
+    if(colMap.nombre==null) return;
+    const rows=datos.slice(headerRow+1).filter(r=>r.some(c=>String(c).trim()));
+    const parsed=rows.map(r=>{
+      const obj={};
+      ROLES_WIZARD.forEach(rol=>{ if(colMap[rol.key]!=null) obj[rol.key]=String(r[colMap[rol.key]]??"").trim(); });
       return obj;
     }).filter(it=>it.nombre);
 
-    const revisados = parsed.map(it => {
-      const n = norm(it.nombre);
-      const idx = filas.findIndex(f =>
+    const revisados=parsed.map(it=>{
+      const n=norm(it.nombre);
+      // Buscar en filas existentes: alias o nombre de proveedor
+      const idx=filas.findIndex(f=>
         norm(f.alias)===n ||
-        Object.values(f.proveedores||{}).some(d=>
-          norm(typeof d==="string"?d:d?.nombre||"")===n
-        )
+        Object.values(f.proveedores||{}).some(d=>norm(typeof d==="string"?d:d?.nombre||"")===n)
       );
-      return { ...it, tipo:idx>=0?"actualiza":"nuevo", filaIdx:idx };
+      // También buscar alias por nombre
+      const aliasMatch=aliases.find(a=>norm(a.nombre)===n);
+      return{...it,tipo:idx>=0?"actualiza":"nuevo",filaIdx:idx,aliasNombre:aliasMatch?.nombre||null};
     });
-
-    setItems(revisados);
-    setSelec(revisados.map((_,i)=>i));
-    setPaso(2);
+    setItems(revisados);setSelec(revisados.map((_,i)=>i));setPaso(2);
   }
 
-  function toggleSelec(i) { setSelec(s=>s.includes(i)?s.filter(x=>x!==i):[...s,i]); }
+  function toggleSelec(i){setSelec(s=>s.includes(i)?s.filter(x=>x!==i):[...s,i]);}
 
-  async function ejecutarImport() {
+  async function ejecutarImport(){
     setImportando(true);
-    let nuevos=0, actualizados=0;
+    let nuevos=0,actualizados=0;
     const next=[...filas];
-
-    for (const i of selec) {
-      const it = items[i];
-      const datosGuardar = {};
-      ROLES_WIZARD.forEach(r=>{ if(it[r.key]) datosGuardar[r.key]=it[r.key]; });
-
-      if (it.tipo==="actualiza" && it.filaIdx>=0) {
-        const prev = next[it.filaIdx].proveedores?.[provId]||{};
-        next[it.filaIdx]={ ...next[it.filaIdx],
-          proveedores:{ ...next[it.filaIdx].proveedores,
-            [provId]: typeof prev==="string"
-              ? { nombre:prev, ...datosGuardar }
-              : { ...prev, ...datosGuardar }
-          }
-        };
+    for(const i of selec){
+      const it=items[i];
+      const datosGuardar={};
+      ROLES_WIZARD.forEach(r=>{if(it[r.key]) datosGuardar[r.key]=it[r.key];});
+      if(it.tipo==="actualiza"&&it.filaIdx>=0){
+        const prev=next[it.filaIdx].proveedores?.[provId]||{};
+        next[it.filaIdx]={...next[it.filaIdx],
+          proveedores:{...next[it.filaIdx].proveedores,
+            [provId]:{...(typeof prev==="string"?{nombre:prev}:prev),...datosGuardar}}};
         actualizados++;
       } else {
-        next.push({ id:uid(), alias:"", proveedores:{ [provId]:datosGuardar } });
+        // Si el nombre coincide con un alias, pre-asignarlo
+        next.push({id:uid(), alias:it.aliasNombre||"", proveedores:{[provId]:datosGuardar}});
         nuevos++;
       }
     }
-
     setFilas(next);
-
-    if (guardarPl) {
-      const pl = { provId, headerRow, colMap };
-      setPlantillas(ps => {
-        const idx=ps.findIndex(p=>p.provId===provId);
-        if(idx>=0){ const n=[...ps]; n[idx]=pl; return n; }
-        return [...ps,pl];
-      });
+    if(guardarPl){
+      const pl={provId,headerRow,colMap};
+      setPlantillas(ps=>{const idx=ps.findIndex(p=>p.provId===provId);
+        if(idx>=0){const n=[...ps];n[idx]=pl;return n;}return[...ps,pl];});
     }
-
-    setResultado({ nuevos, actualizados });
-    setImportando(false);
-    setPaso(3);
+    setResultado({nuevos,actualizados});setImportando(false);setPaso(3);
   }
 
   const PASOS=["Archivo","Columnas","Revisión","Completado"];
+  const coloresByKey=Object.fromEntries(ROLES_WIZARD.map(r=>[r.key,r.color]));
 
   return (
-    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.5)",
-      display:"grid", placeItems:"center", zIndex:300 }}>
-      <div style={{ background:C.surface, borderRadius:18, width:"min(820px,96vw)",
-        maxHeight:"92vh", display:"flex", flexDirection:"column",
-        boxShadow:"var(--shadow-lg)", overflow:"hidden" }}>
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.5)",display:"grid",placeItems:"center",zIndex:300}}>
+      <div style={{background:C.surface,borderRadius:18,width:"min(820px,96vw)",maxHeight:"92vh",
+        display:"flex",flexDirection:"column",boxShadow:"var(--shadow-lg)",overflow:"hidden"}}>
 
         {/* Cabecera */}
-        <div style={{ padding:"18px 24px", borderBottom:`1px solid ${C.line}`,
-          display:"flex", alignItems:"center", justifyContent:"space-between" }}>
+        <div style={{padding:"18px 24px",borderBottom:`1px solid ${C.line}`,
+          display:"flex",alignItems:"center",justifyContent:"space-between"}}>
           <div>
-            <h3 style={{ fontSize:17, color:C.ink, marginBottom:5 }}>Importar materiales del proveedor</h3>
-            <div style={{ display:"flex", alignItems:"center", gap:0 }}>
+            <h3 style={{fontSize:17,color:C.ink,marginBottom:5}}>Importar materiales del proveedor</h3>
+            <div style={{display:"flex",alignItems:"center",gap:0}}>
               {PASOS.map((s,i)=>(
                 <React.Fragment key={s}>
-                  <span style={{ fontSize:12, fontWeight:i===paso?700:400,
-                    color:i<paso?C.ok:i===paso?C.brand:C.dim,
-                    display:"flex", alignItems:"center", gap:3 }}>
+                  <span style={{fontSize:12,fontWeight:i===paso?700:400,
+                    color:i<paso?C.ok:i===paso?C.brand:C.dim,display:"flex",alignItems:"center",gap:3}}>
                     {i<paso&&<Check size={11}/>}{s}
                   </span>
                   {i<PASOS.length-1&&<span style={{fontSize:12,color:C.dim,margin:"0 6px"}}>›</span>}
@@ -520,48 +771,46 @@ function WizardImport({ proveedores, filas, setFilas, plantillas, setPlantillas,
               ))}
             </div>
           </div>
-          <button onClick={onCerrar}
-            style={{ background:"none", border:"none", color:C.dim, cursor:"pointer", padding:6, display:"flex" }}>
-            <X size={18}/>
-          </button>
+          <button onClick={onCerrar} style={{background:"none",border:"none",color:C.dim,cursor:"pointer",padding:6,display:"flex"}}><X size={18}/></button>
         </div>
 
         {/* Cuerpo */}
-        <div style={{ flex:1, overflowY:"auto", padding:24 }}>
-          {paso===0 && <PasoArchivo proveedores={proveedores} provId={provId} setProvId={setProvId}
-            plantillaExiste={plantillaExiste} onFile={leerArchivo}/>}
-          {paso===1 && <PasoColumnas hojas={hojas} hojaIdx={hojaIdx} onHoja={onHojaChange}
-            headerRow={headerRow} setHeaderRow={setHeaderRow}
-            headers={headers} preview={preview}
-            rolDeCol={rolDeCol} onAsignar={asignarCol}
-            colMap={colMap} activeRole={activeRole} setActiveRole={setActiveRole}
-            prov={prov} plantillaExiste={plantillaExiste}/>}
-          {paso===2 && <PasoRevision items={items} selec={selec} onToggle={toggleSelec}
-            onToggleAll={()=>selec.length===items.length?setSelec([]):setSelec(items.map((_,i)=>i))}
-            prov={prov} guardarPl={guardarPl} setGuardarPl={setGuardarPl}
-            plantillaExiste={plantillaExiste}/>}
-          {paso===3 && <PasoCompletado resultado={resultado}/>}
+        <div style={{flex:1,overflowY:"auto",padding:24}}>
+          {paso===0&&(
+            <PasoArchivo proveedores={proveedores} provId={provId} setProvId={setProvId}
+              plantillaExiste={plantillaExiste} onFile={leerArchivo}/>
+          )}
+          {paso===1&&(
+            <PasoColumnas hojas={hojas} hojaIdx={hojaIdx} onHoja={onHojaChange}
+              headerRow={headerRow} setHeaderRow={setHeaderRow}
+              headers={headers} preview={preview} rolDeCol={rolDeCol} onAsignar={asignarCol}
+              colMap={colMap} activeRole={activeRole} setActiveRole={setActiveRole}
+              prov={prov} plantillaExiste={plantillaExiste} coloresByKey={coloresByKey}/>
+          )}
+          {paso===2&&(
+            <PasoRevision items={items} selec={selec} onToggle={toggleSelec}
+              onToggleAll={()=>selec.length===items.length?setSelec([]):setSelec(items.map((_,i)=>i))}
+              prov={prov} guardarPl={guardarPl} setGuardarPl={setGuardarPl}
+              plantillaExiste={plantillaExiste}/>
+          )}
+          {paso===3&&<PasoCompletado resultado={resultado}/>}
         </div>
 
         {/* Footer */}
-        <div style={{ padding:"14px 24px", borderTop:`1px solid ${C.line}`,
-          display:"flex", justifyContent:"space-between", alignItems:"center", gap:8 }}>
+        <div style={{padding:"14px 24px",borderTop:`1px solid ${C.line}`,
+          display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
           <div>
             {paso===1&&<Btn outline onClick={()=>setPaso(0)}>← Volver</Btn>}
             {paso===2&&<Btn outline onClick={()=>setPaso(1)}>← Volver</Btn>}
           </div>
           <div>
             {paso===0&&<span style={{fontSize:12.5,color:C.sub}}>Selecciona proveedor y sube su Excel</span>}
-            {paso===1&&(
-              <Btn onClick={irARevision} disabled={colMap.nombre==null}>
-                Ver revisión ({datos.slice(headerRow+1).filter(r=>r.some(c=>String(c).trim())).length} filas) →
-              </Btn>
-            )}
-            {paso===2&&(
-              <Btn onClick={ejecutarImport} disabled={importando||selec.length===0}>
-                {importando?"Importando…":`Importar ${selec.length} ítem${selec.length===1?"":"s"}`}
-              </Btn>
-            )}
+            {paso===1&&<Btn onClick={irARevision} disabled={colMap.nombre==null}>
+              Ver revisión ({datos.slice(headerRow+1).filter(r=>r.some(c=>String(c).trim())).length} filas) →
+            </Btn>}
+            {paso===2&&<Btn onClick={ejecutarImport} disabled={importando||selec.length===0}>
+              {importando?"Importando…":`Importar ${selec.length} ítem${selec.length===1?"":"s"}`}
+            </Btn>}
             {paso===3&&<Btn onClick={onCerrar}>Cerrar</Btn>}
           </div>
         </div>
@@ -570,141 +819,110 @@ function WizardImport({ proveedores, filas, setFilas, plantillas, setPlantillas,
   );
 }
 
-// ── Paso 0 ─────────────────────────────────────────────────────
-function PasoArchivo({ proveedores, provId, setProvId, plantillaExiste, onFile }) {
-  const inputRef = useRef();
-  return (
-    <div style={{ maxWidth:480 }}>
-      <div style={{ marginBottom:20 }}>
-        <label style={{ fontSize:12, color:C.sub, display:"block", marginBottom:5 }}>Proveedor *</label>
+function PasoArchivo({proveedores,provId,setProvId,plantillaExiste,onFile}){
+  const inputRef=useRef();
+  return(
+    <div style={{maxWidth:480}}>
+      <div style={{marginBottom:20}}>
+        <label style={{fontSize:12,color:C.sub,display:"block",marginBottom:5}}>Proveedor *</label>
         <select value={provId} onChange={e=>setProvId(e.target.value)}
-          style={{ width:"100%", padding:"9px 10px", border:`1px solid ${C.strong}`, borderRadius:8,
-            fontSize:14, fontFamily:"inherit", background:C.bg, color:C.ink }}>
+          style={{width:"100%",padding:"9px 10px",border:`1px solid ${C.strong}`,borderRadius:8,
+            fontSize:14,fontFamily:"inherit",background:C.bg,color:C.ink}}>
           {proveedores.map(p=><option key={p.id} value={p.id}>{p.nombre}</option>)}
         </select>
-        {plantillaExiste&&(
-          <p style={{ fontSize:12, color:C.ok, marginTop:6 }}>
-            ✓ Plantilla guardada — las columnas se pre-asignarán en el paso siguiente.
-          </p>
-        )}
+        {plantillaExiste&&<p style={{fontSize:12,color:C.ok,marginTop:6}}>✓ Plantilla guardada — columnas pre-asignadas.</p>}
       </div>
-      <label style={{ fontSize:12, color:C.sub, display:"block", marginBottom:5 }}>Archivo Excel *</label>
+      <label style={{fontSize:12,color:C.sub,display:"block",marginBottom:5}}>Archivo Excel *</label>
       <div onClick={()=>inputRef.current?.click()}
-        style={{ border:`2px dashed ${C.strong}`, borderRadius:12, padding:"32px 24px",
-          textAlign:"center", cursor:"pointer", color:C.sub, transition:"border-color .15s" }}
+        style={{border:`2px dashed ${C.strong}`,borderRadius:12,padding:"32px 24px",textAlign:"center",
+          cursor:"pointer",color:C.sub,transition:"border-color .15s"}}
         onMouseEnter={e=>e.currentTarget.style.borderColor=C.brand}
         onMouseLeave={e=>e.currentTarget.style.borderColor=C.strong}
         onDragOver={e=>e.preventDefault()}
-        onDrop={e=>{ e.preventDefault(); const f=e.dataTransfer.files[0]; if(f) onFile(f); }}>
-        <Upload size={28} style={{ opacity:.4, marginBottom:10 }}/>
-        <p style={{ fontSize:14, marginBottom:4 }}>Arrastra aquí o haz clic para seleccionar</p>
-        <p style={{ fontSize:12 }}>.xlsx · .xls · .csv</p>
+        onDrop={e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)onFile(f);}}>
+        <Upload size={28} style={{opacity:.4,marginBottom:10}}/>
+        <p style={{fontSize:14,marginBottom:4}}>Arrastra aquí o haz clic para seleccionar</p>
+        <p style={{fontSize:12}}>.xlsx · .xls · .csv</p>
       </div>
-      <input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" style={{ display:"none" }}
-        onChange={e=>{ if(e.target.files[0]) onFile(e.target.files[0]); }}/>
+      <input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" style={{display:"none"}}
+        onChange={e=>{if(e.target.files[0])onFile(e.target.files[0]);}}/>
     </div>
   );
 }
 
-// ── Paso 1 ─────────────────────────────────────────────────────
-function PasoColumnas({ hojas, hojaIdx, onHoja, headerRow, setHeaderRow,
-  headers, preview, rolDeCol, onAsignar, colMap, activeRole, setActiveRole,
-  prov, plantillaExiste }) {
-
-  const coloresByKey = Object.fromEntries(ROLES_WIZARD.map(r=>[r.key,r.color]));
-
-  return (
+function PasoColumnas({hojas,hojaIdx,onHoja,headerRow,setHeaderRow,headers,preview,
+  rolDeCol,onAsignar,colMap,activeRole,setActiveRole,prov,plantillaExiste,coloresByKey}){
+  return(
     <div>
-      <div style={{ display:"flex", gap:12, marginBottom:16, flexWrap:"wrap", alignItems:"flex-end" }}>
+      <div style={{display:"flex",gap:12,marginBottom:16,flexWrap:"wrap",alignItems:"flex-end"}}>
         {hojas.length>1&&(
           <div>
-            <label style={{ fontSize:12, color:C.sub, display:"block", marginBottom:4 }}>Hoja</label>
+            <label style={{fontSize:12,color:C.sub,display:"block",marginBottom:4}}>Hoja</label>
             <select value={hojaIdx} onChange={e=>onHoja(+e.target.value)}
-              style={{ padding:"7px 10px", border:`1px solid ${C.strong}`, borderRadius:8,
-                fontSize:13.5, fontFamily:"inherit", background:C.bg, color:C.ink }}>
+              style={{padding:"7px 10px",border:`1px solid ${C.strong}`,borderRadius:8,fontSize:13.5,fontFamily:"inherit",background:C.bg,color:C.ink}}>
               {hojas.map((h,i)=><option key={i} value={i}>{h.name}</option>)}
             </select>
           </div>
         )}
         <div>
-          <label style={{ fontSize:12, color:C.sub, display:"block", marginBottom:4 }}>Fila cabecera (nº)</label>
+          <label style={{fontSize:12,color:C.sub,display:"block",marginBottom:4}}>Fila cabecera (nº)</label>
           <input type="number" min={1} max={20} value={headerRow+1}
             onChange={e=>setHeaderRow(Math.max(0,+e.target.value-1))}
-            style={{ width:70, padding:"7px 10px", border:`1px solid ${C.strong}`, borderRadius:8,
-              fontSize:13.5, fontFamily:"inherit", background:C.bg, color:C.ink, textAlign:"center" }}/>
+            style={{width:70,padding:"7px 10px",border:`1px solid ${C.strong}`,borderRadius:8,
+              fontSize:13.5,fontFamily:"inherit",background:C.bg,color:C.ink,textAlign:"center"}}/>
         </div>
       </div>
-
       {plantillaExiste&&(
-        <div style={{ background:C.okSoft, border:`1px solid ${C.ok}33`, borderRadius:8,
-          padding:"8px 12px", marginBottom:12, fontSize:12.5, color:C.ok }}>
-          Plantilla de <strong>{prov?.nombre}</strong> aplicada. Ajusta si el formato ha cambiado.
+        <div style={{background:C.okSoft,border:`1px solid ${C.ok}33`,borderRadius:8,
+          padding:"8px 12px",marginBottom:12,fontSize:12.5,color:C.ok}}>
+          Plantilla de <strong>{prov?.nombre}</strong> aplicada.
         </div>
       )}
-
-      {/* Selector de rol activo */}
-      <div style={{ display:"flex", alignItems:"center", gap:8, marginBottom:10, flexWrap:"wrap" }}>
-        <span style={{ fontSize:12.5, color:C.sub }}>Asignar columna como:</span>
-        {ROLES_WIZARD.map(r => {
-          const asignada = colMap[r.key]!=null;
-          const activo   = activeRole===r.key;
-          return (
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+        <span style={{fontSize:12.5,color:C.sub}}>Asignar columna como:</span>
+        {ROLES_WIZARD.map(r=>{
+          const asignada=colMap[r.key]!=null;const activo=activeRole===r.key;
+          return(
             <button key={r.key} onClick={()=>setActiveRole(r.key)}
-              style={{ display:"flex", alignItems:"center", gap:5, padding:"4px 10px", borderRadius:999,
+              style={{display:"flex",alignItems:"center",gap:5,padding:"4px 10px",borderRadius:999,
                 border:`1.5px solid ${asignada?r.color:activo?r.color:C.strong}`,
                 background:activo?r.color:asignada?`${r.color}20`:"transparent",
                 color:activo?"#fff":asignada?r.color:C.sub,
-                fontSize:12, fontWeight:activo||asignada?700:400, cursor:"pointer", fontFamily:"inherit",
-                transition:"all .1s" }}>
-              {asignada&&<Check size={10}/>}
-              {r.label}{r.req?" *":""}
+                fontSize:12,fontWeight:activo||asignada?700:400,cursor:"pointer",fontFamily:"inherit"}}>
+              {asignada&&<Check size={10}/>}{r.label}{r.req?" *":""}
             </button>
           );
         })}
       </div>
-      <p style={{ fontSize:12, color:C.sub, marginBottom:8 }}>
-        Haz clic en una cabecera de la tabla para asignarla al rol seleccionado (resaltado arriba).
-        Vuelve a hacer clic en una columna ya asignada para quitarle el rol.
+      <p style={{fontSize:12,color:C.sub,marginBottom:8}}>
+        Haz clic en una cabecera para asignarla al rol seleccionado. Clic en columna ya asignada para quitarla.
       </p>
-
-      {headers.length===0 ? (
-        <p style={{ color:C.dim, fontSize:13 }}>Sin datos. Ajusta la fila de cabecera.</p>
-      ) : (
-        <div style={{ overflowX:"auto", borderRadius:10, border:`1px solid ${C.line}` }}>
-          <table style={{ borderCollapse:"collapse", width:"100%" }}>
+      {headers.length===0?(
+        <p style={{color:C.dim,fontSize:13}}>Sin datos. Ajusta la fila de cabecera.</p>
+      ):(
+        <div style={{overflowX:"auto",borderRadius:10,border:`1px solid ${C.line}`}}>
+          <table style={{borderCollapse:"collapse",width:"100%"}}>
             <thead>
               <tr>
-                {headers.map((h,i)=>{
-                  const rol = rolDeCol(i);
-                  const color = rol?coloresByKey[rol]:null;
-                  return (
-                    <th key={i} onClick={()=>onAsignar(i)}
-                      style={{ padding:"10px 12px", textAlign:"left", fontSize:13, fontWeight:600,
-                        background:color||C.s2, color:color?"#fff":C.ink,
-                        border:`1px solid ${C.line}`, cursor:"pointer", userSelect:"none",
-                        whiteSpace:"nowrap", transition:"background .1s" }}>
-                      {rol&&<span style={{fontSize:10,marginRight:4,opacity:.9}}>
-                        {ROLES_WIZARD.find(r=>r.key===rol)?.label}{" "}
-                      </span>}
-                      {String(h||"(vacío)")}
-                    </th>
-                  );
+                {headers.map((h,i)=>{const rol=rolDeCol(i);const color=rol?coloresByKey[rol]:null;
+                  return(<th key={i} onClick={()=>onAsignar(i)}
+                    style={{padding:"10px 12px",textAlign:"left",fontSize:13,fontWeight:600,
+                      background:color||C.s2,color:color?"#fff":C.ink,
+                      border:`1px solid ${C.line}`,cursor:"pointer",userSelect:"none",whiteSpace:"nowrap"}}>
+                    {rol&&<span style={{fontSize:10,marginRight:4}}>{ROLES_WIZARD.find(r=>r.key===rol)?.label}{" "}</span>}
+                    {String(h||"(vacío)")}
+                  </th>);
                 })}
               </tr>
             </thead>
             <tbody>
               {preview.map((row,ri)=>(
-                <tr key={ri} style={{ background:ri%2===0?C.bg:C.surface }}>
-                  {headers.map((_,ci)=>{
-                    const rol=rolDeCol(ci);
-                    const color=rol?coloresByKey[rol]:null;
-                    return (
-                      <td key={ci} style={{ padding:"7px 12px", fontSize:12.5, color:C.ink,
-                        border:`1px solid ${C.line}`,
-                        background:color?`${color}15`:"inherit" }}>
-                        {String(row[ci]??"")}
-                      </td>
-                    );
+                <tr key={ri} style={{background:ri%2===0?C.bg:C.surface}}>
+                  {headers.map((_,ci)=>{const rol=rolDeCol(ci);const color=rol?coloresByKey[rol]:null;
+                    return(<td key={ci} style={{padding:"7px 12px",fontSize:12.5,color:C.ink,
+                      border:`1px solid ${C.line}`,background:color?`${color}15`:"inherit"}}>
+                      {String(row[ci]??"")}
+                    </td>);
                   })}
                 </tr>
               ))}
@@ -716,66 +934,60 @@ function PasoColumnas({ hojas, hojaIdx, onHoja, headerRow, setHeaderRow,
   );
 }
 
-// ── Paso 2 ─────────────────────────────────────────────────────
-function PasoRevision({ items, selec, onToggle, onToggleAll, prov, guardarPl, setGuardarPl, plantillaExiste }) {
-  const rolesPresentes = ROLES_WIZARD.filter(r => items.some(it=>it[r.key]));
-  const nuevos    = items.filter(it=>it.tipo==="nuevo").length;
-  const actualiza = items.filter(it=>it.tipo==="actualiza").length;
-
-  return (
+function PasoRevision({items,selec,onToggle,onToggleAll,prov,guardarPl,setGuardarPl,plantillaExiste}){
+  const rolesPresentes=ROLES_WIZARD.filter(r=>items.some(it=>it[r.key]));
+  const nuevos=items.filter(it=>it.tipo==="nuevo").length;
+  const actualiza=items.filter(it=>it.tipo==="actualiza").length;
+  return(
     <div>
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12 }}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
         <div>
-          <p style={{ fontSize:14, color:C.ink, fontWeight:600, marginBottom:3 }}>
-            {items.length} ítems detectados para{" "}
-            <span style={{ color:prov?.color }}>{prov?.nombre}</span>
+          <p style={{fontSize:14,color:C.ink,fontWeight:600,marginBottom:3}}>
+            {items.length} ítems para <span style={{color:prov?.color}}>{prov?.nombre}</span>
           </p>
-          <p style={{ fontSize:12.5, color:C.sub }}>
+          <p style={{fontSize:12.5,color:C.sub}}>
             {nuevos>0&&<span style={{color:C.brand,marginRight:12}}>+ {nuevos} nuevas filas</span>}
             {actualiza>0&&<span style={{color:C.ok}}>↻ {actualiza} actualizaciones</span>}
           </p>
         </div>
-        <button onClick={onToggleAll}
-          style={{ fontSize:12, color:C.brand, background:"none", border:"none",
-            cursor:"pointer", fontFamily:"inherit" }}>
+        <button onClick={onToggleAll} style={{fontSize:12,color:C.brand,background:"none",border:"none",cursor:"pointer",fontFamily:"inherit"}}>
           {selec.length===items.length?"Desmarcar todo":"Marcar todo"}
         </button>
       </div>
-
-      <div style={{ maxHeight:300, overflowY:"auto", borderRadius:10, border:`1px solid ${C.line}` }}>
-        <table style={{ borderCollapse:"collapse", width:"100%" }}>
+      <div style={{maxHeight:300,overflowY:"auto",borderRadius:10,border:`1px solid ${C.line}`}}>
+        <table style={{borderCollapse:"collapse",width:"100%"}}>
           <thead>
-            <tr style={{ background:C.s2, position:"sticky", top:0, zIndex:1 }}>
-              <th style={{ width:36, padding:"9px 10px", borderBottom:`1px solid ${C.line}` }}/>
+            <tr style={{background:C.s2,position:"sticky",top:0,zIndex:1}}>
+              <th style={{width:36,padding:"9px 10px",borderBottom:`1px solid ${C.line}`}}/>
               {rolesPresentes.map(r=>(
-                <th key={r.key} style={{ padding:"9px 12px", textAlign:"left",
-                  fontSize:11, fontWeight:700, color:C.sub, letterSpacing:".06em",
-                  textTransform:"uppercase", borderBottom:`1px solid ${C.line}` }}>
+                <th key={r.key} style={{padding:"9px 12px",textAlign:"left",fontSize:11,fontWeight:700,
+                  color:C.sub,letterSpacing:".06em",textTransform:"uppercase",borderBottom:`1px solid ${C.line}`}}>
                   {r.label}
                 </th>
               ))}
-              <th style={{ padding:"9px 12px", textAlign:"center", fontSize:11, fontWeight:700,
-                color:C.sub, letterSpacing:".06em", textTransform:"uppercase",
-                borderBottom:`1px solid ${C.line}` }}>Acción</th>
+              <th style={{padding:"9px 12px",textAlign:"center",fontSize:11,fontWeight:700,
+                color:C.sub,letterSpacing:".06em",textTransform:"uppercase",borderBottom:`1px solid ${C.line}`}}>
+                Acción
+              </th>
             </tr>
           </thead>
           <tbody>
             {items.map((it,i)=>{
               const checked=selec.includes(i);
-              return (
-                <tr key={i} style={{ background:checked?(i%2===0?C.bg:C.surface):"transparent", opacity:checked?1:.4 }}>
-                  <td style={{ padding:"7px 10px", textAlign:"center", borderBottom:`1px solid ${C.line}` }}>
-                    <input type="checkbox" checked={checked} onChange={()=>onToggle(i)} style={{ cursor:"pointer" }}/>
+              return(
+                <tr key={i} style={{background:checked?(i%2===0?C.bg:C.surface):"transparent",opacity:checked?1:.4}}>
+                  <td style={{padding:"7px 10px",textAlign:"center",borderBottom:`1px solid ${C.line}`}}>
+                    <input type="checkbox" checked={checked} onChange={()=>onToggle(i)} style={{cursor:"pointer"}}/>
                   </td>
                   {rolesPresentes.map(r=>(
-                    <td key={r.key} style={{ padding:"7px 12px", fontSize:13, color:C.ink, borderBottom:`1px solid ${C.line}` }}>
+                    <td key={r.key} style={{padding:"7px 12px",fontSize:13,color:C.ink,borderBottom:`1px solid ${C.line}`}}>
                       {it[r.key]||"—"}
                     </td>
                   ))}
-                  <td style={{ padding:"7px 12px", textAlign:"center", borderBottom:`1px solid ${C.line}` }}>
+                  <td style={{padding:"7px 12px",textAlign:"center",borderBottom:`1px solid ${C.line}`}}>
                     {it.tipo==="nuevo"
-                      ? <span style={{fontSize:11,fontWeight:700,color:C.brand,background:C.brandSoft,padding:"2px 8px",borderRadius:999}}>+ Nueva fila</span>
-                      : <span style={{fontSize:11,fontWeight:700,color:C.ok,background:C.okSoft,padding:"2px 8px",borderRadius:999}}>↻ Actualiza</span>
+                      ?<span style={{fontSize:11,fontWeight:700,color:C.brand,background:C.brandSoft,padding:"2px 8px",borderRadius:999}}>+ Nueva fila</span>
+                      :<span style={{fontSize:11,fontWeight:700,color:C.ok,background:C.okSoft,padding:"2px 8px",borderRadius:999}}>↻ Actualiza</span>
                     }
                   </td>
                 </tr>
@@ -784,43 +996,32 @@ function PasoRevision({ items, selec, onToggle, onToggleAll, prov, guardarPl, se
           </tbody>
         </table>
       </div>
-
-      <label style={{ display:"flex", alignItems:"center", gap:8, marginTop:16,
-        cursor:"pointer", fontSize:13.5, color:C.ink }}>
-        <input type="checkbox" checked={guardarPl} onChange={e=>setGuardarPl(e.target.checked)} style={{ cursor:"pointer" }}/>
-        {plantillaExiste
-          ?`Actualizar plantilla de columnas para "${prov?.nombre}"`
-          :`Guardar plantilla de columnas para "${prov?.nombre}"`}
+      <label style={{display:"flex",alignItems:"center",gap:8,marginTop:16,cursor:"pointer",fontSize:13.5,color:C.ink}}>
+        <input type="checkbox" checked={guardarPl} onChange={e=>setGuardarPl(e.target.checked)} style={{cursor:"pointer"}}/>
+        {plantillaExiste?`Actualizar plantilla de columnas para "${prov?.nombre}"`:`Guardar plantilla para "${prov?.nombre}"`}
       </label>
-      <p style={{ fontSize:12, color:C.sub, marginTop:4, marginLeft:24 }}>
+      <p style={{fontSize:12,color:C.sub,marginTop:4,marginLeft:24}}>
         La próxima importación de este proveedor pre-asignará las columnas automáticamente.
       </p>
     </div>
   );
 }
 
-// ── Paso 3 ─────────────────────────────────────────────────────
-function PasoCompletado({ resultado }) {
-  return (
-    <div style={{ textAlign:"center", padding:"32px 24px" }}>
-      <div style={{ width:56, height:56, borderRadius:999, background:C.okSoft, color:C.ok,
-        display:"grid", placeItems:"center", margin:"0 auto 16px" }}>
+function PasoCompletado({resultado}){
+  return(
+    <div style={{textAlign:"center",padding:"32px 24px"}}>
+      <div style={{width:56,height:56,borderRadius:999,background:C.okSoft,color:C.ok,
+        display:"grid",placeItems:"center",margin:"0 auto 16px"}}>
         <Check size={28}/>
       </div>
-      <h3 style={{ fontSize:18, color:C.ink, marginBottom:8 }}>Importación completada</h3>
+      <h3 style={{fontSize:18,color:C.ink,marginBottom:8}}>Importación completada</h3>
       {resultado&&(
-        <p style={{ fontSize:14, color:C.sub, lineHeight:1.7 }}>
-          {resultado.nuevos>0&&(
-            <><strong style={{color:C.brand}}>{resultado.nuevos} nuevas filas</strong> añadidas a la correlación.<br/></>
-          )}
-          {resultado.actualizados>0&&(
-            <><strong style={{color:C.ok}}>{resultado.actualizados} filas actualizadas</strong> con los datos del proveedor.</>
-          )}
+        <p style={{fontSize:14,color:C.sub,lineHeight:1.7}}>
+          {resultado.nuevos>0&&<><strong style={{color:C.brand}}>{resultado.nuevos} nuevas filas</strong> añadidas.<br/></>}
+          {resultado.actualizados>0&&<><strong style={{color:C.ok}}>{resultado.actualizados} filas actualizadas</strong> con datos del proveedor.</>}
         </p>
       )}
-      <p style={{ fontSize:13, color:C.dim, marginTop:10 }}>
-        Puedes editar los alias directamente en la tabla de correlación.
-      </p>
+      <p style={{fontSize:13,color:C.dim,marginTop:10}}>Edita los aliases en la tabla de correlación.</p>
     </div>
   );
 }
@@ -832,42 +1033,51 @@ export default function TabDistribuidor({ empresa }) {
   const cid = empresa?.id||"local";
 
   const [proveedores, setProveedoresRaw] = useState(()=>{
-    try { return JSON.parse(localStorage.getItem(KEY_PROVS(cid)))||[]; } catch { return []; }
+    try{return JSON.parse(localStorage.getItem(KEY_PROVS(cid)))||[];}catch{return[];}
   });
   const [filas, setFilasRaw] = useState(()=>{
-    try { return JSON.parse(localStorage.getItem(KEY_FILAS(cid)))||[]; } catch { return []; }
+    try{return JSON.parse(localStorage.getItem(KEY_FILAS(cid)))||[];}catch{return[];}
+  });
+  const [aliases, setAliasesRaw] = useState(()=>{
+    try{return JSON.parse(localStorage.getItem(KEY_ALIAS(cid)))||[];}catch{return[];}
   });
   const [plantillas, setPlantillasRaw] = useState(()=>{
-    try { return JSON.parse(localStorage.getItem(KEY_PLANTILLAS(cid)))||[]; } catch { return []; }
+    try{return JSON.parse(localStorage.getItem(KEY_PLANTILLAS(cid)))||[];}catch{return[];}
   });
+
   const [subTab, setSubTab] = useState("correlacion");
   const [wizard, setWizard] = useState(false);
 
-  function setProveedores(fn) {
-    setProveedoresRaw(ps=>{ const n=typeof fn==="function"?fn(ps):fn; localStorage.setItem(KEY_PROVS(cid),JSON.stringify(n)); return n; });
+  function setProveedores(fn){
+    setProveedoresRaw(ps=>{const n=typeof fn==="function"?fn(ps):fn;localStorage.setItem(KEY_PROVS(cid),JSON.stringify(n));return n;});
   }
-  function setFilas(fn) {
-    setFilasRaw(fs=>{ const n=typeof fn==="function"?fn(fs):fn; localStorage.setItem(KEY_FILAS(cid),JSON.stringify(n)); return n; });
+  function setFilas(fn){
+    setFilasRaw(fs=>{const n=typeof fn==="function"?fn(fs):fn;localStorage.setItem(KEY_FILAS(cid),JSON.stringify(n));return n;});
   }
-  function setPlantillas(fn) {
-    setPlantillasRaw(ps=>{ const n=typeof fn==="function"?fn(ps):fn; localStorage.setItem(KEY_PLANTILLAS(cid),JSON.stringify(n)); return n; });
+  function setAliases(fn){
+    setAliasesRaw(as=>{const n=typeof fn==="function"?fn(as):fn;localStorage.setItem(KEY_ALIAS(cid),JSON.stringify(n));return n;});
+  }
+  function setPlantillas(fn){
+    setPlantillasRaw(ps=>{const n=typeof fn==="function"?fn(ps):fn;localStorage.setItem(KEY_PLANTILLAS(cid),JSON.stringify(n));return n;});
   }
 
+  const SUB_TABS = [
+    { id:"correlacion", label:"Correlación"                         },
+    { id:"alias",       label:`Alias (${aliases.length})`           },
+    { id:"proveedores", label:`Proveedores (${proveedores.length})` },
+  ];
+
   return (
-    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", fontFamily:"var(--font-body)" }}>
+    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",fontFamily:"var(--font-body)"}}>
       {/* Sub-tabs */}
-      <div style={{ display:"flex", borderBottom:`1px solid ${C.line}`,
-        padding:"0 24px", background:C.surface, flexShrink:0 }}>
-        {[
-          { id:"correlacion", label:"Correlación" },
-          { id:"proveedores", label:`Proveedores (${proveedores.length})` },
-        ].map(t=>(
+      <div style={{display:"flex",borderBottom:`1px solid ${C.line}`,padding:"0 24px",background:C.surface,flexShrink:0}}>
+        {SUB_TABS.map(t=>(
           <button key={t.id} onClick={()=>setSubTab(t.id)}
-            style={{ padding:"12px 18px", background:"none", border:"none", cursor:"pointer",
-              fontFamily:"inherit", fontSize:13.5, fontWeight:subTab===t.id?700:400,
+            style={{padding:"12px 18px",background:"none",border:"none",cursor:"pointer",
+              fontFamily:"inherit",fontSize:13.5,fontWeight:subTab===t.id?700:400,
               color:subTab===t.id?C.brand:C.sub,
               borderBottom:subTab===t.id?`2px solid ${C.brand}`:"2px solid transparent",
-              marginBottom:-1 }}>
+              marginBottom:-1}}>
             {t.label}
           </button>
         ))}
@@ -875,16 +1085,23 @@ export default function TabDistribuidor({ empresa }) {
 
       {subTab==="correlacion"&&(
         <TablaCorrelacion filas={filas} setFilas={setFilas}
-          proveedores={proveedores} onImportar={()=>setWizard(true)}/>
+          proveedores={proveedores} aliases={aliases}
+          onImportar={()=>setWizard(true)}/>
+      )}
+      {subTab==="alias"&&(
+        <div style={{flex:1,overflowY:"auto"}}>
+          <PanelAlias aliases={aliases} setAliases={setAliases}/>
+        </div>
       )}
       {subTab==="proveedores"&&(
-        <div style={{ flex:1, overflowY:"auto" }}>
+        <div style={{flex:1,overflowY:"auto"}}>
           <PanelProveedores proveedores={proveedores} setProveedores={setProveedores}/>
         </div>
       )}
 
       {wizard&&proveedores.length>0&&(
-        <WizardImport proveedores={proveedores} filas={filas} setFilas={setFilas}
+        <WizardImport proveedores={proveedores} aliases={aliases}
+          filas={filas} setFilas={setFilas}
           plantillas={plantillas} setPlantillas={setPlantillas}
           onCerrar={()=>setWizard(false)}/>
       )}
