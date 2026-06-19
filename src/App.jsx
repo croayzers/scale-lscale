@@ -23,6 +23,7 @@ import TabInventario from "./TabInventario.jsx";
 import TabFlota from "./TabFlota.jsx";
 import TabEtiquetas from "./TabEtiquetas.jsx";
 import TabCesta from "./TabCesta.jsx";
+import TabDistribuidor from "./TabDistribuidor.jsx";
 import { ChatBase, BellButton, PresenceAvatars, leerCmdDeUrl, crearNotificacion as crearNotifEvento, serializarToken } from "@scale/shared/chat";
 import { cargarApps, crearResolveAppUrl } from "@scale/shared/registry";
 import { Package, Shield, ClipboardCheck, Truck, Tag, ShoppingCart } from "lucide-react";
@@ -57,8 +58,9 @@ const TABS = [
   { id: "retorno",    label: "Retorno/Cierre",  Icon: RotateCcw      },
   { id: "flota",      label: "Flota",           Icon: Truck          },
   { id: "etiquetas",  label: "Etiquetas",       Icon: Tag            },
-  { id: "cesta",      label: "Cesta",           Icon: ShoppingCart   },
-  { id: "config",     label: "Config",          Icon: Settings       },
+  { id: "cesta",         label: "Cesta",        Icon: ShoppingCart   },
+  { id: "distribuidor", label: "Distribuidor",  Icon: Building2      },
+  { id: "config",       label: "Config",        Icon: Settings       },
 ];
 
 // MARK: - AvisoPortal
@@ -610,6 +612,7 @@ export default function App() {
           {tab === "flota"     && <TabFlota pedidos={pedidos} vehiculosEmpresa={vehiculosEmpresa} empresa={empresa} formatoFecha={formatoFecha} L={L}/>}
           {tab === "etiquetas" && <TabEtiquetas pedidos={pedidos} plantillas={plantillasEtiquetas} onGuardarPlantillas={guardarPlantillasEtiquetas} L={L}/>}
           {tab === "cesta"     && <TabCesta cesta={cesta} setCesta={setCesta} materiales={materiales} setMateriales={setMateriales} almacenes={almacenes} modo={modo} empresa={empresa} sesion={sesion} colsIniciales={cestaCols} onGuardarCols={guardarCestaCols} onNotificarEvento={notificarEvento} L={L}/>}
+          {tab === "distribuidor" && <TabDistribuidor empresa={empresa}/>}
           {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={puedeAdmin} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} portalUrl={import.meta.env?.VITE_PORTAL_URL || "http://localhost:3000"} L={L}/>}
         </div>
 
