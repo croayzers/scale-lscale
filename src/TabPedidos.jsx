@@ -18,10 +18,9 @@ import {
 import { useL } from "./lib/i18n.js";
 import { parsearExcelPedido } from "./lib/parseExcelPedido.js";
 import ExcelConfigurador from "./ExcelConfigurador.jsx";
-import { guardarPedido, borrarPedido, cargarMiembrosEmpresa, enviarNotificacionPedido, recargarMateriales, guardarPrefs } from "./lib/data.js";
+import { guardarPedido, borrarPedido, cargarMiembrosEmpresa, enviarNotificacionPedido, recargarMateriales, guardarPrefs, cargarProveedores, cargarCorrelacionesDeMateriales } from "./lib/data.js";
 import { fmtFecha, siguienteCodigo } from "./lib/fechas.js";
 import { conflictosPedido, calcularConflictosStock } from "./lib/stockConflictos.js";
-import { cargarDistribuidores, nombreProveedorDeLinea, resumenProveedorPedido } from "./lib/distribuidores.js";
 
 // MARK: - Constantes UI (C, CHIP_ESTADO, ESTADOS)
 /* ─── Paleta ──────────────────────────────────────────────────────────────── */
@@ -870,15 +869,45 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
   const [stockOk,          setStockOk]          = useState(false);
   const [errorComprobar,   setErrorComprobar]   = useState(null);
   const [checkTick,        setCheckTick]        = useState(0);
-  const [distData,         setDistData]         = useState(() => cargarDistribuidores(empresaId));
+  // ── Proveedores (Supabase): traducción de la compra por proveedor ──
+  // Proveedor por defecto del pedido (selector general) + override por línea.
+  // Solo visual: NO se persiste en el pedido.
+  const [provs,        setProvs]        = useState([]);
+  const [corr,         setCorr]         = useState({}); // corr[material_id][proveedor_id] = {nombre_proveedor,...}
+  const [provDefecto,  setProvDefecto]  = useState("");
+  const [provPorLinea, setProvPorLinea] = useState({}); // { [globalIdx]: proveedorId }
 
   useEffect(() => {
     setP({ ...pedido });
+    setProvPorLinea({}); // al cambiar de pedido, reset de overrides
   }, [pedido]);
 
+  // Carga proveedores + correlaciones de los materiales de ESTE pedido (selectiva).
   useEffect(() => {
-    setDistData(cargarDistribuidores(empresaId));
-  }, [empresaId, materiales]);
+    const esSb = empresaId && empresaId !== "demo" && empresaId !== "local";
+    if (!esSb) { setProvs([]); setCorr({}); return; }
+    let vivo = true;
+    (async () => {
+      try {
+        const ps = await cargarProveedores(empresaId);
+        if (!vivo) return;
+        setProvs(ps);
+        const matIds = [...new Set((pedido.lineas || []).map(l => l.material_id).filter(Boolean))];
+        const cs = await cargarCorrelacionesDeMateriales(matIds);
+        if (!vivo) return;
+        const mapa = {};
+        cs.forEach(c => { (mapa[c.material_id] ||= {})[c.proveedor_id] = c; });
+        setCorr(mapa);
+      } catch (e) { console.warn("[Pedido/proveedores]", e?.message); }
+    })();
+    return () => { vivo = false; };
+  }, [empresaId, pedido]);
+
+  // Nombre de una línea para un proveedor (traducido si hay correlación).
+  const nombreParaProv = (item, provId) => {
+    if (!provId || !item?.material_id) return item?.nombre || "";
+    return corr[item.material_id]?.[provId]?.nombre_proveedor || item?.nombre || "";
+  };
 
   // Scroll a categoría si se abre desde un link de chat con #categoria
   useEffect(() => {
@@ -891,13 +920,26 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
   }, [highlightedCategoria]);
 
   const f = (k) => (v) => setP(prev => ({ ...prev, [k]: v }));
-  const proveedoresPedido = distData?.proveedores || [];
-  const filasProveedor = distData?.filas || [];
-  const proveedorSel = proveedoresPedido.find((prov) => String(prov.id) === String(p.proveedor_id)) || null;
-  const listaProveedor = useMemo(
-    () => resumenProveedorPedido(p, p.proveedor_id, filasProveedor),
-    [p, filasProveedor]
-  );
+  const proveedoresPedido = provs;
+  const proveedorSel = provs.find((prov) => String(prov.id) === String(provDefecto)) || null;
+  // Resumen por línea para el panel de envío (usa el proveedor efectivo de cada línea).
+  const listaProveedor = useMemo(() => (p.lineas || []).map((item, idx) => {
+    const provId = provPorLinea[idx] ?? provDefecto;
+    const datos = item.material_id ? corr[item.material_id]?.[provId] : null;
+    return {
+      key: `${item.material_id ?? item.nombre}_${idx}`,
+      categoria: item.categoria || "(sin categoría)",
+      cantidad: Number(item.cantidad) || 0,
+      unidad: item.unidad || "ud",
+      nombreBase: item.nombre || "",
+      nombreProveedor: datos?.nombre_proveedor || item.nombre || "",
+      referencia: datos?.referencia || null,
+      coste: datos?.coste || null,
+      descuento: datos?.descuento || null,
+      proveedorId: provId,
+      tieneCorrelacion: !!datos?.nombre_proveedor,
+    };
+  }), [p.lineas, provPorLinea, provDefecto, corr]);
 
   // Agrupar líneas por almacén → por categoría
   const almTable = useMemo(() => {
@@ -1017,20 +1059,10 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
           </div>
         )}
         {proveedoresPedido.length > 0 && (
-          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6 }} title={L("Proveedor por defecto del pedido (puedes cambiarlo por línea)","Default supplier (can override per line)")}>
             <select
-              value={p.proveedor_id ?? ""}
-              onChange={e => {
-                const provId = e.target.value || null;
-                const prov = proveedoresPedido.find((x) => String(x.id) === String(provId)) || null;
-                const next = {
-                  ...p,
-                  proveedor_id: provId,
-                  proveedor_nombre: prov?.nombre || null,
-                };
-                setP(next);
-                onSave(next);
-              }}
+              value={provDefecto}
+              onChange={e => { setProvDefecto(e.target.value); setProvPorLinea({}); }}
               style={{ padding:"5px 28px 5px 10px", border:`1px solid ${C.strong}`, borderRadius:999,
                 fontSize:12.5, fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none",
                 cursor:"pointer", appearance:"auto", maxWidth:200 }}>
@@ -1315,8 +1347,10 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
 
                 {cat.items.map((item, i) => {
                   const globalIdx = (p.lineas || []).indexOf(item);
-                  const nombreProveedor = nombreProveedorDeLinea(item, p.proveedor_id, filasProveedor);
-                  const usaNombreProveedor = Boolean(p.proveedor_id) && nombreProveedor !== (item.nombre_original || item.nombre);
+                  // Proveedor efectivo de esta línea: override por línea o el por defecto.
+                  const provLinea = provPorLinea[globalIdx] ?? provDefecto;
+                  const nombreProveedor = nombreParaProv(item, provLinea);
+                  const usaNombreProveedor = Boolean(provLinea) && nombreProveedor !== item.nombre;
                   // Separar roles en "descripcion" (bajo el nombre) y "columna" (columna propia)
                   const rolesDesc = (rolesImport || []).filter(r => r.tipo === "descripcion" && item[r.key]);
                   const rolesCols = (rolesImport || []).filter(r => r.tipo === "columna" && item[r.key]);
@@ -1334,11 +1368,23 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                         {item.categoria || ""}
                       </div>
                       <div style={{ padding:"9px 8px" }}>
-                        <div style={{ fontSize:13.5, color:C.ink }}>{nombreProveedor}</div>
+                        <div style={{ fontSize:13.5, color:C.ink, fontWeight: usaNombreProveedor ? 600 : 400 }}>{nombreProveedor}</div>
                         {usaNombreProveedor && (
                           <div style={{ fontSize:11.5, color:C.sub, marginTop:2 }}>
-                            Estándar: {item.nombre_original || item.nombre}
+                            {L("Mi material","My item")}: {item.nombre}
                           </div>
+                        )}
+                        {/* Override de proveedor por línea (solo visual; vaso a uno, mesa a otro) */}
+                        {provDefecto && provs.length > 0 && item.material_id && (
+                          <select value={provLinea}
+                            onChange={e => setProvPorLinea(m => ({ ...m, [globalIdx]: e.target.value }))}
+                            title={L("Pedir esta línea a otro proveedor","Order this line from another supplier")}
+                            style={{ marginTop:4, padding:"2px 6px", fontSize:11, fontFamily:"inherit",
+                              border:`1px solid ${provLinea!==provDefecto?C.brand:C.line}`, borderRadius:6,
+                              background: provLinea!==provDefecto ? "var(--brand-soft)" : C.s2,
+                              color: provLinea!==provDefecto ? C.brand : C.sub, cursor:"pointer", maxWidth:170 }}>
+                            {provs.map(pr => <option key={pr.id} value={String(pr.id)}>{pr.nombre}{corr[item.material_id]?.[pr.id] ? "" : " ·sin nombre"}</option>)}
+                          </select>
                         )}
                         {item._editado_por && (
                           <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:3 }}>
