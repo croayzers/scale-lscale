@@ -262,11 +262,12 @@ export async function crearMaterial(m, companyId) {
 
 export async function actualizarMaterial(id, cambios) {
   const permitidas = ["referencia","nombre","descripcion","categoria","unidad","stock_actual",
-    "stock_minimo","ubicacion","estado","proveedor","referencia_proveedor","precio_coste","notas","imagen_url"];
+    "stock_minimo","ubicacion","estado","proveedor","referencia_proveedor","precio_coste","notas","imagen_url","almacen_id"];
   const patch = {};
   for (const k of permitidas) if (k in cambios) patch[k] = cambios[k];
   if ("stock_actual" in patch) patch.stock_actual = Number(patch.stock_actual) || 0;
   if ("stock_minimo" in patch) patch.stock_minimo = Number(patch.stock_minimo) || 0;
+  if ("almacen_id" in patch) patch.almacen_id = patch.almacen_id != null ? Number(patch.almacen_id) : null;
   const { data, error } = await lsc().from("materiales").update(patch).eq("id", id).select().single();
   if (error) throw error;
   return mapMaterial(data);

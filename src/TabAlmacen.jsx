@@ -4,7 +4,7 @@ import React, { useState, useRef } from "react";
 import * as XLSX from "xlsx";
 import {
   Search, Columns3, MapPin, Upload, Download, FileDown,
-  Plus, Pencil, Trash2, X, Check, Loader, AlertTriangle, Combine, ImageIcon, SlidersHorizontal, ClipboardCheck, ShoppingCart,
+  Plus, Pencil, Trash2, X, Check, Loader, AlertTriangle, Combine, ImageIcon, SlidersHorizontal, ClipboardCheck, ShoppingCart, Cloud,
 } from "lucide-react";
 import { C, Badge, Btn, ModalField } from "./lib/ui.jsx";
 import { crearMaterial, actualizarMaterial, borrarMaterial, subirImagenMaterial, borrarImagenMaterial } from "./lib/data.js";
@@ -204,6 +204,7 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
   const [almacenSel, setAlmacenSel] = useState(() => almacenes?.[0]?.id ?? 1);
   const [showUbicaciones, setShowUbicaciones] = useState(false);
   const [importFile, setImportFile] = useState(null);
+  const [showOrigen, setShowOrigen] = useState(false); // modal de origen externo (SharePoint / Business Central)
   const [lightbox, setLightbox]     = useState(null); // URL a mostrar en grande
   const [addedId, setAddedId]       = useState(null); // id recién añadido a la cesta (feedback)
   const imgInputRef = useRef(null);
@@ -487,19 +488,6 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
         </div>
       )}
 
-      {empresa?.id && modo === "supabase" && (
-        <div style={{ padding:"14px 20px 0" }}>
-          <OrigenDatosPanel empId={empresa.id} companyId={empresa.id} L={L}
-            titulo={L("Origen de datos de materiales","Materials data source")}
-            fuentesDisponibles={[
-              { id:"sharepoint-file", label:"Excel en SharePoint", labelEn:"Excel on SharePoint", desc:"Busca el archivo en tu SharePoint", descEn:"Find the file in your SharePoint", color:"#0078D4", ready:true },
-              { id:"businesscentral", label:"Business Central", labelEn:"Business Central", desc:"Conecta tu Dynamics 365", descEn:"Connect your Dynamics 365", color:"#7A1F3D", ready:true },
-            ]}
-            getAccessToken={async () => { const { data } = await sb().auth.getSession(); return data?.session?.access_token || null; }}
-            onSharePointFile={({ contentBase64, filename }) => setImportFile(base64AFile(contentBase64, filename))}/>
-        </div>
-      )}
-
       <div style={{ display:"flex", alignItems:"center", gap:10, padding:"14px 20px", borderBottom:`1px solid ${C.line}`, flexShrink:0, flexWrap:"wrap" }}>
         <div style={{ display:"flex", alignItems:"center", gap:8, flex:"1 1 200px", background:C.s2, border:`1px solid ${C.line}`, borderRadius:999, padding:"7px 13px" }}>
           <Search size={15} color={C.sub}/>
@@ -564,9 +552,15 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
           </Btn>
         )}
         <Btn outline onClick={() => importRef.current?.click()} style={{ padding:"8px 12px" }}>
-          <Upload size={15}/>{L("Importar","Import")}
+          <Upload size={15}/>{L("Importar Excel","Import Excel")}
         </Btn>
         <input ref={importRef} type="file" accept=".xlsx,.xls,.csv" style={{ display:"none" }} onChange={handleImportAlm}/>
+        {empresa?.id && modo === "supabase" && (
+          <Btn outline onClick={() => setShowOrigen(true)} style={{ padding:"8px 12px" }}
+            title={L("Conectar SharePoint o Business Central","Connect SharePoint or Business Central")}>
+            <Cloud size={15}/>{L("Origen externo","External source")}
+          </Btn>
+        )}
         <div style={{ position:"relative", display:"flex", gap:4 }}>
           <Btn outline onClick={handleExportAlmExcel} style={{ padding:"8px 12px" }}><Download size={15}/>Excel</Btn>
           <Btn outline onClick={handleExportAlmPdf} style={{ padding:"8px 12px" }}><FileDown size={15}/>PDF</Btn>
@@ -863,6 +857,32 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
           guardarPlantillaConf={guardarPlantillaConf ? (almId, pl) => guardarPlantillaConf(almId, pl) : undefined}
           cargarPlantillasConf={cargarPlantillasConf ? (almId) => cargarPlantillasConf(almId) : undefined}
         />
+      )}
+
+      {/* Modal de origen externo (SharePoint / Business Central) — opcional, oculto por defecto */}
+      {showOrigen && empresa?.id && modo === "supabase" && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)", zIndex:700,
+          display:"grid", placeItems:"center", padding:16 }} onClick={() => setShowOrigen(false)}>
+          <div style={{ background:C.surface, borderRadius:16, width:"100%", maxWidth:900,
+            maxHeight:"90vh", overflowY:"auto", boxShadow:"0 20px 60px rgba(0,0,0,.3)", padding:18 }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ display:"flex", alignItems:"center", marginBottom:12 }}>
+              <span style={{ fontWeight:700, fontSize:15, flex:1 }}>{L("Origen externo de materiales","External materials source")}</span>
+              <button onClick={() => setShowOrigen(false)}
+                style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, padding:4, display:"flex" }}>
+                <X size={18}/>
+              </button>
+            </div>
+            <OrigenDatosPanel empId={empresa.id} companyId={empresa.id} L={L}
+              titulo={L("Conecta la fuente de esta empresa","Connect this company's source")}
+              fuentesDisponibles={[
+                { id:"sharepoint-file", label:"Excel en SharePoint", labelEn:"Excel on SharePoint", desc:"Busca el archivo en tu SharePoint", descEn:"Find the file in your SharePoint", color:"#0078D4", ready:true },
+                { id:"businesscentral", label:"Business Central", labelEn:"Business Central", desc:"Conecta tu Dynamics 365", descEn:"Connect your Dynamics 365", color:"#7A1F3D", ready:true },
+              ]}
+              getAccessToken={async () => { const { data } = await sb().auth.getSession(); return data?.session?.access_token || null; }}
+              onSharePointFile={({ contentBase64, filename }) => { setImportFile(base64AFile(contentBase64, filename)); setShowOrigen(false); }}/>
+          </div>
+        </div>
       )}
     </div>
   );
