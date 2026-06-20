@@ -505,3 +505,84 @@ export async function enviarNotificacionPedido(pedido, destinatarios) {
     }),
   });
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   PROVEEDORES y CORRELACIONES (schema lscale)
+   La empresa tiene sus materiales; cada proveedor los llama a su modo.
+   correlaciones mapea material_id ↔ nombre_proveedor por proveedor.
+   ═══════════════════════════════════════════════════════════════════ */
+
+export async function cargarProveedores(companyId) {
+  const { data, error } = await lsc().from("proveedores").select("*").eq("company_id", companyId).order("id");
+  if (error) throw error;
+  return data || [];
+}
+export async function crearProveedor(p, companyId) {
+  const row = { company_id: companyId, nombre: p.nombre, contacto: p.contacto || null, color: p.color || null };
+  const { data, error } = await lsc().from("proveedores").insert(row).select().single();
+  if (error) throw error;
+  return data;
+}
+export async function actualizarProveedor(id, cambios) {
+  const patch = {};
+  for (const k of ["nombre", "contacto", "color"]) if (k in cambios) patch[k] = cambios[k];
+  const { data, error } = await lsc().from("proveedores").update(patch).eq("id", id).select().single();
+  if (error) throw error;
+  return data;
+}
+export async function borrarProveedor(id) {
+  const { error } = await lsc().from("proveedores").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// CARGA SELECTIVA (minimiza egress): nunca traemos las miles de correlaciones de
+// golpe. Pedimos solo las del proveedor elegido, o solo las de los materiales de
+// un pedido. Las columnas justas (no select * innecesario en listados grandes).
+const COR_COLS = "id,material_id,proveedor_id,nombre_proveedor,referencia,coste,descuento";
+
+// Correlaciones de UN proveedor (para ver/editar su columna o traducir su compra).
+export async function cargarCorrelacionesDeProveedor(proveedorId) {
+  const { data, error } = await lsc().from("correlaciones").select(COR_COLS).eq("proveedor_id", proveedorId);
+  if (error) throw error;
+  return data || [];
+}
+// Correlaciones de un conjunto de materiales (para traducir las líneas de un pedido).
+export async function cargarCorrelacionesDeMateriales(materialIds = []) {
+  if (!materialIds.length) return [];
+  const { data, error } = await lsc().from("correlaciones").select(COR_COLS).in("material_id", materialIds);
+  if (error) throw error;
+  return data || [];
+}
+
+// Crea o actualiza una correlación (material ↔ proveedor) por su par único.
+export async function guardarCorrelacion(c, companyId) {
+  const row = {
+    company_id: companyId, material_id: c.material_id, proveedor_id: c.proveedor_id,
+    nombre_proveedor: c.nombre_proveedor, referencia: c.referencia || null,
+    coste: c.coste ?? null, descuento: c.descuento ?? null,
+  };
+  const { data, error } = await lsc().from("correlaciones")
+    .upsert(row, { onConflict: "material_id,proveedor_id" }).select().single();
+  if (error) throw error;
+  return data;
+}
+
+// Import del Excel del proveedor en UN SOLO request (upsert por lotes ~500 filas).
+// `items` = [{ material_id, nombre_proveedor, referencia?, coste?, descuento? }].
+export async function guardarCorrelacionesLote(proveedorId, items, companyId) {
+  const rows = (items || []).filter(i => i.material_id && i.nombre_proveedor).map(i => ({
+    company_id: companyId, proveedor_id: proveedorId, material_id: i.material_id,
+    nombre_proveedor: i.nombre_proveedor, referencia: i.referencia || null,
+    coste: i.coste ?? null, descuento: i.descuento ?? null,
+  }));
+  if (!rows.length) return [];
+  const { data, error } = await lsc().from("correlaciones")
+    .upsert(rows, { onConflict: "material_id,proveedor_id" }).select(COR_COLS);
+  if (error) throw error;
+  return data || [];
+}
+
+export async function borrarCorrelacion(id) {
+  const { error } = await lsc().from("correlaciones").delete().eq("id", id);
+  if (error) throw error;
+}

@@ -55,7 +55,7 @@ const NAV = [
   {
     label: "Gestión", Icon: Warehouse,
     items: [
-      { id: "distribuidor", label: "Distribuidor", Icon: Building2      },
+      { id: "distribuidor", label: "Proveedores", Icon: Building2      },
       { id: "almacen",      label: "Almacén",      Icon: Warehouse      },
       { id: "inventario",   label: "Inventario",   Icon: ClipboardCheck },
     ],
