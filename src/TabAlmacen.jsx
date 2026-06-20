@@ -4,7 +4,7 @@ import React, { useState, useRef } from "react";
 import * as XLSX from "xlsx";
 import {
   Search, Columns3, MapPin, Upload, Download, FileDown,
-  Plus, Pencil, Trash2, X, Check, Loader, AlertTriangle, Combine, ImageIcon, SlidersHorizontal, ClipboardCheck,
+  Plus, Pencil, Trash2, X, Check, Loader, AlertTriangle, Combine, ImageIcon, SlidersHorizontal, ClipboardCheck, ShoppingCart,
 } from "lucide-react";
 import { C, Badge, Btn, ModalField } from "./lib/ui.jsx";
 import { crearMaterial, actualizarMaterial, borrarMaterial, subirImagenMaterial, borrarImagenMaterial } from "./lib/data.js";
@@ -192,7 +192,7 @@ function useCatsAbiertas() {
 }
 
 // MARK: - TabAlmacen
-export default function TabAlmacen({ materiales, setMateriales, empresa, modo, almacenes, silenciados, guardarPlantillaConf, cargarPlantillasConf, onInventario, L }) {
+export default function TabAlmacen({ materiales, setMateriales, empresa, modo, almacenes, silenciados, guardarPlantillaConf, cargarPlantillasConf, onInventario, onAgregarCesta, L }) {
   const EMP_ID = `lscale.cols.${empresa?.id}`;
   const defCols = TODAS_COLS.filter((c) => c.def).map((c) => c.id);
   const [colsVis, setColsVis]       = useState(() => { try { return JSON.parse(localStorage.getItem(EMP_ID)) || defCols; } catch { return defCols; } });
@@ -205,7 +205,17 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
   const [showUbicaciones, setShowUbicaciones] = useState(false);
   const [importFile, setImportFile] = useState(null);
   const [lightbox, setLightbox]     = useState(null); // URL a mostrar en grande
+  const [addedId, setAddedId]       = useState(null); // id recién añadido a la cesta (feedback)
   const imgInputRef = useRef(null);
+
+  // Añade un material a la cesta (1 ud, o el déficit si está bajo mínimo).
+  const agregarMaterialCesta = (m) => {
+    const deficit = Math.max(0, (Number(m.stock_minimo) || 0) - (Number(m.stock_actual) || 0));
+    const cantidad = deficit > 0 ? deficit : 1;
+    onAgregarCesta?.([{ material_id: m.id, nombre: m.nombre, cantidad, almacen_id: m.almacen_id ?? null }]);
+    setAddedId(m.id);
+    setTimeout(() => setAddedId(prev => prev === m.id ? null : prev), 1400);
+  };
   const [catsCerradas, toggleCat]   = useCatsAbiertas();
   const [showFiltros, setShowFiltros] = useState(false);
   const [filtros, setFiltros]         = useState({ categoria:"", proveedor:"", estado:"" });
@@ -673,6 +683,14 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
                             style={{ fontSize:10, color:C.dim, borderRadius:6, padding:"2px 4px" }}>🔇</span>}
                       </div>
                       <div style={{ display:"flex", gap:4, padding:"10px 4px", justifyContent:"flex-end" }}>
+                        {onAgregarCesta && (
+                          <button title={L("Agregar a la cesta","Add to cart")} onClick={() => agregarMaterialCesta(m)}
+                            style={{ background: addedId === m.id ? C.brand : "none", border:"none", cursor:"pointer",
+                              color: addedId === m.id ? "#fff" : C.brand, borderRadius:8, padding:5, display:"flex",
+                              transition:"background .15s" }}>
+                            {addedId === m.id ? <Check size={15}/> : <ShoppingCart size={15}/>}
+                          </button>
+                        )}
                         <button title={L("Editar","Edit")} onClick={() => setEditObj({ ...m, _imgFile: null, _originalImagenUrl: m.imagen_url ?? null })}
                           style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, borderRadius:8, padding:5, display:"flex" }}>
                           <Pencil size={15}/>

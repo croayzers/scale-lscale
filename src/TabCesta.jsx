@@ -474,7 +474,8 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
           <ShoppingCart size={40} strokeWidth={1.3}/>
           <div style={{ fontSize:15, fontWeight:600 }}>La cesta está vacía</div>
           <div style={{ fontSize:13 }}>
-            Usa el botón <strong>"Agregar a la cesta"</strong> en el banner de stock insuficiente de un pedido.
+            Añade materiales desde el <strong>Almacén</strong> (botón 🛒 en cada fila)
+            o desde el banner de stock insuficiente de un pedido.
           </div>
         </div>
       </div>

@@ -599,6 +599,7 @@ export default function App() {
           {tab === "almacen"  && <TabAlmacen  materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} silenciados={silenciados}
             puedeEditar={puedeEditar}
             onInventario={() => setTab("inventario")}
+            onAgregarCesta={agregarACesta}
             guardarPlantillaConf={(almId, pl) => guardarPlantillaConf("almconf", almId, pl)}
             cargarPlantillasConf={(almId) => cargarPlantillasConf("almconf", almId)} L={L}/>}
           {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} rolesImport={rolesImport} formatoFecha={formatoFecha} sesion={sesion} highlightedPedidoId={highlightedPedido?.id ?? highlightedPedido}
