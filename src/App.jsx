@@ -11,7 +11,7 @@ import {
 import { LangContext, IDIOMAS } from "./lib/i18n.js";
 import { sb, supabaseConfigurado } from "./lib/supabase.js";
 import {
-  cargarDatos, crearConfigInicial, cargarPrefs, guardarPrefs, guardarPedido, guardarTramos, registrarVistoPor, cargarMiembros,
+  cargarDatos, crearConfigInicial, cargarPrefs, guardarPrefs, guardarPedido, guardarTramos, registrarVistoPor, cargarMiembros, marcarIASinTokens,
 } from "./lib/data.js";
 import { C, Badge, Btn } from "./lib/ui.jsx";
 import TabAlmacen from "./TabAlmacen.jsx";
@@ -640,8 +640,10 @@ export default function App() {
             onUnreadChange={setChatUnread}
             onEventoLocal={onEventoLocal}
             ia={{
-              enabled: empresa?.flags?.funciones?.asistenteIA_lscale !== false,
-              provider: empresa.aiProvider, keys: empresa.aiKeys || {},
+              enabled: empresa?.flags?.funciones?.asistenteIA_lscale !== false
+                && !((empresa?.flags?.ai?.usuariosOff?.[sesion?.user?.id] || []).includes("*")),
+              provider: empresa.aiProvider, keys: empresa.aiKeys || {}, orden: empresa?.flags?.ai?.orden,
+              onFallback: ({ desde }) => { if (desde) marcarIASinTokens(empresa?.id, desde); },
               system: "Eres el asistente de L-Scale, app de logística de eventos (almacén, pedidos, expediciones, planning de vehículos). Conoces la actividad reciente del equipo. Ayuda al usuario respondiendo dudas sobre la app y la logística, y resumiendo lo que ha pasado. Responde en español, breve y claro.",
               prompts: [
                 "Resume la actividad reciente de mi equipo",

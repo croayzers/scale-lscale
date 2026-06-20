@@ -9,7 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@scale/shared": "https://github.com/croayzers/scale-shared/archive/7ae1bab8484d2b0142c832e191730d6c2f2cfebc.tar.gz",
+    "@scale/shared": "https://github.com/croayzers/scale-shared/archive/b1a4d7f92085d28cfb191a100f5ee4f929eb827e.tar.gz",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.107.0",
     "@vercel/analytics": "^2.0.1",

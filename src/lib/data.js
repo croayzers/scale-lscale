@@ -277,6 +277,19 @@ export async function borrarMaterial(id) {
   if (error) throw error;
 }
 
+// Marca una IA "sin tokens" en companies.flags.ai.estado (para el panel admin).
+// Best-effort: si RLS bloquea la escritura, se ignora.
+export async function marcarIASinTokens(companyId, provider) {
+  if (!companyId || !provider) return;
+  try {
+    const { data } = await sb().from("companies").select("flags").eq("id", companyId).single();
+    const flags = data?.flags || {};
+    const ai = flags.ai || {};
+    const estado = { ...(ai.estado || {}), [provider]: "sin_tokens" };
+    await sb().from("companies").update({ flags: { ...flags, ai: { ...ai, estado } } }).eq("id", companyId);
+  } catch { /* sin permiso: el aviso al usuario basta */ }
+}
+
 export async function recargarMateriales() {
   const { data, error } = await lsc().from("materiales").select("*");
   if (error) throw error;
