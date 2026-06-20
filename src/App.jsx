@@ -73,6 +73,10 @@ const NAV = [
   { id: "config", label: "Configuración",  Icon: Settings },
 ];
 
+// Lista plana de pestañas derivada de NAV (aplana los grupos con `items`).
+// El topbar la usa para renderizar todas las pestañas en línea.
+const TABS = NAV.flatMap(n => n.items ? n.items : [n]);
+
 // MARK: - AvisoPortal
 function AvisoPortal({ tipo, L }) {
   const PORTAL_URL = import.meta.env?.VITE_PORTAL_URL || "http://localhost:3000";
