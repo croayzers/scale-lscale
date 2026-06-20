@@ -1,9 +1,19 @@
 // MARK: - TabCesta — Cesta de compra para reposición de almacén
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
-import { ShoppingCart, Trash2, Plus, Minus, Download, Check, Loader, Package, ChevronDown, ChevronRight, AlertTriangle, FileText, Warehouse } from "lucide-react";
-import { actualizarMaterial } from "./lib/data.js";
+import { ShoppingCart, Trash2, Plus, Minus, Download, Check, Loader, Package, ChevronDown, ChevronRight, AlertTriangle, FileText, Warehouse, Building2, X, Eye } from "lucide-react";
+import { actualizarMaterial, cargarProveedores, cargarCorrelacionesDeMateriales } from "./lib/data.js";
 import { registrarCompra } from "./lib/dataRecuentos.js";
+
+// Precio efectivo de una correlación: coste con el descuento (%) aplicado si lo hay.
+function precioEfectivo(corr) {
+  if (!corr || corr.coste == null) return null;
+  const base = Number(corr.coste);
+  if (isNaN(base)) return null;
+  const desc = Number(corr.descuento) || 0;
+  return desc > 0 ? base * (1 - desc / 100) : base;
+}
+const fmtEur = n => n == null ? "—" : `${Number(n).toLocaleString("es-ES", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 
 const C = {
   bg:"var(--bg)", surface:"var(--surface)", s2:"var(--surface-2)",
@@ -78,6 +88,45 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
   const [mostrarConstructor, setMostrarConstructor] = useState(false);
   const [colapsados, setColapsados] = useState(() => new Set());  // ids de almacén colapsados
   const [avisoAlmacen, setAvisoAlmacen] = useState(null);
+
+  // ── Pedido a proveedor ──────────────────────────────────────────────────
+  const [proveedores, setProveedores] = useState([]);
+  const [provSel,     setProvSel]     = useState("");      // id del proveedor elegido ("" = ninguno)
+  const [corrPorMat,  setCorrPorMat]  = useState({});      // material_id -> { [proveedor_id]: correlacion }
+  const [showPreview, setShowPreview] = useState(false);
+
+  // Carga proveedores + correlaciones de los materiales de la cesta (carga selectiva).
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      if (modo !== "supabase" || !empresa?.id) { setProveedores([]); setCorrPorMat({}); return; }
+      try {
+        const provs = await cargarProveedores(empresa.id);
+        if (!vivo) return;
+        setProveedores(provs);
+        const ids = [...new Set(cesta.map(i => i.material_id).filter(Boolean))];
+        const corr = await cargarCorrelacionesDeMateriales(ids);
+        if (!vivo) return;
+        const map = {};
+        for (const c of corr) {
+          if (!map[c.material_id]) map[c.material_id] = {};
+          map[c.material_id][c.proveedor_id] = c;
+        }
+        setCorrPorMat(map);
+      } catch (e) { console.warn("[TabCesta] cargar proveedores/correlaciones:", e?.message); }
+    })();
+    return () => { vivo = false; };
+  // recargamos al cambiar los material_id de la cesta (no en cada cambio de cantidad)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modo, empresa?.id, cesta.map(i => i.material_id).join(",")]);
+
+  const proveedorActivo = proveedores.find(p => String(p.id) === String(provSel)) || null;
+
+  // Correlación de un item para el proveedor activo (nombre proveedor, ref, precio).
+  const corrDe = useCallback((item) => {
+    if (!provSel || item.material_id == null) return null;
+    return corrPorMat[item.material_id]?.[provSel] || null;
+  }, [provSel, corrPorMat]);
 
   const toggleGrupo = (aid) => setColapsados(prev => {
     const next = new Set(prev);
@@ -219,6 +268,144 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
     return { item, mat, almacen: g.nombre };
   }));
 
+  // ── Pedido a proveedor: líneas traducidas (nombre proveedor, ref, precio, importe) ──
+  const lineasPedidoProveedor = useMemo(() => {
+    if (!provSel) return [];
+    return cesta.map(item => {
+      const mat   = buscarMaterial(item) || {};
+      const corr  = corrDe(item);
+      const precio = precioEfectivo(corr);
+      const cant  = Number(item.cantidad) || 0;
+      return {
+        nombreInterno: item.nombre,
+        nombreProveedor: corr?.nombre_proveedor || item.nombre,
+        referencia: corr?.referencia || mat.referencia || "",
+        unidad: mat.unidad || "ud",
+        cantidad: cant,
+        precio,
+        descuento: corr?.descuento || 0,
+        importe: precio != null ? precio * cant : null,
+        tieneCorr: !!corr,
+      };
+    });
+  }, [cesta, provSel, corrPorMat, materiales]);
+
+  const totalPedidoProveedor = useMemo(
+    () => lineasPedidoProveedor.reduce((s, l) => s + (l.importe || 0), 0),
+    [lineasPedidoProveedor]
+  );
+
+  // HTML profesional del pedido al proveedor (compartido por preview y PDF).
+  const pedidoProveedorHTML = (paraImprimir = false) => {
+    const fecha = new Date().toLocaleDateString("es-ES", { day:"2-digit", month:"long", year:"numeric" });
+    const brand = proveedorActivo?.color || "#f97316";
+    const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]));
+    const hayPrecios = lineasPedidoProveedor.some(l => l.precio != null);
+
+    const filas = lineasPedidoProveedor.map((l, i) => `
+      <tr style="border-bottom:1px solid #eee;${i % 2 ? "background:#fafafa" : ""}">
+        <td style="padding:8px 10px;font-size:12px">
+          <div style="font-weight:700;color:#1a1a1a">${esc(l.nombreProveedor)}</div>
+          ${l.nombreInterno !== l.nombreProveedor ? `<div style="font-size:10.5px;color:#999">Tu material: ${esc(l.nombreInterno)}</div>` : ""}
+          ${!l.tieneCorr ? `<div style="font-size:10px;color:#d97706">⚠ sin correlación</div>` : ""}
+        </td>
+        <td style="padding:8px 10px;font-size:12px;color:#555">${esc(l.referencia) || "—"}</td>
+        <td style="padding:8px 10px;font-size:12px;text-align:right;font-weight:600">${l.cantidad} ${esc(l.unidad)}</td>
+        ${hayPrecios ? `<td style="padding:8px 10px;font-size:12px;text-align:right;color:#555">${l.precio != null ? fmtEur(l.precio) : "—"}${l.descuento > 0 ? `<span style="color:#999;font-size:10px"> −${l.descuento}%</span>` : ""}</td>` : ""}
+        ${hayPrecios ? `<td style="padding:8px 10px;font-size:12px;text-align:right;font-weight:700">${l.importe != null ? fmtEur(l.importe) : "—"}</td>` : ""}
+      </tr>`).join("");
+
+    const totalUnidades = lineasPedidoProveedor.reduce((s, l) => s + l.cantidad, 0);
+
+    return `
+      <div style="font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;max-width:780px;margin:0 auto;padding:${paraImprimir ? "0" : "8px"}">
+        <!-- Cabecera: empresa emisora + nº/fecha -->
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${brand};padding-bottom:14px;margin-bottom:18px">
+          <div style="display:flex;gap:12px;align-items:center">
+            ${empresa?.logo_url ? `<img src="${empresa.logo_url}" style="width:54px;height:54px;object-fit:contain;border-radius:8px"/>` : ""}
+            <div>
+              <div style="font-size:20px;font-weight:800">${esc(empresa?.nombre || "Mi empresa")}</div>
+              <div style="font-size:11px;color:#666;line-height:1.5;margin-top:2px">
+                ${empresa?.cif ? `CIF: ${esc(empresa.cif)}<br/>` : ""}
+                ${empresa?.phone ? `Tel: ${esc(empresa.phone)} · ` : ""}${empresa?.billing_email ? esc(empresa.billing_email) : ""}
+                ${empresa?.website ? `<br/>${esc(empresa.website)}` : ""}
+              </div>
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:22px;font-weight:800;color:${brand};letter-spacing:.5px">PEDIDO</div>
+            <div style="font-size:11px;color:#666;margin-top:4px">Fecha: <strong>${fecha}</strong></div>
+          </div>
+        </div>
+
+        <!-- Proveedor destinatario -->
+        <div style="background:#f6f6f6;border-radius:10px;padding:12px 16px;margin-bottom:18px">
+          <div style="font-size:10px;font-weight:700;color:#888;letter-spacing:.6px;text-transform:uppercase;margin-bottom:3px">Proveedor</div>
+          <div style="font-size:16px;font-weight:700">${esc(proveedorActivo?.nombre || "—")}</div>
+          ${proveedorActivo?.contacto ? `<div style="font-size:12px;color:#666;margin-top:2px">${esc(proveedorActivo.contacto)}</div>` : ""}
+        </div>
+
+        <!-- Tabla de líneas -->
+        <table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
+          <thead>
+            <tr style="background:${brand}">
+              <th style="padding:9px 10px;text-align:left;font-size:11px;color:#fff;letter-spacing:.3px">ARTÍCULO</th>
+              <th style="padding:9px 10px;text-align:left;font-size:11px;color:#fff">REFERENCIA</th>
+              <th style="padding:9px 10px;text-align:right;font-size:11px;color:#fff">CANTIDAD</th>
+              ${hayPrecios ? `<th style="padding:9px 10px;text-align:right;font-size:11px;color:#fff">PRECIO</th>` : ""}
+              ${hayPrecios ? `<th style="padding:9px 10px;text-align:right;font-size:11px;color:#fff">IMPORTE</th>` : ""}
+            </tr>
+          </thead>
+          <tbody>${filas}</tbody>
+          ${hayPrecios ? `
+          <tfoot>
+            <tr style="border-top:2px solid ${brand}">
+              <td colspan="${hayPrecios ? 4 : 3}" style="padding:10px;text-align:right;font-size:13px;font-weight:700">TOTAL (sin IVA)</td>
+              <td style="padding:10px;text-align:right;font-size:15px;font-weight:800;color:${brand}">${fmtEur(totalPedidoProveedor)}</td>
+            </tr>
+          </tfoot>` : ""}
+        </table>
+
+        <div style="display:flex;justify-content:space-between;margin-top:12px;font-size:11px;color:#888">
+          <span>${lineasPedidoProveedor.length} líneas · ${totalUnidades} uds</span>
+          ${!hayPrecios ? `<span style="color:#d97706">Sin precios: completa las correlaciones del proveedor para verlos</span>` : ""}
+        </div>
+      </div>`;
+  };
+
+  const exportarPedidoProveedorPDF = () => {
+    const win = window.open("", "_blank", "width=820,height=1000");
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/>
+      <title>Pedido — ${(proveedorActivo?.nombre || "proveedor")}</title>
+      <style>@page{size:A4;margin:16mm 14mm}@media print{button{display:none}}</style>
+      </head><body>${pedidoProveedorHTML(true)}
+      <div style="text-align:center;margin-top:20px">
+        <button onclick="window.print()" style="padding:9px 22px;background:${proveedorActivo?.color || "#f97316"};color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-family:Arial">Imprimir / Guardar PDF</button>
+      </div></body></html>`);
+    win.document.close();
+  };
+
+  const exportarPedidoProveedorExcel = () => {
+    const hayPrecios = lineasPedidoProveedor.some(l => l.precio != null);
+    const meta = [
+      [`Pedido a proveedor: ${proveedorActivo?.nombre || ""}`],
+      [`Empresa: ${empresa?.nombre || ""}`, empresa?.cif ? `CIF: ${empresa.cif}` : ""],
+      [`Fecha: ${new Date().toLocaleDateString("es-ES")}`],
+      [],
+    ];
+    const header = ["Artículo (proveedor)", "Tu material", "Referencia", "Cantidad", "Unidad",
+      ...(hayPrecios ? ["Precio", "Dto %", "Importe"] : [])];
+    const rows = lineasPedidoProveedor.map(l => [
+      l.nombreProveedor, l.nombreInterno, l.referencia, l.cantidad, l.unidad,
+      ...(hayPrecios ? [l.precio ?? "", l.descuento || 0, l.importe ?? ""] : []),
+    ]);
+    if (hayPrecios) rows.push([], ["", "", "", "", "", "", "TOTAL", totalPedidoProveedor]);
+    const ws = XLSX.utils.aoa_to_sheet([...meta, header, ...rows]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Pedido proveedor");
+    XLSX.writeFile(wb, `pedido_${(proveedorActivo?.nombre || "proveedor").replace(/\s+/g, "_")}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  };
+
   const exportarExcel = () => {
     const colsActivas = cols.filter(c => c.activa);
     const header = ["Almacén", ...colsActivas.map(c => c.label)];
@@ -312,6 +499,21 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
             <AlertTriangle size={12}/> {sinAlmacen.length} sin almacén
           </span>
         )}
+
+        {/* Selector de proveedor: al elegirlo se muestran nombre/ref/precio de ese proveedor */}
+        {proveedores.length > 0 && (
+          <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:6 }}>
+            <Building2 size={14} color={provSel ? C.brand : C.sub}/>
+            <select value={provSel} onChange={e => setProvSel(e.target.value)}
+              style={{ padding:"6px 10px", borderRadius:999, fontSize:12.5, fontFamily:"inherit",
+                border:`1.5px solid ${provSel ? C.brand : C.strong}`,
+                background: provSel ? C.brandSoft : C.s2, color: provSel ? C.brand : C.ink,
+                cursor:"pointer", outline:"none" }}>
+              <option value="">Pedir a proveedor…</option>
+              {proveedores.map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Aviso de almacén faltante al comprar */}
@@ -368,6 +570,36 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
                             </div>
                           </td>
 
+                          {/* Datos del proveedor elegido: cómo lo llama, su referencia y precio */}
+                          {provSel && (() => {
+                            const corr = corrDe(item);
+                            const precio = precioEfectivo(corr);
+                            return (
+                              <td style={{ padding:"10px 12px", minWidth:200 }}>
+                                {corr ? (
+                                  <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                                    <span style={{ fontSize:13, fontWeight:700, color:proveedorActivo?.color || C.brand }}>
+                                      {corr.nombre_proveedor || item.nombre}
+                                    </span>
+                                    <div style={{ display:"flex", gap:8, flexWrap:"wrap", alignItems:"center" }}>
+                                      {corr.referencia && (
+                                        <span style={{ fontSize:11, color:C.sub }}>Ref: <strong style={{ color:C.ink }}>{corr.referencia}</strong></span>
+                                      )}
+                                      {precio != null && (
+                                        <span style={{ fontSize:11.5, fontWeight:700, color:C.ok }}>
+                                          {fmtEur(precio)}/{mat.unidad || "ud"}
+                                          {corr.descuento > 0 && <span style={{ color:C.dim, fontWeight:400 }}> (−{corr.descuento}%)</span>}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <span style={{ fontSize:11.5, color:C.warn, fontStyle:"italic" }}>Sin correlación con este proveedor</span>
+                                )}
+                              </td>
+                            );
+                          })()}
+
                           {/* Selector de almacén SOLO en el grupo "Sin almacén" */}
                           {sinAlm && (
                             <td style={{ padding:"10px 12px" }}>
@@ -423,6 +655,31 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
       <div style={{ padding:"14px 20px", background:C.surface, borderTop:`1px solid ${C.line}`,
         display:"flex", alignItems:"center", gap:10, flexShrink:0, flexWrap:"wrap" }}>
 
+        {/* Acciones de pedido a proveedor (cuando hay proveedor elegido) */}
+        {provSel && (
+          <>
+            <button onClick={() => setShowPreview(true)}
+              style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 14px", borderRadius:8,
+                border:"none", background: proveedorActivo?.color || C.brand, color:"#fff",
+                fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+              <Eye size={14}/>Vista previa pedido
+            </button>
+            <button onClick={exportarPedidoProveedorPDF}
+              style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 12px", borderRadius:8,
+                border:`1px solid ${C.strong}`, background:C.s2, color:C.ink,
+                fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+              <FileText size={13} color="#dc2626"/>PDF
+            </button>
+            <button onClick={exportarPedidoProveedorExcel}
+              style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 12px", borderRadius:8,
+                border:`1px solid ${C.strong}`, background:C.s2, color:C.ink,
+                fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+              <Download size={13} color="#16a34a"/>Excel
+            </button>
+            <div style={{ width:1, height:24, background:C.line, margin:"0 4px" }}/>
+          </>
+        )}
+
         {/* Constructor de columnas */}
         <div style={{ position:"relative" }}>
           <button onClick={() => setMostrarConstructor(v => !v)}
@@ -444,14 +701,14 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
           style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 14px",
             borderRadius:8, border:"none", background:"#16a34a", color:"#fff",
             fontWeight:600, fontSize:13, cursor:"pointer" }}>
-          <Download size={13}/>Excel
+          <Download size={13}/>Excel almacén
         </button>
 
         <button onClick={exportarPDF}
           style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 14px",
             borderRadius:8, border:"none", background:"#dc2626", color:"#fff",
             fontWeight:600, fontSize:13, cursor:"pointer" }}>
-          <FileText size={13}/>PDF
+          <FileText size={13}/>PDF almacén
         </button>
 
         <div style={{ flex:1 }}/>
@@ -475,6 +732,41 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
           {comprando ? "Comprando…" : "Comprar — actualizar stock"}
         </button>
       </div>
+
+      {/* Modal vista previa del pedido al proveedor */}
+      {showPreview && provSel && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.5)", zIndex:800,
+          display:"grid", placeItems:"center", padding:16 }} onClick={() => setShowPreview(false)}>
+          <div style={{ background:C.surface, borderRadius:16, width:"100%", maxWidth:860,
+            maxHeight:"92vh", display:"flex", flexDirection:"column", boxShadow:"0 20px 60px rgba(0,0,0,.3)" }}
+            onClick={e => e.stopPropagation()}>
+            {/* Header del modal */}
+            <div style={{ padding:"12px 18px", borderBottom:`1px solid ${C.line}`,
+              display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
+              <Eye size={17} color={C.brand}/>
+              <div style={{ flex:1, fontWeight:700, fontSize:15 }}>
+                Vista previa · Pedido a {proveedorActivo?.nombre}
+              </div>
+              <button onClick={exportarPedidoProveedorPDF}
+                style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 14px", borderRadius:8,
+                  border:"none", background: proveedorActivo?.color || C.brand, color:"#fff",
+                  fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+                <FileText size={13}/>Imprimir / PDF
+              </button>
+              <button onClick={() => setShowPreview(false)}
+                style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, padding:4, display:"flex" }}>
+                <X size={17}/>
+              </button>
+            </div>
+            {/* Cuerpo: documento en blanco como en papel */}
+            <div style={{ flex:1, overflowY:"auto", padding:24, background:"#e9eaec" }}>
+              <div style={{ background:"#fff", borderRadius:8, padding:"28px 32px",
+                boxShadow:"0 2px 16px rgba(0,0,0,.12)" }}
+                dangerouslySetInnerHTML={{ __html: pedidoProveedorHTML(false) }}/>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
