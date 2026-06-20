@@ -1,12 +1,36 @@
 // MARK: - TabFlota
 // Vista del conductor: elige su vehículo, ve sus pedidos del día, exporta hoja de ruta, imprime credencial.
 import React, { useState, useMemo, useRef } from "react";
-import { Truck, FileDown, Printer, ChevronDown, MapPin, Clock,
+import { Truck, FileDown, Printer, ChevronDown, ChevronLeft, ChevronRight, MapPin, Clock,
   CalendarDays, Package, User, X, ArrowRight, CheckCircle2 } from "lucide-react";
 import { C, Btn } from "./lib/ui.jsx";
 
 /* ─── Helpers ────────────────────────────────────────────────────────────── */
 const ESTADOS_ACTIVOS = new Set(["reservado", "confirmado", "retorno", "finalizado"]);
+
+// Formatea Date en hora LOCAL como YYYY-MM-DD (no usar toISOString: pasa por UTC
+// y en husos con offset positivo, p.ej. España +2, salta al día anterior).
+const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const MESES_ES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+// Número de semana ISO-8601 (lunes primer día; la semana 1 contiene el primer jueves).
+function semanaISO(iso) {
+  const d = new Date(iso + "T00:00:00");
+  const dia = (d.getDay() + 6) % 7;          // 0=lunes … 6=domingo
+  d.setDate(d.getDate() - dia + 3);          // jueves de esta semana
+  const jueves = d.getTime();
+  d.setMonth(0, 1);                          // 1 de enero
+  if (d.getDay() !== 4) d.setMonth(0, 1 + ((4 - d.getDay()) + 7) % 7);
+  return 1 + Math.round((jueves - d.getTime()) / 604800000);
+}
+// Lunes (YYYY-MM-DD) de la semana que contiene `iso`.
+function lunesDeISO(iso) {
+  const d = new Date(iso + "T00:00:00");
+  const dia = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - dia);
+  return localISO(d);
+}
+function isoMas(iso, n) { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return localISO(d); }
 const CHIP = {
   reservado:  { bg:"#f1f5f9", ink:"#64748b" },
   confirmado: { bg:"#dcfce7", ink:"#16a34a" },
@@ -504,8 +528,10 @@ function exportarHojaRutaExcel(veh, pedidos) {
 
 /* ─── TabFlota principal ─────────────────────────────────────────────────── */
 export default function TabFlota({ pedidos = [], vehiculosEmpresa = [], empresa, formatoFecha = "DD/MM/YYYY", L }) {
+  const hoyISO = localISO(new Date());
   const [conductorId, setConductorId] = useState(null);
-  const [filtro,      setFiltro]      = useState("hoy"); // hoy | semana | todos
+  const [filtro,      setFiltro]      = useState("hoy"); // hoy | semana | mes | todos
+  const [mesSel,      setMesSel]      = useState(() => hoyISO.slice(0, 7)); // "YYYY-MM" para la vista mensual
   const [showCredencial, setShowCredencial] = useState(false);
 
   const veh = vehiculosEmpresa.find(v => v.id === conductorId) || null;
@@ -517,35 +543,53 @@ export default function TabFlota({ pedidos = [], vehiculosEmpresa = [], empresa,
     );
   }, [pedidos, conductorId]);
 
+  const ordenarPorFechaHora = (a, b) => {
+    const fa = a.fecha_entrega || a.fecha_retorno || "";
+    const fb = b.fecha_entrega || b.fecha_retorno || "";
+    if (fa !== fb) return fa.localeCompare(fb);
+    return (a.hora_ida || "").localeCompare(b.hora_ida || "");
+  };
+  const fechaDe = p => p.fecha_entrega || p.fecha_retorno || "";
+
   const pedidosFiltrados = useMemo(() => {
-    const hoy = new Date().toISOString().slice(0, 10);
-    const lunesSemana = (() => {
-      const d = new Date(); d.setDate(d.getDate() - d.getDay() + 1); return d.toISOString().slice(0, 10);
-    })();
-    const domingoSemana = (() => {
-      const d = new Date(); d.setDate(d.getDate() - d.getDay() + 7); return d.toISOString().slice(0, 10);
-    })();
+    const lunesSemana   = lunesDeISO(hoyISO);
+    const domingoSemana = isoMas(lunesSemana, 6);
     return pedidosConductor.filter(p => {
-      const fecha = p.fecha_entrega || p.fecha_retorno || "";
-      if (filtro === "hoy") return fecha === hoy;
+      const fecha = fechaDe(p);
+      if (filtro === "hoy")    return fecha === hoyISO;
       if (filtro === "semana") return fecha >= lunesSemana && fecha <= domingoSemana;
+      if (filtro === "mes")    return fecha.slice(0, 7) === mesSel;
       return true;
-    }).sort((a, b) => {
-      const fa = a.fecha_entrega || a.fecha_retorno || "";
-      const fb = b.fecha_entrega || b.fecha_retorno || "";
-      if (fa !== fb) return fa.localeCompare(fb);
-      return (a.hora_ida || "").localeCompare(b.hora_ida || "");
-    });
-  }, [pedidosConductor, filtro]);
+    }).sort(ordenarPorFechaHora);
+  }, [pedidosConductor, filtro, mesSel, hoyISO]);
+
+  // Para la vista mensual: agrupa los pedidos del mes por semana del año (ISO).
+  const semanasDelMes = useMemo(() => {
+    if (filtro !== "mes") return [];
+    const grupos = new Map(); // lunesISO -> { semana, lunes, domingo, pedidos[] }
+    for (const p of pedidosFiltrados) {
+      const lunes = lunesDeISO(fechaDe(p));
+      if (!grupos.has(lunes)) grupos.set(lunes, {
+        semana: semanaISO(fechaDe(p)), lunes, domingo: isoMas(lunes, 6), pedidos: [],
+      });
+      grupos.get(lunes).pedidos.push(p);
+    }
+    return [...grupos.values()].sort((a, b) => a.lunes.localeCompare(b.lunes));
+  }, [pedidosFiltrados, filtro]);
 
   // Próxima salida del día
   const proximaSalida = useMemo(() => {
-    const hoy = new Date().toISOString().slice(0, 10);
     const ahora = new Date().toTimeString().slice(0, 5);
     return pedidosConductor
-      .filter(p => p.fecha_entrega === hoy && p.hora_ida && p.hora_ida > ahora)
+      .filter(p => p.fecha_entrega === hoyISO && p.hora_ida && p.hora_ida > ahora)
       .sort((a, b) => a.hora_ida.localeCompare(b.hora_ida))[0] || null;
-  }, [pedidosConductor]);
+  }, [pedidosConductor, hoyISO]);
+
+  const navegarMes = (d) => {
+    const [y, m] = mesSel.split("-").map(Number);
+    const dt = new Date(y, m - 1 + d, 1);
+    setMesSel(`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}`);
+  };
 
   return (
     <div style={{ height:"100%", display:"flex", flexDirection:"column", overflow:"hidden" }}>
@@ -591,16 +635,33 @@ export default function TabFlota({ pedidos = [], vehiculosEmpresa = [], empresa,
           <div style={{ padding:"10px 20px", borderBottom:`1px solid ${C.line}`,
             display:"flex", alignItems:"center", gap:8, flexWrap:"wrap", flexShrink:0 }}>
             {/* Filtros fecha */}
-            {["hoy", "semana", "todos"].map(f => (
+            {["hoy", "semana", "mes", "todos"].map(f => (
               <button key={f} onClick={() => setFiltro(f)}
                 style={{ padding:"5px 12px", borderRadius:999, fontFamily:"inherit",
                   border:`1.5px solid ${filtro === f ? (veh?.color || C.brand) : C.line}`,
                   background: filtro === f ? `${veh?.color || C.brand}18` : C.s2,
                   color: filtro === f ? (veh?.color || C.brand) : C.sub,
                   fontWeight: filtro === f ? 700 : 400, fontSize:12.5, cursor:"pointer" }}>
-                {f === "hoy" ? "Hoy" : f === "semana" ? "Esta semana" : "Todos"}
+                {f === "hoy" ? "Hoy" : f === "semana" ? "Esta semana" : f === "mes" ? "Mes" : "Todos"}
               </button>
             ))}
+            {/* Navegación de mes — solo en vista mensual */}
+            {filtro === "mes" && (() => {
+              const [y, m] = mesSel.split("-").map(Number);
+              return (
+                <div style={{ display:"flex", alignItems:"center", gap:4, marginLeft:4 }}>
+                  <button onClick={() => navegarMes(-1)} title="Mes anterior"
+                    style={{ background:C.s2, border:`1px solid ${C.line}`, borderRadius:8, padding:5,
+                      cursor:"pointer", color:C.sub, display:"flex" }}><ChevronLeft size={14}/></button>
+                  <span style={{ fontSize:13, fontWeight:700, color:C.ink, minWidth:120, textAlign:"center" }}>
+                    {MESES_ES[m-1]} {y}
+                  </span>
+                  <button onClick={() => navegarMes(1)} title="Mes siguiente"
+                    style={{ background:C.s2, border:`1px solid ${C.line}`, borderRadius:8, padding:5,
+                      cursor:"pointer", color:C.sub, display:"flex" }}><ChevronRight size={14}/></button>
+                </div>
+              );
+            })()}
             <div style={{ flex:1 }}/>
             {/* Acciones */}
             <Btn outline onClick={() => exportarHojaRutaExcel(veh, pedidosFiltrados)}
@@ -636,14 +697,47 @@ export default function TabFlota({ pedidos = [], vehiculosEmpresa = [], empresa,
           {/* Lista pedidos */}
           <div style={{ flex:1, overflowY:"auto", padding:"12px 20px",
             display:"flex", flexDirection:"column", gap:10 }}>
+            {/* Encabezado de fecha en vista Hoy */}
+            {filtro === "hoy" && (
+              <div style={{ display:"flex", alignItems:"center", gap:8, color:C.sub,
+                fontSize:13, fontWeight:700, paddingBottom:2 }}>
+                <CalendarDays size={15} color={veh.color}/>
+                <span style={{ color:C.ink, textTransform:"capitalize" }}>
+                  {new Date(hoyISO + "T00:00:00").toLocaleDateString("es-ES",
+                    { weekday:"long", day:"numeric", month:"long", year:"numeric" })}
+                </span>
+              </div>
+            )}
+
             {pedidosFiltrados.length === 0 ? (
               <div style={{ display:"flex", flexDirection:"column", alignItems:"center",
                 justifyContent:"center", flex:1, gap:10, padding:32, textAlign:"center" }}>
                 <CheckCircle2 size={36} color={C.ok}/>
                 <div style={{ color:C.sub, fontSize:14 }}>
-                  {filtro === "hoy" ? "Sin pedidos para hoy" : "Sin pedidos en este período"}
+                  {filtro === "hoy" ? "Sin pedidos para hoy"
+                    : filtro === "mes" ? "Sin pedidos este mes" : "Sin pedidos en este período"}
                 </div>
               </div>
+            ) : filtro === "mes" ? (
+              /* Vista mensual: agrupada por semana del año */
+              semanasDelMes.map(grupo => (
+                <div key={grupo.lunes} style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:8, position:"sticky", top:0,
+                    background:C.bg, padding:"4px 0", zIndex:1 }}>
+                    <span style={{ fontSize:12, fontWeight:800, color:"#fff", background:veh.color,
+                      borderRadius:999, padding:"2px 10px" }}>
+                      Semana {grupo.semana}
+                    </span>
+                    <span style={{ fontSize:12, color:C.sub }}>
+                      {fmtFecha(grupo.lunes)} – {fmtFecha(grupo.domingo)}
+                    </span>
+                    <span style={{ fontSize:11.5, color:C.dim, marginLeft:"auto" }}>
+                      {grupo.pedidos.length} pedido{grupo.pedidos.length !== 1 ? "s" : ""}
+                    </span>
+                  </div>
+                  {grupo.pedidos.map(p => <TarjetaPedido key={p.id} pedido={p} veh={veh}/>)}
+                </div>
+              ))
             ) : (
               pedidosFiltrados.map(p => <TarjetaPedido key={p.id} pedido={p} veh={veh}/>)
             )}
