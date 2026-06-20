@@ -1158,29 +1158,15 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, mat
 
   useEffect(() => { tramosRef.current = tramosDelDia; }, [tramosDelDia]);
 
-  /* ── Auto-scroll: dejar el día seleccionado al inicio (a la izquierda) ──── */
+  /* ── Auto-scroll: dejar el día seleccionado pegado a la izquierda ───────── */
   useEffect(() => {
     if (!scrollRef.current) return;
-    // El día seleccionado empieza en la hora-canvas DIAS_ANTES*24.
-    const inicioDiaSel = DIAS_ANTES * 24;
-    // Si hay pedidos ese día y su primera hora es más tarde, centra en ella
-    // (con 2h de margen) para que se vean; si no, arranca al inicio del día.
-    const pedidosDia = eventosDia.filter(p =>
-      p.fecha_entrega === fecha || p.fecha_retorno === fecha
-    );
-    let scrollH = inicioDiaSel;
-    if (pedidosDia.length > 0) {
-      const minHora = pedidosDia.reduce((min, p) => {
-        const hi = dec2hm(p.hora_ida) ?? dec2hm(p.hora_vuelta) ?? 0;
-        const off = offsetForPedido(p);
-        return Math.min(min, off + hi);
-      }, Infinity);
-      if (isFinite(minHora)) scrollH = Math.max(inicioDiaSel, minHora - 2);
-    }
-    // Margen de 2h a la izquierda para ver el final del día previo (retornos noche)
-    const targetX = Math.max(0, hToX(scrollH - 2));
+    // El día seleccionado empieza en la hora-canvas DIAS_ANTES*24 (00:00 de ese día).
+    // Arrancamos justo ahí: el día marcado queda a la izquierda y deslizas adelante.
+    // (El día previo de contexto queda fuera, accesible deslizando hacia atrás.)
+    const targetX = Math.max(0, hToX(DIAS_ANTES * 24));
     scrollRef.current.scrollLeft = targetX;
-  }, [fecha, eventosDia, offsetForPedido]);
+  }, [fecha, eventosDia]);
 
   /* ── setTramos helper ───────────────────────────────────────────────────── */
   const setTramosForPedido = useCallback((pid, updater) => {

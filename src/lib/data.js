@@ -318,9 +318,12 @@ export async function borrarImagenMaterial(publicUrl) {
 
 export async function guardarPedido(p, companyId) {
   const row = pedidoToRow(p, companyId);
-  if (!row.id) delete row.id;
-  const { data, error } = row.id
-    ? await lsc().from("pedidos").update(row).eq("id", row.id).select().single()
+  const id = row.id;
+  // El id nunca va en el cuerpo: en UPDATE solo es filtro; mandarlo (string) a la
+  // columna bigint provoca un 400 de PostgREST. En INSERT lo genera la BD.
+  delete row.id;
+  const { data, error } = id
+    ? await lsc().from("pedidos").update(row).eq("id", id).select().single()
     : await lsc().from("pedidos").insert(row).select().single();
   if (error) throw error;
   return mapPedido(data);
