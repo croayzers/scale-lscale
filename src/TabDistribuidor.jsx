@@ -12,12 +12,18 @@ function norm(s) {
 }
 const COLORES_PROV = ["#3b82f6","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4","#f97316","#ec4899"];
 
+// Roles asignables del Excel del proveedor (espejo de columnas del almacén).
+// `nombre` es obligatorio; el resto son los campos que ESE proveedor aporta.
+// Cada proveedor usa los que quiera (su plantilla); se guardan en correlaciones.datos.
 const ROLES_WIZARD = [
-  { key:"nombre",    label:"Nombre",      color:"#0e7490", req:true  },
-  { key:"referencia",label:"Referencia",  color:"#7c3aed", req:false },
-  { key:"coste",     label:"Coste",       color:"#d97706", req:false },
-  { key:"descuento", label:"% Descuento", color:"#ef4444", req:false },
+  { key:"nombre",    label:"Nombre",      color:"#0e7490", req:true,  base:true },
+  { key:"categoria", label:"Categoría",   color:"#2563eb", req:false, base:false },
+  { key:"referencia",label:"Referencia",  color:"#7c3aed", req:false, base:true  },
+  { key:"coste",     label:"Coste",       color:"#d97706", req:false, base:true  },
+  { key:"descuento", label:"% Descuento", color:"#ef4444", req:false, base:true  },
 ];
+// `base:true` = columna propia de la tabla correlaciones (referencia/coste/descuento);
+// `base:false` = va a correlaciones.datos (jsonb): categoria y futuros campos.
 
 // ══════════════════════════════════════════════════════════════════
 // PanelProveedores — lista de empresas suministradoras (Supabase)
@@ -122,9 +128,17 @@ function EditableCell({ value, placeholder, active, onActivate, onCommit }) {
 }
 
 // Tooltip con datos extra del proveedor (referencia/coste/descuento).
-function TooltipDatos({ datos }) {
+// Valor de un rol en una correlación: campos `base` están en columnas; el resto
+// (categoria…) en correlacion.datos (jsonb).
+function valorRol(cor, key) {
+  const r = ROLES_WIZARD.find(x => x.key === key);
+  if (!r) return null;
+  return r.base ? cor?.[key] : cor?.datos?.[key];
+}
+function TooltipDatos({ cor }) {
   const [show, setShow] = useState(false);
-  const extras = ROLES_WIZARD.filter(r => r.key!=="nombre" && datos?.[r.key] != null && datos?.[r.key] !== "");
+  const extras = ROLES_WIZARD.filter(r => r.key!=="nombre").map(r => ({ r, v: valorRol(cor, r.key) }))
+    .filter(({ v }) => v != null && v !== "");
   if (!extras.length) return null;
   return (
     <div style={{ position:"relative", display:"inline-flex", marginLeft:4 }}
@@ -132,9 +146,9 @@ function TooltipDatos({ datos }) {
       <Info size={11} color={C.dim} style={{ cursor:"default" }}/>
       {show && (
         <div style={{ position:"absolute", bottom:"calc(100% + 4px)", left:0, zIndex:50, background:C.surface, border:`1px solid ${C.line}`, borderRadius:8, padding:"8px 12px", boxShadow:"var(--shadow-lg)", minWidth:160, fontSize:12, color:C.ink, whiteSpace:"nowrap" }}>
-          {extras.map(r=>(
+          {extras.map(({ r, v })=>(
             <div key={r.key} style={{ display:"flex", justifyContent:"space-between", gap:12, padding:"2px 0" }}>
-              <span style={{ color:C.sub }}>{r.label}</span><span style={{ fontWeight:600 }}>{datos[r.key]}</span>
+              <span style={{ color:C.sub }}>{r.label}</span><span style={{ fontWeight:600 }}>{v}</span>
             </div>
           ))}
         </div>
@@ -228,7 +242,7 @@ function TablaCorrelacion({ materiales, proveedores, cor, onCommitCelda, onImpor
                               onActivate={()=>setEditCell({mid:m.id,pid:p.id})}
                               onCommit={(v)=>{ setEditCell(null); if((v||"")!==nombre) onCommitCelda(m.id, p.id, v); }}/>
                           </div>
-                          <TooltipDatos datos={datos}/>
+                          <TooltipDatos cor={datos}/>
                         </div>
                       </td>
                     );
@@ -248,7 +262,7 @@ function TablaCorrelacion({ materiales, proveedores, cor, onCommitCelda, onImpor
 // tus materiales por coincidencia de nombre (lo que no casa, se ignora;
 // el usuario completa a mano lo que falte en la tabla).
 // ══════════════════════════════════════════════════════════════════
-function WizardImport({ proveedores, materiales, onGuardarLote, onCerrar }) {
+function WizardImport({ proveedores, materiales, onGuardarLote, onGuardarPlantilla, onCerrar }) {
   const [paso, setPaso] = useState(0);
   const [provId, setProvId] = useState(proveedores[0]?.id || "");
   const [hojas, setHojas] = useState([]);
@@ -257,6 +271,14 @@ function WizardImport({ proveedores, materiales, onGuardarLote, onCerrar }) {
   const [headerRow, setHeaderRow] = useState(0);
   const [colMap, setColMap] = useState({});
   const [activeRole, setActiveRole] = useState("nombre");
+  const [guardarPl, setGuardarPl] = useState(true);
+
+  // Pre-carga la plantilla guardada del proveedor (mapeo de columnas reusable).
+  useEffect(() => {
+    const pl = proveedores.find(p => String(p.id) === String(provId))?.plantilla;
+    if (pl?.colMap) { setColMap(pl.colMap); if (pl.headerRow != null) setHeaderRow(pl.headerRow); }
+    else { setColMap({}); }
+  }, [provId, proveedores]);
   const [items, setItems] = useState([]);
   const [selec, setSelec] = useState([]);
   const [importando, setImportando] = useState(false);
@@ -313,14 +335,21 @@ function WizardImport({ proveedores, materiales, onGuardarLote, onCerrar }) {
 
   async function ejecutarImport() {
     setImportando(true);
-    const lote = selec.map(i=>items[i]).filter(it=>it.material_id).map(it=>({
-      material_id: it.material_id, nombre_proveedor: it.nombre,
-      referencia: it.referencia || null,
-      coste: it.coste ? Number(String(it.coste).replace(",", ".")) || null : null,
-      descuento: it.descuento ? Number(String(it.descuento).replace(",", ".")) || null : null,
-    }));
+    const num = (v) => v ? (Number(String(v).replace(",", ".")) || null) : null;
+    const lote = selec.map(i=>items[i]).filter(it=>it.material_id).map(it=>{
+      // Campos `base` -> columnas; campos `base:false` (categoria, …) -> datos jsonb.
+      const datos = {};
+      ROLES_WIZARD.forEach(r => { if (!r.base && r.key !== "nombre" && it[r.key]) datos[r.key] = it[r.key]; });
+      return {
+        material_id: it.material_id, nombre_proveedor: it.nombre,
+        referencia: it.referencia || null, coste: num(it.coste), descuento: num(it.descuento),
+        datos,
+      };
+    });
     try {
       await onGuardarLote(provId, lote);
+      // Guarda la plantilla de mapeo del proveedor (reusable en próximos imports).
+      if (guardarPl && onGuardarPlantilla) await onGuardarPlantilla(provId, { colMap, headerRow });
       setResultado({ guardados: lote.length, sinCasar: items.length - selec.length });
       setPaso(3);
     } catch(e) { alert("Error al guardar: "+(e?.message||e)); }
@@ -367,7 +396,7 @@ function WizardImport({ proveedores, materiales, onGuardarLote, onCerrar }) {
             <PasoColumnas {...{ hojas, hojaIdx, onHoja:onHojaChange, headerRow, setHeaderRow, headers, preview, rolDeCol, onAsignar:asignarCol, colMap, activeRole, setActiveRole, prov, colByKey }}/>
           )}
           {paso===2 && (
-            <PasoRevision {...{ items, selec, onToggle:(i)=>setSelec(s=>s.includes(i)?s.filter(x=>x!==i):[...s,i]), prov }}/>
+            <PasoRevision {...{ items, selec, onToggle:(i)=>setSelec(s=>s.includes(i)?s.filter(x=>x!==i):[...s,i]), prov, guardarPl, setGuardarPl, colMap }}/>
           )}
           {paso===3 && <PasoCompletado resultado={resultado}/>}
         </div>
@@ -467,14 +496,21 @@ function PasoColumnas({ hojas, hojaIdx, onHoja, headerRow, setHeaderRow, headers
   );
 }
 
-function PasoRevision({ items, selec, onToggle, prov }) {
+function PasoRevision({ items, selec, onToggle, prov, guardarPl, setGuardarPl, colMap }) {
   const casan = items.filter(it=>it.material_id).length;
+  const camposAsignados = ROLES_WIZARD.filter(r => colMap?.[r.key] != null);
   return (
     <div>
       <p style={{ fontSize:14, color:C.ink, fontWeight:600, marginBottom:3 }}>{items.length} filas en el Excel para <span style={{ color:prov?.color }}>{prov?.nombre}</span></p>
-      <p style={{ fontSize:12.5, color:C.sub, marginBottom:12 }}>
+      <p style={{ fontSize:12.5, color:C.sub, marginBottom:8 }}>
         <span style={{ color:C.ok }}>{casan} casan</span> con un material tuyo. <span style={{ color:C.dim }}>{items.length-casan} sin coincidencia</span> (se ignoran; complétalas a mano luego).
       </p>
+      {/* Campos del proveedor que se guardarán */}
+      <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
+        {camposAsignados.map(r => (
+          <span key={r.key} style={{ fontSize:11, fontWeight:600, color:"#fff", background:r.color, borderRadius:999, padding:"2px 9px" }}>{r.label}</span>
+        ))}
+      </div>
       <div style={{ maxHeight:320, overflowY:"auto", borderRadius:10, border:`1px solid ${C.line}` }}>
         <table style={{ borderCollapse:"collapse", width:"100%" }}>
           <thead>
@@ -502,6 +538,10 @@ function PasoRevision({ items, selec, onToggle, prov }) {
           </tbody>
         </table>
       </div>
+      <label style={{ display:"flex", alignItems:"center", gap:8, marginTop:14, cursor:"pointer", fontSize:13, color:C.ink }}>
+        <input type="checkbox" checked={guardarPl} onChange={e=>setGuardarPl(e.target.checked)} style={{ cursor:"pointer" }}/>
+        Guardar plantilla de columnas de <strong>{prov?.nombre}</strong> (la próxima importación pre-asignará estas columnas).
+      </label>
     </div>
   );
 }
@@ -588,6 +628,12 @@ export default function TabDistribuidor({ empresa, materiales = [] }) {
     const guardadas = await guardarCorrelacionesLote(proveedorId, lote, cid);
     setCor(prev => { const n={...prev}; guardadas.forEach(c=>{ n[c.material_id]={ ...(n[c.material_id]||{}), [c.proveedor_id]:c }; }); return n; });
   }
+  // Guarda la plantilla de mapeo de columnas del proveedor (reusable).
+  async function onGuardarPlantilla(proveedorId, plantilla) {
+    if (!esSupabase) return;
+    try { const upd = await actualizarProveedor(proveedorId, { plantilla }); setProveedores(ps=>ps.map(p=>p.id===proveedorId?upd:p)); }
+    catch (e) { console.warn("[plantilla]", e?.message); }
+  }
 
   const SUB_TABS = [
     { id:"correlacion", label:"Correlación" },
@@ -627,7 +673,7 @@ export default function TabDistribuidor({ empresa, materiales = [] }) {
 
       {wizard && proveedores.length>0 && (
         <WizardImport proveedores={proveedores} materiales={materiales}
-          onGuardarLote={onGuardarLote} onCerrar={()=>setWizard(false)}/>
+          onGuardarLote={onGuardarLote} onGuardarPlantilla={onGuardarPlantilla} onCerrar={()=>setWizard(false)}/>
       )}
     </div>
   );

@@ -525,7 +525,7 @@ export async function crearProveedor(p, companyId) {
 }
 export async function actualizarProveedor(id, cambios) {
   const patch = {};
-  for (const k of ["nombre", "contacto", "color"]) if (k in cambios) patch[k] = cambios[k];
+  for (const k of ["nombre", "contacto", "color", "plantilla"]) if (k in cambios) patch[k] = cambios[k];
   const { data, error } = await lsc().from("proveedores").update(patch).eq("id", id).select().single();
   if (error) throw error;
   return data;
@@ -538,7 +538,9 @@ export async function borrarProveedor(id) {
 // CARGA SELECTIVA (minimiza egress): nunca traemos las miles de correlaciones de
 // golpe. Pedimos solo las del proveedor elegido, o solo las de los materiales de
 // un pedido. Las columnas justas (no select * innecesario en listados grandes).
-const COR_COLS = "id,material_id,proveedor_id,nombre_proveedor,referencia,coste,descuento";
+// `datos` (jsonb) lleva los campos flexibles que aporta cada proveedor
+// (categoria, y cualquier otro que asigne en su plantilla de import).
+const COR_COLS = "id,material_id,proveedor_id,nombre_proveedor,referencia,coste,descuento,datos";
 
 // Correlaciones de UN proveedor (para ver/editar su columna o traducir su compra).
 export async function cargarCorrelacionesDeProveedor(proveedorId) {
@@ -555,11 +557,12 @@ export async function cargarCorrelacionesDeMateriales(materialIds = []) {
 }
 
 // Crea o actualiza una correlación (material ↔ proveedor) por su par único.
+// c.datos (jsonb) = campos flexibles del proveedor (categoria, etc.).
 export async function guardarCorrelacion(c, companyId) {
   const row = {
     company_id: companyId, material_id: c.material_id, proveedor_id: c.proveedor_id,
     nombre_proveedor: c.nombre_proveedor, referencia: c.referencia || null,
-    coste: c.coste ?? null, descuento: c.descuento ?? null,
+    coste: c.coste ?? null, descuento: c.descuento ?? null, datos: c.datos || {},
   };
   const { data, error } = await lsc().from("correlaciones")
     .upsert(row, { onConflict: "material_id,proveedor_id" }).select().single();
@@ -568,12 +571,12 @@ export async function guardarCorrelacion(c, companyId) {
 }
 
 // Import del Excel del proveedor en UN SOLO request (upsert por lotes ~500 filas).
-// `items` = [{ material_id, nombre_proveedor, referencia?, coste?, descuento? }].
+// `items` = [{ material_id, nombre_proveedor, referencia?, coste?, descuento?, datos? }].
 export async function guardarCorrelacionesLote(proveedorId, items, companyId) {
   const rows = (items || []).filter(i => i.material_id && i.nombre_proveedor).map(i => ({
     company_id: companyId, proveedor_id: proveedorId, material_id: i.material_id,
     nombre_proveedor: i.nombre_proveedor, referencia: i.referencia || null,
-    coste: i.coste ?? null, descuento: i.descuento ?? null,
+    coste: i.coste ?? null, descuento: i.descuento ?? null, datos: i.datos || {},
   }));
   if (!rows.length) return [];
   const { data, error } = await lsc().from("correlaciones")
