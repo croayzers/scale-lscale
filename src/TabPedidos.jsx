@@ -70,14 +70,62 @@ function Field({ label, value, onChange, type = "text", placeholder = "", span =
   );
 }
 
-function ListaProveedorPedido({ proveedor, items }) {
-  if (!proveedor || !items.length) return null;
+// Roles que tiene un proveedor en su plantilla de import (qué campos aporta).
+function rolesDeProveedor(prov) {
+  const cm = prov?.plantilla?.colMap;
+  return cm ? Object.keys(cm) : [];
+}
+
+function ListaProveedorPedido({ provs, items }) {
+  if (!items.length) return null;
+  // Agrupa las líneas por su proveedor efectivo (proveedor por línea).
+  const grupos = {};
+  for (const it of items) {
+    if (!it.proveedorId) continue;
+    (grupos[it.proveedorId] ||= []).push(it);
+  }
+  const ids = Object.keys(grupos);
+  if (!ids.length) return null;
 
   return (
-    <div style={{ padding:"12px 20px", background:C.surface, borderBottom:`1px solid ${C.line}`, flexShrink:0 }}>
-      <div style={{ marginBottom:10 }}>
-        <div style={{ fontSize:13, fontWeight:700, color:C.ink }}>Lista para proveedor</div>
-        <div style={{ fontSize:12, color:C.sub }}>{proveedor.nombre} · {items.length} líneas</div>
+    <div style={{ padding:"12px 20px", background:C.surface, borderBottom:`1px solid ${C.line}`, flexShrink:0, display:"grid", gap:14 }}>
+      {ids.map(pid => {
+        const proveedor = provs.find(p => String(p.id) === String(pid));
+        if (!proveedor) return null;
+        const grupoItems = grupos[pid];
+        // Columnas de export = roles de la plantilla del proveedor + cantidad/unidad.
+        const cols = columnasExportProveedor(rolesDeProveedor(proveedor));
+        const lineasExp = grupoItems.map(it => ({
+          nombreProveedor: it.nombreProveedor, cantidad: it.cantidad, unidad: it.unidad,
+          categoria: it.categoria, referencia: it.referencia || "",
+          coste: it.coste ?? "", descuento: it.descuento != null ? it.descuento + "%" : "",
+        }));
+        return (
+          <ProveedorGrupo key={pid} proveedor={proveedor} items={grupoItems} cols={cols} lineasExp={lineasExp}/>
+        );
+      })}
+    </div>
+  );
+}
+
+function ProveedorGrupo({ proveedor, items, cols, lineasExp }) {
+  return (
+    <div>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10, flexWrap:"wrap", gap:8 }}>
+        <div>
+          <div style={{ fontSize:13, fontWeight:700, color:C.ink, display:"flex", alignItems:"center", gap:6 }}>
+            <span style={{ width:9, height:9, borderRadius:999, background:proveedor.color||C.brand }}/>Compra para {proveedor.nombre}
+          </div>
+          <div style={{ fontSize:12, color:C.sub }}>{items.length} líneas · campos: {cols.map(c=>c.label).join(", ")}</div>
+        </div>
+        <div style={{ display:"flex", gap:6 }}>
+          <Btn outline onClick={() => exportarCompraProveedorPDF(proveedor, lineasExp, cols)} style={{ padding:"5px 12px", fontSize:12.5, gap:5 }}>
+            <FileDown size={12} color="#ef4444"/>PDF
+          </Btn>
+          <Btn outline onClick={() => exportarCompraProveedorExcel(proveedor, lineasExp, cols)} style={{ padding:"5px 12px", fontSize:12.5, gap:5 }}>
+            <FileDown size={12} color="#16a34a"/>Excel
+          </Btn>
+        </div>
       </div>
       <div style={{ display:"grid", gap:8 }}>
         {items.map((item) => {
@@ -128,7 +176,7 @@ function ListaProveedorPedido({ proveedor, items }) {
   );
 }
 
-// MARK: - ExpedicionForm
+// MARK: - ExpedicionForm (real)
 /* ─── Formulario de expedición (wizard) ───────────────────────────────────── */
 function ExpedicionForm({ form, setForm, nextCodigo, L }) {
   const f = (k) => (v) => setForm(p => ({ ...p, [k]: v }));
@@ -509,6 +557,56 @@ function exportarPDFCfg(pedido, almacenes, cfg) {
   win.document.write(html);
   win.document.close();
   win.focus();
+  setTimeout(() => win.print(), 400);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   EXPORT DE COMPRA POR PROVEEDOR — nombres traducidos + campos de SU plantilla.
+   `campos` = roles del proveedor presentes en su plantilla de import (nombre,
+   categoria, referencia, coste, descuento). Solo esos salen; el resto, gris.
+   `lineas` = [{ nombreProveedor, cantidad, unidad, categoria, referencia, coste, descuento }]
+   ═══════════════════════════════════════════════════════════════════════════ */
+// Definición de columnas posibles y su etiqueta/orden.
+const CAMPOS_EXPORT_PROV = [
+  { key:"nombreProveedor", label:"Material", rol:"nombre" },
+  { key:"categoria",       label:"Categoría", rol:"categoria" },
+  { key:"referencia",      label:"Referencia", rol:"referencia" },
+  { key:"cantidad",        label:"Cantidad", rol:"__qty__" },   // siempre
+  { key:"unidad",          label:"Unidad", rol:"__qty__" },     // siempre
+  { key:"coste",           label:"Coste", rol:"coste" },
+  { key:"descuento",       label:"% Desc.", rol:"descuento" },
+];
+// Qué columnas se incluyen, según los roles de la plantilla del proveedor.
+function columnasExportProveedor(rolesProveedor = []) {
+  const set = new Set(rolesProveedor);
+  return CAMPOS_EXPORT_PROV.filter(c => c.rol === "nombre" || c.rol === "__qty__" || set.has(c.rol));
+}
+
+function exportarCompraProveedorExcel(proveedor, lineas, cols) {
+  const wb = XLSX.utils.book_new();
+  const header = cols.map(c => c.label);
+  const filas = lineas.map(l => cols.map(c => l[c.key] ?? ""));
+  const ws = XLSX.utils.aoa_to_sheet([
+    [`COMPRA · ${proveedor.nombre}`],
+    [`Fecha: ${new Date().toLocaleDateString("es-ES")}`],
+    [],
+    header, ...filas,
+  ]);
+  ws["!cols"] = cols.map(c => ({ wch: c.key === "nombreProveedor" ? 36 : c.key === "categoria" ? 20 : 12 }));
+  XLSX.utils.book_append_sheet(wb, ws, "Compra");
+  XLSX.writeFile(wb, `Compra_${proveedor.nombre.replace(/\s+/g,"_")}_${new Date().toISOString().slice(0,10)}.xlsx`);
+}
+
+function exportarCompraProveedorPDF(proveedor, lineas, cols) {
+  const thead = `<tr>${cols.map(c=>`<th style="text-align:${c.key==="cantidad"||c.key==="coste"||c.key==="descuento"?"right":"left"}">${c.label}</th>`).join("")}</tr>`;
+  const body = lineas.map(l => `<tr>${cols.map(c=>`<td style="text-align:${c.key==="cantidad"||c.key==="coste"||c.key==="descuento"?"right":"left"}">${l[c.key] ?? ""}</td>`).join("")}</tr>`).join("");
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Compra ${proveedor.nombre}</title>
+<style>body{font-family:Arial,Helvetica,sans-serif;color:#111;padding:24px}h1{font-size:20px;margin:0 0 4px}.sub{color:#6b7280;font-size:13px;margin-bottom:16px}
+table{width:100%;border-collapse:collapse;font-size:12.5px}th{background:#f3f4f6;padding:7px 10px;text-align:left;border-bottom:2px solid #e5e7eb}td{padding:6px 10px;border-bottom:1px solid #eee}</style></head>
+<body><h1>Compra · ${proveedor.nombre}</h1><div class="sub">${lineas.length} líneas · ${new Date().toLocaleDateString("es-ES")}</div>
+<table><thead>${thead}</thead><tbody>${body}</tbody></table></body></html>`;
+  const win = window.open("", "_blank", "width=820,height=1000");
+  win.document.write(html); win.document.close(); win.focus();
   setTimeout(() => win.print(), 400);
 }
 
@@ -1282,7 +1380,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
         )}
       </div>
 
-      <ListaProveedorPedido proveedor={proveedorSel} items={listaProveedor} />
+      <ListaProveedorPedido provs={provs} items={listaProveedor} />
 
       {/* Tabla de materiales */}
       <div style={{ flex:1, overflowY:"auto" }}>
