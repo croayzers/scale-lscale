@@ -44,9 +44,12 @@ const clamp  = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 const uid    = () => `t${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
 const toHM   = h  => { const hh = Math.floor(((h % 24) + 24) % 24), mm = Math.round((h % 1 + (h % 1 < 0 ? 1 : 0)) * 60) % 60; return `${String(hh).padStart(2,"0")}:${String(mm).padStart(2,"0")}`; };
 const dec2hm = s  => { if (!s) return null; const [hh, mm] = s.split(":").map(Number); return hh + (mm || 0) / 60; };
-const hoyMas = n  => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() + n); return d.toISOString().slice(0,10); };
+// Formatea una fecha en hora LOCAL como YYYY-MM-DD. No usar toISOString() para esto:
+// convierte a UTC y en husos con offset positivo (p.ej. España +2) salta al día anterior.
+const localISO = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+const hoyMas = n  => { const d = new Date(); d.setHours(0,0,0,0); d.setDate(d.getDate() + n); return localISO(d); };
 // fmtD se redefine dentro del componente con el formato configurado
-const isoPlus = (iso, n) => { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return d.toISOString().slice(0,10); };
+const isoPlus = (iso, n) => { const d = new Date(iso + "T00:00:00"); d.setDate(d.getDate() + n); return localISO(d); };
 
 // Convierte hora-decimal-canvas a px X
 const hToX = h => h * W_PX;
@@ -522,7 +525,7 @@ function lunesDe(iso) {
   const d = new Date(iso + "T00:00:00");
   const dow = d.getDay(); // 0=Dom
   d.setDate(d.getDate() - (dow === 0 ? 6 : dow - 1));
-  return d.toISOString().slice(0,10);
+  return localISO(d);
 }
 // Primer día del mes
 function primerDelMes(iso) {
@@ -541,7 +544,7 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
     startTramoDn, startResizeDn, onSaveTramos, conflictos, L }) {
   const fmtD    = iso => fmtFecha(iso, formatoFecha);
   const vehById = Object.fromEntries((vehiculosEmpresa||[]).map(v=>[String(v.id),v]));
-  const hoy     = new Date().toISOString().slice(0,10);
+  const hoy     = localISO(new Date());
   const lunes   = lunesDe(fecha);
   const dias    = rango(lunes, 7);
 
@@ -837,7 +840,7 @@ function VistaSemana({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha,
 function VistaMes({ pedidos, fecha, setFecha, vehiculosEmpresa, formatoFecha, onEditPedido, L }) {
   const fmtD   = iso => fmtFecha(iso, formatoFecha);
   const vehById = Object.fromEntries((vehiculosEmpresa||[]).map(v=>[String(v.id),v]));
-  const hoy     = new Date().toISOString().slice(0,10);
+  const hoy     = localISO(new Date());
 
   // Calcular el grid: desde el lunes de la primera semana que contiene el día 1 del mes
   const primero = primerDelMes(fecha);
@@ -1400,11 +1403,11 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, mat
 
   /* ── Render ─────────────────────────────────────────────────────────────── */
   const navegar = d => {
-    const dt = new Date(fecha);
+    const dt = new Date(fecha + "T00:00:00"); // parse local, no UTC
     if (vista === "semana") dt.setDate(dt.getDate() + d * 7);
     else if (vista === "mes") dt.setMonth(dt.getMonth() + d);
     else dt.setDate(dt.getDate() + d);
-    setFecha(dt.toISOString().slice(0,10));
+    setFecha(localISO(dt));
   };
 
   return (
