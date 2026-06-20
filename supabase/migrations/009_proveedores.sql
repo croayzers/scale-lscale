@@ -45,3 +45,10 @@ CREATE POLICY "correlaciones_own" ON lscale.correlaciones
 
 CREATE INDEX IF NOT EXISTS idx_correlaciones_material  ON lscale.correlaciones(material_id);
 CREATE INDEX IF NOT EXISTS idx_correlaciones_proveedor ON lscale.correlaciones(proveedor_id);
+
+-- ── GRANTS ────────────────────────────────────────────────
+-- IMPRESCINDIBLE: sin esto las tablas dan 403 (permission denied) al rol
+-- authenticated aunque la RLS esté bien. Mismo patrón que 004/005.
+GRANT ALL ON lscale.proveedores   TO authenticated;
+GRANT ALL ON lscale.correlaciones TO authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA lscale TO authenticated;
