@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Plus, Trash2, Search, Upload, X, Check, Building2, Edit2, Save, Info, Tag, ChevronDown } from "lucide-react";
 import * as XLSX from "xlsx";
 import { C, Btn } from "./lib/ui.jsx";
+import { sincronizarAliasConMateriales } from "./lib/distribuidores.js";
 
 const KEY_PROVS      = (cid) => `lscale.dist_provs.${cid}`;
 const KEY_FILAS      = (cid) => `lscale.dist_filas.${cid}`;
@@ -481,7 +482,23 @@ function TablaCorrelacion({ filas, setFilas, proveedores, aliases, onImportar })
   const [editCell, setEditCell] = useState(null);
 
   function actualizarAlias(filaId, valor) {
-    setFilas(fs => fs.map(f => f.id===filaId ? {...f, alias:valor} : f));
+    setFilas(fs => {
+      const alias = (valor || "").trim();
+      if (!alias) return fs.map(f => f.id === filaId ? { ...f, alias:"" } : f);
+
+      const destino = fs.find(f => f.id !== filaId && norm(f.alias) === norm(alias));
+      if (!destino) return fs.map(f => f.id === filaId ? { ...f, alias } : f);
+
+      const origen = fs.find(f => f.id === filaId);
+      if (!origen) return fs;
+
+      return fs
+        .filter(f => f.id !== filaId)
+        .map(f => f.id === destino.id
+          ? { ...f, alias, proveedores:{ ...(f.proveedores || {}), ...(origen.proveedores || {}) } }
+          : f
+        );
+    });
   }
 
   function actualizarNombreProv(filaId, provId, valor) {
@@ -703,14 +720,13 @@ function WizardImport({ proveedores, aliases, filas, setFilas, plantillas, setPl
 
     const revisados=parsed.map(it=>{
       const n=norm(it.nombre);
-      // Buscar en filas existentes: alias o nombre de proveedor
-      const idx=filas.findIndex(f=>
-        norm(f.alias)===n ||
-        Object.values(f.proveedores||{}).some(d=>norm(typeof d==="string"?d:d?.nombre||"")===n)
-      );
-      // También buscar alias por nombre
-      const aliasMatch=aliases.find(a=>norm(a.nombre)===n);
-      return{...it,tipo:idx>=0?"actualiza":"nuevo",filaIdx:idx,aliasNombre:aliasMatch?.nombre||null};
+      // Solo reimporta sobre la misma fila si ese proveedor ya tenía ese nombre exacto.
+      const idx=filas.findIndex(f=>{
+        const d = f.proveedores?.[provId];
+        const nom = typeof d==="string" ? d : d?.nombre || "";
+        return norm(nom) === n;
+      });
+      return{...it,tipo:idx>=0?"actualiza":"nuevo",filaIdx:idx,aliasNombre:null};
     });
     setItems(revisados);setSelec(revisados.map((_,i)=>i));setPaso(2);
   }
@@ -732,8 +748,8 @@ function WizardImport({ proveedores, aliases, filas, setFilas, plantillas, setPl
             [provId]:{...(typeof prev==="string"?{nombre:prev}:prev),...datosGuardar}}};
         actualizados++;
       } else {
-        // Si el nombre coincide con un alias, pre-asignarlo
-        next.push({id:uid(), alias:it.aliasNombre||"", proveedores:{[provId]:datosGuardar}});
+        // La correlación con el material estándar la hace el usuario.
+        next.push({id:uid(), alias:"", proveedores:{[provId]:datosGuardar}});
         nuevos++;
       }
     }
@@ -1029,7 +1045,7 @@ function PasoCompletado({resultado}){
 // ══════════════════════════════════════════════════════════════════
 // TabDistribuidor — export default
 // ══════════════════════════════════════════════════════════════════
-export default function TabDistribuidor({ empresa }) {
+export default function TabDistribuidor({ empresa, materiales = [] }) {
   const cid = empresa?.id||"local";
 
   const [proveedores, setProveedoresRaw] = useState(()=>{
@@ -1047,6 +1063,7 @@ export default function TabDistribuidor({ empresa }) {
 
   const [subTab, setSubTab] = useState("correlacion");
   const [wizard, setWizard] = useState(false);
+  const aliasesSync = useMemo(() => sincronizarAliasConMateriales(aliases, materiales), [aliases, materiales]);
 
   function setProveedores(fn){
     setProveedoresRaw(ps=>{const n=typeof fn==="function"?fn(ps):fn;localStorage.setItem(KEY_PROVS(cid),JSON.stringify(n));return n;});
@@ -1085,7 +1102,7 @@ export default function TabDistribuidor({ empresa }) {
 
       {subTab==="correlacion"&&(
         <TablaCorrelacion filas={filas} setFilas={setFilas}
-          proveedores={proveedores} aliases={aliases}
+          proveedores={proveedores} aliases={aliasesSync}
           onImportar={()=>setWizard(true)}/>
       )}
       {subTab==="alias"&&(
@@ -1100,7 +1117,7 @@ export default function TabDistribuidor({ empresa }) {
       )}
 
       {wizard&&proveedores.length>0&&(
-        <WizardImport proveedores={proveedores} aliases={aliases}
+        <WizardImport proveedores={proveedores} aliases={aliasesSync}
           filas={filas} setFilas={setFilas}
           plantillas={plantillas} setPlantillas={setPlantillas}
           onCerrar={()=>setWizard(false)}/>

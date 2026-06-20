@@ -23,6 +23,9 @@ function mapEmpresa(co, cfg) {
     billing_email: co.billing_email || null,
     apps: co.apps || [],
     flags: co.flags || {},
+    // IA heredada del Portal: companies.flags.ai = { provider, keys }.
+    aiProvider: co.flags?.ai?.provider || null,
+    aiKeys: co.flags?.ai?.keys || {},
     col_config: cfg?.col_config || {},
     datos_json: cfg?.datos_json || {},
   };

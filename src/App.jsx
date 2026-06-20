@@ -6,7 +6,7 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from "react"
 import {
   CalendarDays, RotateCcw, Warehouse, Settings,
   Sun, Moon, Globe, Loader, ArrowRight,
-  Building2, ShoppingBag, ClipboardList,
+  Building2, ShoppingBag, ClipboardList, ChevronDown,
 } from "lucide-react";
 import { LangContext, IDIOMAS } from "./lib/i18n.js";
 import { sb, supabaseConfigurado } from "./lib/supabase.js";
@@ -50,17 +50,27 @@ const DEFAULT_VEHICULOS_EMPRESA = [
   { id: 3, nombre: "Conductor 3", dni: "", modelo: "Renault Master",    tipo: "Camión",    matricula: "9012 DEF", color: "#10b981" },
 ];
 
-const TABS = [
-  { id: "almacen",    label: "Almacén",        Icon: Warehouse      },
-  { id: "inventario", label: "Inventario",      Icon: ClipboardCheck },
-  { id: "pedido",     label: "Pedidos",         Icon: ClipboardList  },
-  { id: "planning",   label: "Planning",        Icon: CalendarDays   },
-  { id: "retorno",    label: "Retorno/Cierre",  Icon: RotateCcw      },
-  { id: "flota",      label: "Flota",           Icon: Truck          },
-  { id: "etiquetas",  label: "Etiquetas",       Icon: Tag            },
-  { id: "cesta",         label: "Cesta",        Icon: ShoppingCart   },
-  { id: "distribuidor", label: "Distribuidor",  Icon: Building2      },
-  { id: "config",       label: "Config",        Icon: Settings       },
+const NAV = [
+  { id: "cesta", label: "Cesta", Icon: ShoppingCart },
+  {
+    label: "Gestión", Icon: Warehouse,
+    items: [
+      { id: "distribuidor", label: "Distribuidor", Icon: Building2      },
+      { id: "almacen",      label: "Almacén",      Icon: Warehouse      },
+      { id: "inventario",   label: "Inventario",   Icon: ClipboardCheck },
+    ],
+  },
+  {
+    label: "Distribución", Icon: ClipboardList,
+    items: [
+      { id: "pedido",    label: "Pedidos",         Icon: ClipboardList },
+      { id: "etiquetas", label: "Etiquetas",       Icon: Tag           },
+      { id: "planning",  label: "Planning",        Icon: CalendarDays  },
+      { id: "retorno",   label: "Retorno/Cierre",  Icon: RotateCcw     },
+    ],
+  },
+  { id: "flota",  label: "Flota",          Icon: Truck    },
+  { id: "config", label: "Configuración",  Icon: Settings },
 ];
 
 // MARK: - AvisoPortal
@@ -612,7 +622,7 @@ export default function App() {
           {tab === "flota"     && <TabFlota pedidos={pedidos} vehiculosEmpresa={vehiculosEmpresa} empresa={empresa} formatoFecha={formatoFecha} L={L}/>}
           {tab === "etiquetas" && <TabEtiquetas pedidos={pedidos} plantillas={plantillasEtiquetas} onGuardarPlantillas={guardarPlantillasEtiquetas} L={L}/>}
           {tab === "cesta"     && <TabCesta cesta={cesta} setCesta={setCesta} materiales={materiales} setMateriales={setMateriales} almacenes={almacenes} modo={modo} empresa={empresa} sesion={sesion} colsIniciales={cestaCols} onGuardarCols={guardarCestaCols} onNotificarEvento={notificarEvento} L={L}/>}
-          {tab === "distribuidor" && <TabDistribuidor empresa={empresa}/>}
+          {tab === "distribuidor" && <TabDistribuidor empresa={empresa} materiales={materiales}/>}
           {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={puedeAdmin} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} portalUrl={import.meta.env?.VITE_PORTAL_URL || "http://localhost:3000"} L={L}/>}
         </div>
 
@@ -629,6 +639,16 @@ export default function App() {
             resolveAppUrl={resolveAppUrl}
             onUnreadChange={setChatUnread}
             onEventoLocal={onEventoLocal}
+            ia={{
+              enabled: empresa?.flags?.funciones?.asistenteIA_lscale !== false,
+              provider: empresa.aiProvider, keys: empresa.aiKeys || {},
+              system: "Eres el asistente de L-Scale, app de logística de eventos (almacén, pedidos, expediciones, planning de vehículos). Conoces la actividad reciente del equipo. Ayuda al usuario respondiendo dudas sobre la app y la logística, y resumiendo lo que ha pasado. Responde en español, breve y claro.",
+              prompts: [
+                "Resume la actividad reciente de mi equipo",
+                "¿Qué pedidos o eventos nuevos hay?",
+                "¿Tengo mensajes pendientes importantes?",
+              ],
+            }}
           />
         )}
 

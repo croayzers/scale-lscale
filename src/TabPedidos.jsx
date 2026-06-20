@@ -21,6 +21,7 @@ import ExcelConfigurador from "./ExcelConfigurador.jsx";
 import { guardarPedido, borrarPedido, cargarMiembrosEmpresa, enviarNotificacionPedido, recargarMateriales, guardarPrefs } from "./lib/data.js";
 import { fmtFecha, siguienteCodigo } from "./lib/fechas.js";
 import { conflictosPedido, calcularConflictosStock } from "./lib/stockConflictos.js";
+import { cargarDistribuidores, nombreProveedorDeLinea, resumenProveedorPedido } from "./lib/distribuidores.js";
 
 // MARK: - Constantes UI (C, CHIP_ESTADO, ESTADOS)
 /* ─── Paleta ──────────────────────────────────────────────────────────────── */
@@ -66,6 +67,64 @@ function Field({ label, value, onChange, type = "text", placeholder = "", span =
       <input type={type} value={value ?? ""} onChange={e => onChange(e.target.value)} placeholder={placeholder}
         style={{ width:"100%", padding:"8px 10px", border:`1px solid ${C.strong}`, borderRadius:9,
           fontSize:13.5, fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none" }}/>
+    </div>
+  );
+}
+
+function ListaProveedorPedido({ proveedor, items }) {
+  if (!proveedor || !items.length) return null;
+
+  return (
+    <div style={{ padding:"12px 20px", background:C.surface, borderBottom:`1px solid ${C.line}`, flexShrink:0 }}>
+      <div style={{ marginBottom:10 }}>
+        <div style={{ fontSize:13, fontWeight:700, color:C.ink }}>Lista para proveedor</div>
+        <div style={{ fontSize:12, color:C.sub }}>{proveedor.nombre} · {items.length} líneas</div>
+      </div>
+      <div style={{ display:"grid", gap:8 }}>
+        {items.map((item) => {
+          const usaEstandar = item.nombreProveedor === item.nombreBase;
+          return (
+            <div key={item.key} style={{ display:"grid", gridTemplateColumns:"minmax(0,1fr) auto", gap:10, alignItems:"start", padding:"10px 12px", border:`1px solid ${C.line}`, borderRadius:12, background:C.bg }}>
+              <div style={{ minWidth:0 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:8, flexWrap:"wrap" }}>
+                  <span style={{ fontSize:13.5, fontWeight:700, color:C.ink }}>{item.nombreProveedor}</span>
+                  {usaEstandar && (
+                    <span style={{ fontSize:11, color:C.sub, background:C.s2, borderRadius:999, padding:"2px 8px" }}>
+                      nombre estándar
+                    </span>
+                  )}
+                  {item.referencia && (
+                    <span style={{ fontSize:11, color:C.brand, background:C.brandSoft, borderRadius:999, padding:"2px 8px", fontWeight:600 }}>
+                      Ref: {item.referencia}
+                    </span>
+                  )}
+                  {item.coste && (
+                    <span style={{ fontSize:11, color:"#b45309", background:"#fff7ed", borderRadius:999, padding:"2px 8px", fontWeight:600 }}>
+                      Coste: {item.coste}
+                    </span>
+                  )}
+                  {item.descuento && (
+                    <span style={{ fontSize:11, color:"#be123c", background:"#fff1f2", borderRadius:999, padding:"2px 8px", fontWeight:600 }}>
+                      Desc: {item.descuento}%
+                    </span>
+                  )}
+                </div>
+                {item.nombreProveedor !== item.nombreBase && (
+                  <div style={{ fontSize:11.5, color:C.sub, marginTop:4 }}>
+                    Estándar: {item.nombreBase}
+                  </div>
+                )}
+                <div style={{ fontSize:11.5, color:C.sub, marginTop:4 }}>
+                  {item.categoria}
+                </div>
+              </div>
+              <div style={{ fontSize:13, fontWeight:700, color:C.ink, whiteSpace:"nowrap" }}>
+                {item.cantidad} {item.unidad}
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -811,6 +870,15 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
   const [stockOk,          setStockOk]          = useState(false);
   const [errorComprobar,   setErrorComprobar]   = useState(null);
   const [checkTick,        setCheckTick]        = useState(0);
+  const [distData,         setDistData]         = useState(() => cargarDistribuidores(empresaId));
+
+  useEffect(() => {
+    setP({ ...pedido });
+  }, [pedido]);
+
+  useEffect(() => {
+    setDistData(cargarDistribuidores(empresaId));
+  }, [empresaId, materiales]);
 
   // Scroll a categoría si se abre desde un link de chat con #categoria
   useEffect(() => {
@@ -823,6 +891,13 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
   }, [highlightedCategoria]);
 
   const f = (k) => (v) => setP(prev => ({ ...prev, [k]: v }));
+  const proveedoresPedido = distData?.proveedores || [];
+  const filasProveedor = distData?.filas || [];
+  const proveedorSel = proveedoresPedido.find((prov) => String(prov.id) === String(p.proveedor_id)) || null;
+  const listaProveedor = useMemo(
+    () => resumenProveedorPedido(p, p.proveedor_id, filasProveedor),
+    [p, filasProveedor]
+  );
 
   // Agrupar líneas por almacén → por categoría
   const almTable = useMemo(() => {
@@ -856,7 +931,10 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
   const totalUds   = (p.lineas || []).reduce((s, l) => s + (l.cantidad || 0), 0);
   const almNombre  = almacenes.find(a => a.id === p.almacen_id)?.nombre || p.almacen_nombre || "—";
 
-  const guardar = () => { onSave(p); setEditando(false); };
+  const guardar = async () => {
+    await onSave(p);
+    setEditando(false);
+  };
 
   const eliminarLinea = (i) => setP(prev => ({ ...prev, lineas: prev.lineas.filter((_, j) => j !== i) }));
 
@@ -933,6 +1011,33 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
               {vehiculosEmpresa.map(v => (
                 <option key={v.id} value={String(v.id)}>
                   {v.nombre || v.matricula || `VEH-${v.id}`}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+        {proveedoresPedido.length > 0 && (
+          <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+            <select
+              value={p.proveedor_id ?? ""}
+              onChange={e => {
+                const provId = e.target.value || null;
+                const prov = proveedoresPedido.find((x) => String(x.id) === String(provId)) || null;
+                const next = {
+                  ...p,
+                  proveedor_id: provId,
+                  proveedor_nombre: prov?.nombre || null,
+                };
+                setP(next);
+                onSave(next);
+              }}
+              style={{ padding:"5px 28px 5px 10px", border:`1px solid ${C.strong}`, borderRadius:999,
+                fontSize:12.5, fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none",
+                cursor:"pointer", appearance:"auto", maxWidth:200 }}>
+              <option value="">{L("Sin proveedor","No supplier")}</option>
+              {proveedoresPedido.map((prov) => (
+                <option key={prov.id} value={String(prov.id)}>
+                  {prov.nombre}
                 </option>
               ))}
             </select>
@@ -1145,6 +1250,8 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
         )}
       </div>
 
+      <ListaProveedorPedido proveedor={proveedorSel} items={listaProveedor} />
+
       {/* Tabla de materiales */}
       <div style={{ flex:1, overflowY:"auto" }}>
 
@@ -1208,6 +1315,8 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
 
                 {cat.items.map((item, i) => {
                   const globalIdx = (p.lineas || []).indexOf(item);
+                  const nombreProveedor = nombreProveedorDeLinea(item, p.proveedor_id, filasProveedor);
+                  const usaNombreProveedor = Boolean(p.proveedor_id) && nombreProveedor !== (item.nombre_original || item.nombre);
                   // Separar roles en "descripcion" (bajo el nombre) y "columna" (columna propia)
                   const rolesDesc = (rolesImport || []).filter(r => r.tipo === "descripcion" && item[r.key]);
                   const rolesCols = (rolesImport || []).filter(r => r.tipo === "columna" && item[r.key]);
@@ -1225,7 +1334,12 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                         {item.categoria || ""}
                       </div>
                       <div style={{ padding:"9px 8px" }}>
-                        <div style={{ fontSize:13.5, color:C.ink }}>{item.nombre}</div>
+                        <div style={{ fontSize:13.5, color:C.ink }}>{nombreProveedor}</div>
+                        {usaNombreProveedor && (
+                          <div style={{ fontSize:11.5, color:C.sub, marginTop:2 }}>
+                            Estándar: {item.nombre_original || item.nombre}
+                          </div>
+                        )}
                         {item._editado_por && (
                           <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:3 }}>
                             <span style={{ fontSize:10.5, fontWeight:700, color:"#ea580c",
@@ -1722,7 +1836,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
   };
 
   /* ── Guardar cambios de pedido existente ─────────────────────────────── */
-  const guardarPedidoEdit = (p) => {
+  const guardarPedidoEdit = async (p) => {
     const normF = (s) => {
       if (!s) return s;
       const m = String(s).trim().match(/^(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})$/);
@@ -1731,12 +1845,22 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
       return `${y.length === 2 ? "20" + y : y}-${mo.padStart(2,"0")}-${d.padStart(2,"0")}`;
     };
     const pNorm = { ...p, fecha_entrega: normF(p.fecha_entrega), fecha_retorno: normF(p.fecha_retorno) };
-    setPedidos(prev => prev.map(x => x.id === pNorm.id ? pNorm : x));
-    setPedidoSel(pNorm);
-    // Notificar solo si hay líneas de material (reserva de stock)
-    if (onNotificarStock && (pNorm.lineas || []).length > 0) {
-      onNotificarStock(pNorm, materiales, "pedido");
+    let guardado = pNorm;
+    if (modo !== "demo") {
+      try {
+        guardado = await guardarPedido(pNorm, empresa?.id);
+      } catch (e) {
+        setErrMsg(`Error guardando: ${e.message}`);
+        throw e;
+      }
     }
+    setPedidos(prev => prev.map(x => x.id === guardado.id ? guardado : x));
+    setPedidoSel(guardado);
+    // Notificar solo si hay líneas de material (reserva de stock)
+    if (onNotificarStock && (guardado.lineas || []).length > 0) {
+      onNotificarStock(guardado, materiales, "pedido");
+    }
+    return guardado;
   };
 
   /* ── Cambiar vehículo asignado → propagar a tramos de expediciones ──── */
