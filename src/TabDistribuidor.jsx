@@ -25,6 +25,17 @@ const ROLES_WIZARD = [
 // Campos guardados como columna propia de proveedor_items; lo demás iría a datos jsonb.
 const COLUMNAS_ITEM = new Set(["nombre","categoria","referencia","coste","descuento"]);
 
+// Datos opcionales del proveedor (van en proveedores.datos jsonb). Se usan como
+// destinatario en la cabecera del PDF/Excel de pedido a proveedor (en la Cesta).
+const DATOS_PROV = [
+  { key:"cif",       label:"CIF / NIF",   ph:"B12345678" },
+  { key:"persona",   label:"Persona contacto", ph:"Nombre y apellidos" },
+  { key:"telefono",  label:"Teléfono",    ph:"600 000 000" },
+  { key:"email",     label:"Email",       ph:"pedidos@proveedor.com" },
+  { key:"direccion", label:"Dirección",   ph:"Calle, nº, CP, ciudad" },
+  { key:"web",       label:"Web",         ph:"www.proveedor.com" },
+];
+
 // ══════════════════════════════════════════════════════════════════
 // PanelProveedores — lista de empresas suministradoras (Supabase)
 // ══════════════════════════════════════════════════════════════════
@@ -74,31 +85,49 @@ function PanelProveedores({ proveedores, itemsByProv, onCrear, onEditar, onBorra
           {proveedores.map(p => {
             const nItems = (itemsByProv[p.id]||[]).length;
             return (
-            <div key={p.id} style={{ display:"flex", alignItems:"center", gap:10, background:C.surface, border:`1px solid ${C.line}`, borderRadius:10, padding:"10px 14px", borderLeft:`4px solid ${p.color||C.brand}` }}>
+            <div key={p.id} style={{ background:C.surface, border:`1px solid ${C.line}`, borderRadius:10, padding:"10px 14px", borderLeft:`4px solid ${p.color||C.brand}` }}>
               {editId===p.id ? (
-                <>
-                  <input value={editData.nombre||""} onChange={e=>setEditData(d=>({...d,nombre:e.target.value}))}
-                    style={{ flex:2, padding:"6px 8px", border:`1px solid ${C.strong}`, borderRadius:7, fontSize:13.5, fontFamily:"inherit", background:C.bg, color:C.ink }}/>
-                  <input value={editData.contacto||""} onChange={e=>setEditData(d=>({...d,contacto:e.target.value}))}
-                    style={{ flex:1.5, padding:"6px 8px", border:`1px solid ${C.strong}`, borderRadius:7, fontSize:13, fontFamily:"inherit", background:C.bg, color:C.ink }}/>
-                  <Btn onClick={()=>guardarEdit(p.id)}><Save size={13}/> Guardar</Btn>
-                  <button onClick={()=>setEditId(null)} style={{ background:"none", border:"none", color:C.dim, cursor:"pointer", padding:4, display:"flex" }}><X size={13}/></button>
-                </>
+                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                    <input value={editData.nombre||""} onChange={e=>setEditData(d=>({...d,nombre:e.target.value}))} placeholder="Nombre *"
+                      style={{ flex:2, padding:"6px 8px", border:`1px solid ${C.strong}`, borderRadius:7, fontSize:13.5, fontFamily:"inherit", background:C.bg, color:C.ink }}/>
+                    <input value={editData.contacto||""} onChange={e=>setEditData(d=>({...d,contacto:e.target.value}))} placeholder="Contacto / email"
+                      style={{ flex:1.5, padding:"6px 8px", border:`1px solid ${C.strong}`, borderRadius:7, fontSize:13, fontFamily:"inherit", background:C.bg, color:C.ink }}/>
+                    <Btn onClick={()=>guardarEdit(p.id)}><Save size={13}/> Guardar</Btn>
+                    <button onClick={()=>setEditId(null)} style={{ background:"none", border:"none", color:C.dim, cursor:"pointer", padding:4, display:"flex" }}><X size={13}/></button>
+                  </div>
+                  {/* Datos del proveedor (opcionales) — salen en la cabecera del PDF/Excel de pedido */}
+                  <div style={{ fontSize:11, fontWeight:700, color:C.sub, textTransform:"uppercase", letterSpacing:.5 }}>
+                    Datos del proveedor (opcional)
+                  </div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+                    {DATOS_PROV.map(({ key, label, ph }) => (
+                      <div key={key}>
+                        <label style={{ fontSize:10.5, color:C.dim, display:"block", marginBottom:2 }}>{label}</label>
+                        <input value={editData.datos?.[key] || ""}
+                          onChange={e=>setEditData(d=>({ ...d, datos:{ ...(d.datos||{}), [key]: e.target.value } }))}
+                          placeholder={ph}
+                          style={{ width:"100%", padding:"6px 8px", border:`1px solid ${C.strong}`, borderRadius:7, fontSize:12.5, fontFamily:"inherit", background:C.bg, color:C.ink, boxSizing:"border-box" }}/>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               ) : (
-                <>
+                <div style={{ display:"flex", alignItems:"center", gap:10 }}>
                   <span style={{ flex:2, fontSize:14, fontWeight:600, color:C.ink }}>{p.nombre}</span>
                   <span style={{ flex:1.3, fontSize:12.5, color:C.sub }}>{p.contacto||"—"}</span>
                   <span style={{ fontSize:12, color:nItems?C.sub:C.dim, display:"inline-flex", alignItems:"center", gap:4, minWidth:96 }}>
                     <Package size={12}/> {nItems? `${nItems} ítems` : "sin catálogo"}
                   </span>
                   <Btn outline onClick={()=>onImportar(p.id)}><Upload size={12}/> {nItems?"Reimportar":"Importar"}</Btn>
-                  <button onClick={()=>{ setEditId(p.id); setEditData({nombre:p.nombre,contacto:p.contacto||""}); }}
+                  <button onClick={()=>{ setEditId(p.id); setEditData({nombre:p.nombre,contacto:p.contacto||"",datos:p.datos||{}}); }}
                     style={{ background:"none", border:"none", color:C.dim, cursor:"pointer", padding:4, display:"flex" }}
+                    title="Editar datos"
                     onMouseEnter={e=>e.currentTarget.style.color=C.ink} onMouseLeave={e=>e.currentTarget.style.color=C.dim}><Edit2 size={13}/></button>
                   <button onClick={()=>onBorrar(p)}
                     style={{ background:"none", border:"none", color:C.dim, cursor:"pointer", padding:4, display:"flex" }}
                     onMouseEnter={e=>e.currentTarget.style.color=C.danger} onMouseLeave={e=>e.currentTarget.style.color=C.dim}><Trash2 size={13}/></button>
-                </>
+                </div>
               )}
             </div>
           );})}

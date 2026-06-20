@@ -523,13 +523,14 @@ export async function cargarProveedores(companyId) {
 }
 export async function crearProveedor(p, companyId) {
   const row = { company_id: companyId, nombre: p.nombre, contacto: p.contacto || null, color: p.color || null };
+  if (p.datos) row.datos = p.datos;
   const { data, error } = await lsc().from("proveedores").insert(row).select().single();
   if (error) throw error;
   return data;
 }
 export async function actualizarProveedor(id, cambios) {
   const patch = {};
-  for (const k of ["nombre", "contacto", "color", "plantilla"]) if (k in cambios) patch[k] = cambios[k];
+  for (const k of ["nombre", "contacto", "color", "plantilla", "datos"]) if (k in cambios) patch[k] = cambios[k];
   const { data, error } = await lsc().from("proveedores").update(patch).eq("id", id).select().single();
   if (error) throw error;
   return data;

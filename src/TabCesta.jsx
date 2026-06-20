@@ -323,13 +323,44 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
   );
 
   // HTML profesional del pedido (una sección por proveedor efectivo).
+  // Cada sección lleva su propia cabecera de dos columnas: emisor (tu empresa) /
+  // destinatario (proveedor), y debajo la tabla de materiales.
   const pedidoProveedorHTML = (paraImprimir = false) => {
     const fecha = new Date().toLocaleDateString("es-ES", { day:"2-digit", month:"long", year:"numeric" });
     const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]));
 
+    // Bloque "datos de empresa" (reutilizado para emisor y destinatario).
+    const bloqueEmpresa = ({ etiqueta, nombre, logo, lineas, color }) => `
+      <div style="flex:1;min-width:0">
+        <div style="font-size:10px;font-weight:700;color:#999;letter-spacing:.6px;text-transform:uppercase;margin-bottom:5px">${etiqueta}</div>
+        <div style="display:flex;gap:10px;align-items:flex-start">
+          ${logo ? `<img src="${logo}" style="width:46px;height:46px;object-fit:contain;border-radius:8px;flex-shrink:0"/>` : ""}
+          <div style="min-width:0">
+            <div style="font-size:16px;font-weight:800;color:${color || "#1a1a1a"};line-height:1.2">${esc(nombre || "—")}</div>
+            <div style="font-size:11px;color:#666;line-height:1.5;margin-top:3px">${lineas.filter(Boolean).map(esc).join("<br/>")}</div>
+          </div>
+        </div>
+      </div>`;
+
+    const datosTu = [
+      empresa?.cif ? `CIF: ${empresa.cif}` : "",
+      empresa?.phone || "",
+      empresa?.billing_email || "",
+      empresa?.website || "",
+    ];
+
     const seccionProveedor = (g) => {
       const brand = g.proveedor?.color || "#f97316";
       const hayPrecios = g.lineas.some(l => l.precio != null);
+      const d = g.proveedor?.datos || {};
+      const datosProv = [
+        d.cif ? `CIF: ${d.cif}` : "",
+        d.persona || "",
+        d.telefono || (g.proveedor?.contacto && /\d/.test(g.proveedor.contacto) ? g.proveedor.contacto : ""),
+        d.email || (g.proveedor?.contacto && g.proveedor.contacto.includes("@") ? g.proveedor.contacto : ""),
+        d.direccion || "",
+        d.web || "",
+      ];
       const filas = g.lineas.map((l, i) => `
         <tr style="border-bottom:1px solid #eee;${i % 2 ? "background:#fafafa" : ""}">
           <td style="padding:8px 10px;font-size:12px">
@@ -344,11 +375,15 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
         </tr>`).join("");
       const uds = g.lineas.reduce((s, l) => s + l.cantidad, 0);
       return `
-        <div style="page-break-inside:avoid;margin-bottom:22px">
-          <div style="background:#f6f6f6;border-left:4px solid ${brand};border-radius:8px;padding:10px 14px;margin-bottom:10px">
-            <div style="font-size:10px;font-weight:700;color:#888;letter-spacing:.6px;text-transform:uppercase">Proveedor</div>
-            <div style="font-size:15px;font-weight:700">${esc(g.proveedor?.nombre || "—")}</div>
-            ${g.proveedor?.contacto ? `<div style="font-size:12px;color:#666;margin-top:2px">${esc(g.proveedor.contacto)}</div>` : ""}
+        <div style="page-break-inside:avoid;margin-bottom:26px">
+          <!-- Cabecera de dos columnas: emisor / destinatario -->
+          <div style="display:flex;gap:24px;border-bottom:3px solid ${brand};padding-bottom:14px;margin-bottom:14px">
+            ${bloqueEmpresa({ etiqueta:"De", nombre: empresa?.nombre || "Mi empresa", logo: empresa?.logo_url, lineas: datosTu, color:"#1a1a1a" })}
+            ${bloqueEmpresa({ etiqueta:"Para (proveedor)", nombre: g.proveedor?.nombre, lineas: datosProv, color: brand })}
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+            <div style="font-size:18px;font-weight:800;color:${brand};letter-spacing:.5px">PEDIDO</div>
+            <div style="font-size:11px;color:#666">Fecha: <strong>${fecha}</strong></div>
           </div>
           <table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:8px;overflow:hidden">
             <thead>
@@ -371,27 +406,9 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
         </div>`;
     };
 
-    const cabBrand = proveedorActivo?.color || "#f97316";
     return `
       <div style="font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;max-width:780px;margin:0 auto;padding:${paraImprimir ? "0" : "8px"}">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid ${cabBrand};padding-bottom:14px;margin-bottom:18px">
-          <div style="display:flex;gap:12px;align-items:center">
-            ${empresa?.logo_url ? `<img src="${empresa.logo_url}" style="width:54px;height:54px;object-fit:contain;border-radius:8px"/>` : ""}
-            <div>
-              <div style="font-size:20px;font-weight:800">${esc(empresa?.nombre || "Mi empresa")}</div>
-              <div style="font-size:11px;color:#666;line-height:1.5;margin-top:2px">
-                ${empresa?.cif ? `CIF: ${esc(empresa.cif)}<br/>` : ""}
-                ${empresa?.phone ? `Tel: ${esc(empresa.phone)} · ` : ""}${empresa?.billing_email ? esc(empresa.billing_email) : ""}
-                ${empresa?.website ? `<br/>${esc(empresa.website)}` : ""}
-              </div>
-            </div>
-          </div>
-          <div style="text-align:right">
-            <div style="font-size:22px;font-weight:800;color:${cabBrand};letter-spacing:.5px">PEDIDO</div>
-            <div style="font-size:11px;color:#666;margin-top:4px">Fecha: <strong>${fecha}</strong></div>
-          </div>
-        </div>
-        ${gruposProveedor.map(seccionProveedor).join("")}
+        ${gruposProveedor.map(seccionProveedor).join('<div style="page-break-after:always"></div>')}
       </div>`;
   };
 
@@ -409,27 +426,39 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
 
   const exportarPedidoProveedorExcel = () => {
     const hayPrecios = lineasPedidoProveedor.some(l => l.precio != null);
-    const rows = [
-      [`Pedido a proveedores`],
-      [`Empresa: ${empresa?.nombre || ""}`, empresa?.cif ? `CIF: ${empresa.cif}` : ""],
-      [`Fecha: ${new Date().toLocaleDateString("es-ES")}`],
-      [],
-    ];
-    const header = ["Proveedor", "Artículo (proveedor)", "Tu material", "Referencia", "Cantidad", "Unidad",
-      ...(hayPrecios ? ["Precio", "Dto %", "Importe"] : [])];
-    rows.push(header);
+    const wb = XLSX.utils.book_new();
+    const usados = new Set();
     for (const g of gruposProveedor) {
+      const d = g.proveedor?.datos || {};
+      const rows = [
+        ["PEDIDO", "", "", "", `Fecha: ${new Date().toLocaleDateString("es-ES")}`],
+        [],
+        ["DE (emisor)", "", "", "PARA (proveedor)"],
+        [empresa?.nombre || "", "", "", g.proveedor?.nombre || ""],
+        [empresa?.cif ? `CIF: ${empresa.cif}` : "", "", "", d.cif ? `CIF: ${d.cif}` : ""],
+        [empresa?.phone || "", "", "", d.telefono || ""],
+        [empresa?.billing_email || "", "", "", d.email || ""],
+        [empresa?.website || "", "", "", d.direccion || ""],
+        [],
+        ["Artículo (proveedor)", "Tu material", "Referencia", "Cantidad", "Unidad",
+          ...(hayPrecios ? ["Precio", "Dto %", "Importe"] : [])],
+      ];
       for (const l of g.lineas) {
         rows.push([
-          g.proveedor?.nombre || "", l.nombreProveedor, l.nombreInterno, l.referencia, l.cantidad, l.unidad,
+          l.nombreProveedor, l.nombreInterno, l.referencia, l.cantidad, l.unidad,
           ...(hayPrecios ? [l.precio ?? "", l.descuento || 0, l.importe ?? ""] : []),
         ]);
       }
-      if (hayPrecios) rows.push(["", "", "", "", "", "", "", `TOTAL ${g.proveedor?.nombre || ""}`, g.total]);
+      if (hayPrecios) rows.push([], ["", "", "", "", "", "", "TOTAL (sin IVA)", g.total]);
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      // Nombre de hoja válido y único (máx 31 chars, sin caracteres prohibidos).
+      let nombre = (g.proveedor?.nombre || "Proveedor").replace(/[\\/?*[\]:]/g, " ").slice(0, 28);
+      let n = nombre; let i = 2;
+      while (usados.has(n)) { n = `${nombre.slice(0,26)} ${i++}`; }
+      usados.add(n);
+      XLSX.utils.book_append_sheet(wb, ws, n);
     }
-    const ws = XLSX.utils.aoa_to_sheet(rows);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Pedido proveedor");
+    if (!wb.SheetNames.length) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([["Sin líneas"]]), "Pedido");
     XLSX.writeFile(wb, `pedido_proveedores_${new Date().toISOString().slice(0,10)}.xlsx`);
   };
 

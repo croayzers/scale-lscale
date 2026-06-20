@@ -160,6 +160,7 @@ export default function App() {
   const [chatUnread,        setChatUnread]        = useState(0);
   const [highlightedPedido, setHighlightedPedido] = useState(null);
   const [cesta,        setCesta]        = useState([]);
+  const cestaCargadaRef = useRef(false); // evita que el primer guardado pise la cesta cargada
   const [toasts,       setToasts]       = useState([]);
   const [silenciados,  setSilenciados]  = useState(() => {
     try { return new Set(JSON.parse(localStorage.getItem("lscale.silenciados") || "[]")); }
@@ -210,6 +211,23 @@ export default function App() {
       return next;
     });
   }, [materiales]);
+
+  // Persistencia de la cesta (borrador del usuario) en localStorage por empresa.
+  // Antes solo vivía en memoria: al recargar se perdía.
+  const cestaKey = empresa?.id ? `lscale.cesta.${empresa.id}` : null;
+  useEffect(() => {
+    if (!cestaKey) return;
+    cestaCargadaRef.current = false;
+    try {
+      const guardada = JSON.parse(localStorage.getItem(cestaKey) || "[]");
+      setCesta(Array.isArray(guardada) ? guardada : []);
+    } catch { setCesta([]); }
+    cestaCargadaRef.current = true;
+  }, [cestaKey]);
+  useEffect(() => {
+    if (!cestaKey || !cestaCargadaRef.current) return; // no guardar antes de cargar
+    try { localStorage.setItem(cestaKey, JSON.stringify(cesta)); } catch {}
+  }, [cesta, cestaKey]);
 
   const notificarStock = useCallback((pedido, matSnapshot, tipo = "pedido") => {
     const n = crearNotificacion(pedido, matSnapshot, tipo);
