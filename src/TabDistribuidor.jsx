@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { Plus, Trash2, Search, Upload, X, Check, Building2, Edit2, Save, Info, Loader } from "lucide-react";
+import { Plus, Trash2, Search, Upload, X, Check, Building2, Edit2, Save, Package, ArrowRight, Loader, RefreshCw } from "lucide-react";
 import * as XLSX from "xlsx";
 import { C, Btn } from "./lib/ui.jsx";
 import {
   cargarProveedores, crearProveedor, actualizarProveedor, borrarProveedor,
-  cargarCorrelacionesDeProveedor, guardarCorrelacion, guardarCorrelacionesLote, borrarCorrelacion,
+  cargarCorrelacionesDeProveedor, guardarCorrelacion, borrarCorrelacion,
+  cargarItemsDeProveedor, reemplazarItemsProveedor, borrarItemsDeProveedor,
 } from "./lib/data.js";
 
 function norm(s) {
@@ -14,21 +15,20 @@ const COLORES_PROV = ["#3b82f6","#10b981","#f59e0b","#ef4444","#8b5cf6","#06b6d4
 
 // Roles asignables del Excel del proveedor (espejo de columnas del almacén).
 // `nombre` es obligatorio; el resto son los campos que ESE proveedor aporta.
-// Cada proveedor usa los que quiera (su plantilla); se guardan en correlaciones.datos.
 const ROLES_WIZARD = [
-  { key:"nombre",    label:"Nombre",      color:"#0e7490", req:true,  base:true },
-  { key:"categoria", label:"Categoría",   color:"#2563eb", req:false, base:false },
-  { key:"referencia",label:"Referencia",  color:"#7c3aed", req:false, base:true  },
-  { key:"coste",     label:"Coste",       color:"#d97706", req:false, base:true  },
-  { key:"descuento", label:"% Descuento", color:"#ef4444", req:false, base:true  },
+  { key:"nombre",    label:"Nombre",      color:"#0e7490", req:true  },
+  { key:"categoria", label:"Categoría",   color:"#2563eb", req:false },
+  { key:"referencia",label:"Referencia",  color:"#7c3aed", req:false },
+  { key:"coste",     label:"Coste",       color:"#d97706", req:false },
+  { key:"descuento", label:"% Descuento", color:"#ef4444", req:false },
 ];
-// `base:true` = columna propia de la tabla correlaciones (referencia/coste/descuento);
-// `base:false` = va a correlaciones.datos (jsonb): categoria y futuros campos.
+// Campos guardados como columna propia de proveedor_items; lo demás iría a datos jsonb.
+const COLUMNAS_ITEM = new Set(["nombre","categoria","referencia","coste","descuento"]);
 
 // ══════════════════════════════════════════════════════════════════
 // PanelProveedores — lista de empresas suministradoras (Supabase)
 // ══════════════════════════════════════════════════════════════════
-function PanelProveedores({ proveedores, onCrear, onEditar, onBorrar }) {
+function PanelProveedores({ proveedores, itemsByProv, onCrear, onEditar, onBorrar, onImportar }) {
   const [nuevo, setNuevo] = useState({ nombre:"", contacto:"" });
   const [editId, setEditId] = useState(null);
   const [editData, setEditData] = useState({});
@@ -44,10 +44,10 @@ function PanelProveedores({ proveedores, onCrear, onEditar, onBorrar }) {
   async function guardarEdit(id) { await onEditar(id, editData); setEditId(null); }
 
   return (
-    <div style={{ maxWidth:700, margin:"0 auto", padding:24 }}>
+    <div style={{ maxWidth:760, margin:"0 auto", padding:24 }}>
       <h3 style={{ fontSize:18, color:C.ink, marginBottom:4 }}>Proveedores</h3>
       <p style={{ fontSize:13, color:C.sub, marginBottom:20 }}>
-        Empresas que te suministran material. Cada una aparece como columna en la tabla de correlación, con su forma de nombrar cada material.
+        Empresas que te suministran material. Crea cada proveedor e importa su catálogo; luego correlacionas tus materiales con los suyos.
       </p>
       <div style={{ display:"flex", gap:8, marginBottom:20, alignItems:"flex-end" }}>
         <div style={{ flex:2 }}>
@@ -71,7 +71,9 @@ function PanelProveedores({ proveedores, onCrear, onEditar, onBorrar }) {
         </div>
       ) : (
         <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
-          {proveedores.map(p => (
+          {proveedores.map(p => {
+            const nItems = (itemsByProv[p.id]||[]).length;
+            return (
             <div key={p.id} style={{ display:"flex", alignItems:"center", gap:10, background:C.surface, border:`1px solid ${C.line}`, borderRadius:10, padding:"10px 14px", borderLeft:`4px solid ${p.color||C.brand}` }}>
               {editId===p.id ? (
                 <>
@@ -85,7 +87,11 @@ function PanelProveedores({ proveedores, onCrear, onEditar, onBorrar }) {
               ) : (
                 <>
                   <span style={{ flex:2, fontSize:14, fontWeight:600, color:C.ink }}>{p.nombre}</span>
-                  <span style={{ flex:1.5, fontSize:12.5, color:C.sub }}>{p.contacto||"—"}</span>
+                  <span style={{ flex:1.3, fontSize:12.5, color:C.sub }}>{p.contacto||"—"}</span>
+                  <span style={{ fontSize:12, color:nItems?C.sub:C.dim, display:"inline-flex", alignItems:"center", gap:4, minWidth:96 }}>
+                    <Package size={12}/> {nItems? `${nItems} ítems` : "sin catálogo"}
+                  </span>
+                  <Btn outline onClick={()=>onImportar(p.id)}><Upload size={12}/> {nItems?"Reimportar":"Importar"}</Btn>
                   <button onClick={()=>{ setEditId(p.id); setEditData({nombre:p.nombre,contacto:p.contacto||""}); }}
                     style={{ background:"none", border:"none", color:C.dim, cursor:"pointer", padding:4, display:"flex" }}
                     onMouseEnter={e=>e.currentTarget.style.color=C.ink} onMouseLeave={e=>e.currentTarget.style.color=C.dim}><Edit2 size={13}/></button>
@@ -95,7 +101,7 @@ function PanelProveedores({ proveedores, onCrear, onEditar, onBorrar }) {
                 </>
               )}
             </div>
-          ))}
+          );})}
         </div>
       )}
     </div>
@@ -103,168 +109,204 @@ function PanelProveedores({ proveedores, onCrear, onEditar, onBorrar }) {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// EditableCell — celda inline editable (nombre del material para ese proveedor)
+// CorrelacionClic — flujo: clic en MI material → clic en el ítem
+// equivalente de cada proveedor → Guardar.
 // ══════════════════════════════════════════════════════════════════
-function EditableCell({ value, placeholder, active, onActivate, onCommit }) {
-  const [val, setVal] = useState(value);
-  const ref = useRef();
-  useEffect(() => { setVal(value); }, [value, active]);
-  useEffect(() => { if (active && ref.current) ref.current.select(); }, [active]);
-  if (active) {
-    return (
-      <input ref={ref} value={val} autoFocus
-        onChange={e=>setVal(e.target.value)} onBlur={()=>onCommit(val)}
-        onKeyDown={e=>{ if(e.key==="Enter") onCommit(val); if(e.key==="Escape") onCommit(value); }}
-        placeholder={placeholder}
-        style={{ width:"100%", padding:"5px 6px", border:`1px solid ${C.brand}`, borderRadius:6, fontSize:13, fontFamily:"inherit", background:C.bg, color:C.ink, outline:"none" }}/>
-    );
+function CorrelacionClic({ materiales, proveedores, itemsByProv, cor, onGuardarMaterial, onAbrirProveedores }) {
+  const [matSel, setMatSel] = useState(null);
+  const [pending, setPending] = useState({});       // { [provId]: itemId|null }
+  const [saved, setSaved] = useState({});           // copia para detectar cambios
+  const [buscarMat, setBuscarMat] = useState("");
+  const [buscarItem, setBuscarItem] = useState({}); // { [provId]: texto }
+  const [guardando, setGuardando] = useState(false);
+
+  // Mapa item_id → material_id (para avisar si un ítem ya está usado por otro material).
+  const itemUsadoPor = useMemo(() => {
+    const m = {};
+    for (const mid in cor) for (const pid in cor[mid]) {
+      const c = cor[mid][pid];
+      if (c?.proveedor_item_id) m[c.proveedor_item_id] = Number(mid);
+    }
+    return m;
+  }, [cor]);
+  const matNombre = useMemo(() => Object.fromEntries(materiales.map(m => [m.id, m.nombre])), [materiales]);
+
+  // Inicializa la selección al elegir un material (desde las correlaciones guardadas).
+  function seleccionarMaterial(mid) {
+    const row = cor[mid] || {};
+    const init = {};
+    proveedores.forEach(p => {
+      const c = row[p.id];
+      if (!c) { init[p.id] = null; return; }
+      if (c.proveedor_item_id) { init[p.id] = c.proveedor_item_id; return; }
+      // Correlación antigua sin item_id: casa por nombre.
+      const it = (itemsByProv[p.id]||[]).find(x => norm(x.nombre) === norm(c.nombre_proveedor));
+      init[p.id] = it?.id ?? null;
+    });
+    setMatSel(mid); setPending(init); setSaved(init); setBuscarItem({});
   }
-  return (
-    <div onClick={onActivate}
-      style={{ padding:"5px 6px", fontSize:13, color:value?C.ink:C.dim, cursor:"text", borderRadius:6, border:"1px solid transparent", minHeight:28, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-      {value||placeholder}
-    </div>
-  );
-}
 
-// Tooltip con datos extra del proveedor (referencia/coste/descuento).
-// Valor de un rol en una correlación: campos `base` están en columnas; el resto
-// (categoria…) en correlacion.datos (jsonb).
-function valorRol(cor, key) {
-  const r = ROLES_WIZARD.find(x => x.key === key);
-  if (!r) return null;
-  return r.base ? cor?.[key] : cor?.datos?.[key];
-}
-function TooltipDatos({ cor }) {
-  const [show, setShow] = useState(false);
-  const extras = ROLES_WIZARD.filter(r => r.key!=="nombre").map(r => ({ r, v: valorRol(cor, r.key) }))
-    .filter(({ v }) => v != null && v !== "");
-  if (!extras.length) return null;
-  return (
-    <div style={{ position:"relative", display:"inline-flex", marginLeft:4 }}
-      onMouseEnter={()=>setShow(true)} onMouseLeave={()=>setShow(false)}>
-      <Info size={11} color={C.dim} style={{ cursor:"default" }}/>
-      {show && (
-        <div style={{ position:"absolute", bottom:"calc(100% + 4px)", left:0, zIndex:50, background:C.surface, border:`1px solid ${C.line}`, borderRadius:8, padding:"8px 12px", boxShadow:"var(--shadow-lg)", minWidth:160, fontSize:12, color:C.ink, whiteSpace:"nowrap" }}>
-          {extras.map(({ r, v })=>(
-            <div key={r.key} style={{ display:"flex", justifyContent:"space-between", gap:12, padding:"2px 0" }}>
-              <span style={{ color:C.sub }}>{r.label}</span><span style={{ fontWeight:600 }}>{v}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
+  function toggleItem(provId, itemId) {
+    setPending(prev => ({ ...prev, [provId]: prev[provId] === itemId ? null : itemId }));
+  }
 
-// ══════════════════════════════════════════════════════════════════
-// TablaCorrelacion — filas = TUS materiales reales; columnas = proveedores.
-// Cada celda = cómo llama ese proveedor a ese material (nombre_proveedor).
-// `cor` es un mapa  cor[material_id][proveedor_id] = { nombre_proveedor, referencia, coste, descuento }
-// ══════════════════════════════════════════════════════════════════
-function TablaCorrelacion({ materiales, proveedores, cor, onCommitCelda, onImportar }) {
-  const [buscar, setBuscar] = useState("");
-  const [editCell, setEditCell] = useState(null);
+  const dirty = JSON.stringify(pending) !== JSON.stringify(saved);
 
-  const filtrados = buscar.trim()
-    ? materiales.filter(m => {
-        const q = norm(buscar);
-        if (norm(m.nombre).includes(q)) return true;
-        const c = cor[m.id] || {};
-        return Object.values(c).some(d => norm(d?.nombre_proveedor || "").includes(q));
-      })
+  async function guardar() {
+    if (!matSel || guardando) return;
+    setGuardando(true);
+    const seleccion = {};
+    proveedores.forEach(p => {
+      const itemId = pending[p.id];
+      seleccion[p.id] = itemId ? (itemsByProv[p.id]||[]).find(x => x.id === itemId) || null : null;
+    });
+    try { await onGuardarMaterial(matSel, seleccion); setSaved(pending); }
+    catch(e) { alert("No se pudo guardar: " + (e?.message||e)); }
+    finally { setGuardando(false); }
+  }
+
+  const matsFiltrados = buscarMat.trim()
+    ? materiales.filter(m => norm(m.nombre).includes(norm(buscarMat)))
     : materiales;
 
-  const MAT_W = 240, COL_W = 190;
+  if (proveedores.length === 0) {
+    return (
+      <div style={{ flex:1, display:"grid", placeItems:"center", padding:24 }}>
+        <div style={{ textAlign:"center", color:C.sub, maxWidth:380 }}>
+          <Building2 size={36} style={{ opacity:.3, marginBottom:12 }}/>
+          <p style={{ fontSize:15, marginBottom:6 }}>Aún no hay proveedores</p>
+          <p style={{ fontSize:13, marginBottom:14 }}>Crea tus proveedores e importa su catálogo para empezar a correlacionar.</p>
+          <Btn onClick={onAbrirProveedores}><Building2 size={14}/> Ir a Proveedores</Btn>
+        </div>
+      </div>
+    );
+  }
+  if (materiales.length === 0) {
+    return (
+      <div style={{ flex:1, display:"grid", placeItems:"center", padding:24 }}>
+        <div style={{ textAlign:"center", color:C.sub, maxWidth:380 }}>
+          <Package size={36} style={{ opacity:.3, marginBottom:12 }}/>
+          <p style={{ fontSize:15, marginBottom:6 }}>No tienes materiales</p>
+          <p style={{ fontSize:13 }}>Crea o importa tu catálogo en <strong>Almacén</strong> primero. Esos serán los nombres que verás en tu inventario.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", padding:24 }}>
-      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:12, flexWrap:"wrap", gap:8 }}>
-        <div>
-          <h3 style={{ fontSize:18, color:C.ink, marginBottom:3 }}>Correlación de materiales</h3>
-          <p style={{ fontSize:13, color:C.sub }}>{materiales.length} materiales · {proveedores.length} proveedor{proveedores.length!==1?"es":""}. Escribe cómo llama cada proveedor a cada material.</p>
+    <div style={{ flex:1, display:"flex", overflow:"hidden" }}>
+      {/* ── Columna izquierda: MIS materiales ── */}
+      <div style={{ width:300, minWidth:300, borderRight:`1px solid ${C.line}`, display:"flex", flexDirection:"column", background:C.surface }}>
+        <div style={{ padding:"14px 14px 10px" }}>
+          <h3 style={{ fontSize:15, color:C.ink, marginBottom:8 }}>1 · Tu material</h3>
+          <div style={{ position:"relative" }}>
+            <Search size={14} style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", color:C.dim }}/>
+            <input value={buscarMat} onChange={e=>setBuscarMat(e.target.value)} placeholder="Buscar material…"
+              style={{ width:"100%", padding:"7px 10px 7px 30px", border:`1px solid ${C.strong}`, borderRadius:8, fontSize:13, fontFamily:"inherit", background:C.bg, color:C.ink }}/>
+          </div>
         </div>
-        {proveedores.length>0 && materiales.length>0 && (
-          <Btn onClick={onImportar}><Upload size={13}/> Importar Excel de proveedor</Btn>
+        <div style={{ flex:1, overflowY:"auto", padding:"0 8px 12px" }}>
+          {matsFiltrados.map(m => {
+            const nCor = Object.keys(cor[m.id]||{}).length;
+            const activo = matSel === m.id;
+            return (
+              <button key={m.id} onClick={()=>seleccionarMaterial(m.id)}
+                style={{ width:"100%", textAlign:"left", display:"flex", alignItems:"center", justifyContent:"space-between", gap:8, padding:"9px 10px", marginBottom:3, borderRadius:8, border:`1px solid ${activo?C.brand:"transparent"}`, background:activo?C.s2:"transparent", cursor:"pointer", fontFamily:"inherit" }}>
+                <span style={{ fontSize:13.5, fontWeight:activo?700:500, color:C.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m.nombre}</span>
+                <span style={{ flexShrink:0, fontSize:11, fontWeight:700, color: nCor?"#fff":C.dim, background: nCor?C.ok:"transparent", border: nCor?"none":`1px solid ${C.line}`, borderRadius:999, padding:"1px 7px", minWidth:22, textAlign:"center" }}>
+                  {nCor}/{proveedores.length}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* ── Derecha: catálogo de cada proveedor ── */}
+      <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden" }}>
+        {!matSel ? (
+          <div style={{ flex:1, display:"grid", placeItems:"center", color:C.sub }}>
+            <div style={{ textAlign:"center" }}>
+              <ArrowRight size={28} style={{ opacity:.3, marginBottom:10 }}/>
+              <p style={{ fontSize:14 }}>Selecciona un material de la izquierda para correlacionarlo.</p>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={{ padding:"14px 18px 10px", borderBottom:`1px solid ${C.line}` }}>
+              <h3 style={{ fontSize:15, color:C.ink }}>2 · Elige el equivalente en cada proveedor para <span style={{ color:C.brand }}>{matNombre[matSel]}</span></h3>
+              <p style={{ fontSize:12.5, color:C.sub, marginTop:2 }}>Clic en un ítem para enlazarlo; clic de nuevo para quitarlo. Luego pulsa Guardar.</p>
+            </div>
+            <div style={{ flex:1, overflow:"auto", display:"flex", gap:12, padding:16, alignItems:"flex-start" }}>
+              {proveedores.map(p => {
+                const items = itemsByProv[p.id] || [];
+                const q = norm(buscarItem[p.id]||"");
+                const vis = q ? items.filter(it => norm(it.nombre).includes(q) || norm(it.referencia||"").includes(q)) : items;
+                const sel = pending[p.id];
+                return (
+                  <div key={p.id} style={{ width:240, minWidth:240, display:"flex", flexDirection:"column", maxHeight:"100%", border:`1px solid ${C.line}`, borderRadius:12, overflow:"hidden", background:C.surface }}>
+                    <div style={{ padding:"9px 12px", background:p.color||C.brand, color:"#fff", fontSize:13, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                      <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.nombre}</span>
+                      <span style={{ fontSize:11, opacity:.85 }}>{items.length}</span>
+                    </div>
+                    {items.length === 0 ? (
+                      <div style={{ padding:"18px 12px", textAlign:"center", color:C.dim, fontSize:12 }}>
+                        Sin catálogo importado.
+                      </div>
+                    ) : (
+                      <>
+                        <div style={{ padding:"8px 8px 6px" }}>
+                          <input value={buscarItem[p.id]||""} onChange={e=>setBuscarItem(b=>({...b,[p.id]:e.target.value}))} placeholder="Buscar…"
+                            style={{ width:"100%", padding:"5px 8px", border:`1px solid ${C.strong}`, borderRadius:7, fontSize:12, fontFamily:"inherit", background:C.bg, color:C.ink }}/>
+                        </div>
+                        <div style={{ flex:1, overflowY:"auto", padding:"0 6px 8px" }}>
+                          {vis.map(it => {
+                            const activo = sel === it.id;
+                            const usadoOtro = itemUsadoPor[it.id] && itemUsadoPor[it.id] !== matSel;
+                            return (
+                              <button key={it.id} onClick={()=>toggleItem(p.id, it.id)}
+                                title={usadoOtro ? `Ya enlazado a: ${matNombre[itemUsadoPor[it.id]]||"otro material"}` : ""}
+                                style={{ width:"100%", textAlign:"left", display:"flex", alignItems:"center", gap:7, padding:"7px 8px", marginBottom:3, borderRadius:7, border:`1px solid ${activo?(p.color||C.brand):C.line}`, background:activo?`${p.color||C.brand}1a`:"transparent", cursor:"pointer", fontFamily:"inherit", opacity: usadoOtro&&!activo?.55:1 }}>
+                                <span style={{ flexShrink:0, width:16, height:16, borderRadius:5, border:`1.5px solid ${activo?(p.color||C.brand):C.strong}`, background:activo?(p.color||C.brand):"transparent", display:"grid", placeItems:"center" }}>
+                                  {activo && <Check size={11} color="#fff"/>}
+                                </span>
+                                <span style={{ minWidth:0 }}>
+                                  <span style={{ display:"block", fontSize:12.5, color:C.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{it.nombre}</span>
+                                  {(it.referencia || it.coste!=null) && (
+                                    <span style={{ display:"block", fontSize:10.5, color:C.dim, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>
+                                      {it.referencia||""}{it.referencia&&it.coste!=null?" · ":""}{it.coste!=null?`${it.coste} €`:""}
+                                    </span>
+                                  )}
+                                </span>
+                              </button>
+                            );
+                          })}
+                          {vis.length===0 && <p style={{ fontSize:11.5, color:C.dim, textAlign:"center", padding:"10px 0" }}>Sin resultados.</p>}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ padding:"12px 18px", borderTop:`1px solid ${C.line}`, display:"flex", justifyContent:"flex-end", gap:8, alignItems:"center", background:C.surface }}>
+              {dirty && <span style={{ fontSize:12.5, color:C.sub, marginRight:"auto" }}>Cambios sin guardar</span>}
+              <Btn onClick={guardar} disabled={!dirty||guardando}>{guardando?"Guardando…":<><Save size={14}/> Guardar correlación</>}</Btn>
+            </div>
+          </>
         )}
       </div>
-
-      <div style={{ position:"relative", marginBottom:12 }}>
-        <Search size={14} style={{ position:"absolute", left:10, top:"50%", transform:"translateY(-50%)", color:C.dim }}/>
-        <input value={buscar} onChange={e=>setBuscar(e.target.value)} placeholder="Buscar material o nombre en proveedor…"
-          style={{ width:"100%", padding:"8px 12px 8px 30px", border:`1px solid ${C.strong}`, borderRadius:9, fontSize:13.5, fontFamily:"inherit", background:C.bg, color:C.ink }}/>
-      </div>
-
-      {proveedores.length===0 ? (
-        <div style={{ textAlign:"center", padding:"48px 24px", color:C.sub, border:`1px dashed ${C.line}`, borderRadius:10 }}>
-          <Building2 size={36} style={{ opacity:.3, marginBottom:12 }}/>
-          <p style={{ fontSize:15, marginBottom:6 }}>Sin proveedores</p>
-          <p style={{ fontSize:13 }}>Añade proveedores en la pestaña <strong>Proveedores</strong> para empezar a correlacionar.</p>
-        </div>
-      ) : materiales.length===0 ? (
-        <div style={{ textAlign:"center", padding:"48px 24px", color:C.sub, border:`1px dashed ${C.line}`, borderRadius:10 }}>
-          <p style={{ fontSize:14 }}>No tienes materiales en el almacén. Créalos en <strong>Almacén</strong> primero.</p>
-        </div>
-      ) : (
-        <div style={{ flex:1, overflow:"auto", borderRadius:10, border:`1px solid ${C.line}` }}>
-          <table style={{ borderCollapse:"collapse", minWidth:MAT_W+proveedores.length*COL_W }}>
-            <thead>
-              <tr style={{ background:C.s2 }}>
-                <th style={{ position:"sticky", left:0, zIndex:3, background:C.s2, width:MAT_W, minWidth:MAT_W, padding:"10px 14px", textAlign:"left", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:".06em", textTransform:"uppercase", borderBottom:`1px solid ${C.line}`, borderRight:`2px solid ${C.line}` }}>
-                  Mi material
-                </th>
-                {proveedores.map(p=>(
-                  <th key={p.id} style={{ width:COL_W, minWidth:COL_W, padding:"10px 14px", textAlign:"left", fontSize:12, fontWeight:700, color:"#fff", background:p.color||C.brand, borderBottom:`1px solid ${C.line}`, borderRight:`1px solid rgba(255,255,255,.2)`, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
-                    {p.nombre}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtrados.length===0 && (
-                <tr><td colSpan={proveedores.length+1} style={{ textAlign:"center", padding:"32px 24px", color:C.dim, fontSize:13 }}>Sin resultados para la búsqueda.</td></tr>
-              )}
-              {filtrados.map((m,idx)=>(
-                <tr key={m.id} style={{ background:idx%2===0?C.bg:C.surface }}>
-                  <td style={{ position:"sticky", left:0, zIndex:1, background:"inherit", padding:"8px 14px", borderBottom:`1px solid ${C.line}`, borderRight:`2px solid ${C.line}`, fontSize:13.5, fontWeight:600, color:C.ink }}>
-                    {m.nombre}
-                    {m.referencia && <span style={{ fontSize:11, color:C.dim, marginLeft:6 }}>{m.referencia}</span>}
-                  </td>
-                  {proveedores.map(p=>{
-                    const datos = cor[m.id]?.[p.id];
-                    const nombre = datos?.nombre_proveedor || "";
-                    return (
-                      <td key={p.id} style={{ padding:"4px 8px", borderBottom:`1px solid ${C.line}`, borderRight:`1px solid ${C.line}` }}>
-                        <div style={{ display:"flex", alignItems:"center" }}>
-                          <div style={{ flex:1 }}>
-                            <EditableCell value={nombre} placeholder="—"
-                              active={editCell?.mid===m.id && editCell?.pid===p.id}
-                              onActivate={()=>setEditCell({mid:m.id,pid:p.id})}
-                              onCommit={(v)=>{ setEditCell(null); if((v||"")!==nombre) onCommitCelda(m.id, p.id, v); }}/>
-                          </div>
-                          <TooltipDatos cor={datos}/>
-                        </div>
-                      </td>
-                    );
-                  })}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 }
 
 // ══════════════════════════════════════════════════════════════════
-// WizardImport — importa el Excel del proveedor y lo correlaciona con
-// tus materiales por coincidencia de nombre (lo que no casa, se ignora;
-// el usuario completa a mano lo que falte en la tabla).
+// WizardImportCatalogo — importa el Excel del proveedor y guarda TODO
+// su catálogo en proveedor_items (no exige que case con tus materiales).
 // ══════════════════════════════════════════════════════════════════
-function WizardImport({ proveedores, materiales, onGuardarLote, onGuardarPlantilla, onCerrar }) {
+function WizardImportCatalogo({ proveedores, provIdInicial, onGuardarCatalogo, onGuardarPlantilla, onCerrar }) {
   const [paso, setPaso] = useState(0);
-  const [provId, setProvId] = useState(proveedores[0]?.id || "");
+  const [provId, setProvId] = useState(provIdInicial || proveedores[0]?.id || "");
   const [hojas, setHojas] = useState([]);
   const [hojaIdx, setHojaIdx] = useState(0);
   const [datos, setDatos] = useState([]);
@@ -272,23 +314,17 @@ function WizardImport({ proveedores, materiales, onGuardarLote, onGuardarPlantil
   const [colMap, setColMap] = useState({});
   const [activeRole, setActiveRole] = useState("nombre");
   const [guardarPl, setGuardarPl] = useState(true);
+  const [guardando, setGuardando] = useState(false);
+  const [resultado, setResultado] = useState(null);
 
-  // Pre-carga la plantilla guardada del proveedor (mapeo de columnas reusable).
+  // Pre-carga la plantilla guardada del proveedor (mapeo reusable).
   useEffect(() => {
     const pl = proveedores.find(p => String(p.id) === String(provId))?.plantilla;
     if (pl?.colMap) { setColMap(pl.colMap); if (pl.headerRow != null) setHeaderRow(pl.headerRow); }
     else { setColMap({}); }
   }, [provId, proveedores]);
-  const [items, setItems] = useState([]);
-  const [selec, setSelec] = useState([]);
-  const [importando, setImportando] = useState(false);
-  const [resultado, setResultado] = useState(null);
 
   const prov = proveedores.find(p=>p.id===provId);
-  // Índice de materiales por nombre normalizado, para casar el Excel del proveedor.
-  const matPorNombre = useMemo(() => {
-    const m = new Map(); materiales.forEach(x => m.set(norm(x.nombre), x)); return m;
-  }, [materiales]);
 
   function leerArchivo(file) {
     const reader = new FileReader();
@@ -313,50 +349,33 @@ function WizardImport({ proveedores, materiales, onGuardarLote, onGuardarPlantil
 
   const headers = datos[headerRow] || [];
   const preview = datos.slice(headerRow+1, headerRow+6);
+  const filasValidas = colMap.nombre!=null
+    ? datos.slice(headerRow+1).filter(r => String(r[colMap.nombre]??"").trim()).length
+    : 0;
 
-  function irARevision() {
-    if (colMap.nombre==null) return;
+  async function ejecutar() {
+    if (colMap.nombre==null || guardando) return;
+    setGuardando(true);
     const rows = datos.slice(headerRow+1).filter(r=>r.some(c=>String(c).trim()));
-    const parsed = rows.map(r=>{
-      const obj = {};
-      ROLES_WIZARD.forEach(rol=>{ if(colMap[rol.key]!=null) obj[rol.key]=String(r[colMap[rol.key]]??"").trim(); });
-      return obj;
-    }).filter(it=>it.nombre);
-    // Casa cada nombre del proveedor con un material de la empresa (por nombre).
-    const revisados = parsed.map(it=>{
-      const mat = matPorNombre.get(norm(it.nombre));
-      return { ...it, material_id: mat?.id || null, materialNombre: mat?.nombre || null };
-    });
-    setItems(revisados);
-    // Por defecto, selecciona solo los que casan con un material.
-    setSelec(revisados.map((it,i)=>it.material_id?i:null).filter(i=>i!=null));
-    setPaso(2);
-  }
-
-  async function ejecutarImport() {
-    setImportando(true);
-    const num = (v) => v ? (Number(String(v).replace(",", ".")) || null) : null;
-    const lote = selec.map(i=>items[i]).filter(it=>it.material_id).map(it=>{
-      // Campos `base` -> columnas; campos `base:false` (categoria, …) -> datos jsonb.
-      const datos = {};
-      ROLES_WIZARD.forEach(r => { if (!r.base && r.key !== "nombre" && it[r.key]) datos[r.key] = it[r.key]; });
-      return {
-        material_id: it.material_id, nombre_proveedor: it.nombre,
-        referencia: it.referencia || null, coste: num(it.coste), descuento: num(it.descuento),
-        datos,
-      };
-    });
+    const items = rows.map(r=>{
+      const it = { datos:{} };
+      ROLES_WIZARD.forEach(rol=>{
+        if (colMap[rol.key]==null) return;
+        const v = String(r[colMap[rol.key]]??"").trim();
+        if (!v) return;
+        if (COLUMNAS_ITEM.has(rol.key)) it[rol.key] = v; else it.datos[rol.key] = v;
+      });
+      return it;
+    }).filter(it => (it.nombre||"").trim());
     try {
-      await onGuardarLote(provId, lote);
-      // Guarda la plantilla de mapeo del proveedor (reusable en próximos imports).
+      await onGuardarCatalogo(provId, items);
       if (guardarPl && onGuardarPlantilla) await onGuardarPlantilla(provId, { colMap, headerRow });
-      setResultado({ guardados: lote.length, sinCasar: items.length - selec.length });
-      setPaso(3);
+      setResultado({ guardados: items.length }); setPaso(2);
     } catch(e) { alert("Error al guardar: "+(e?.message||e)); }
-    finally { setImportando(false); }
+    finally { setGuardando(false); }
   }
 
-  const PASOS = ["Archivo","Columnas","Revisión","Completado"];
+  const PASOS = ["Archivo","Columnas","Completado"];
   const colByKey = Object.fromEntries(ROLES_WIZARD.map(r=>[r.key,r.color]));
 
   return (
@@ -364,7 +383,7 @@ function WizardImport({ proveedores, materiales, onGuardarLote, onGuardarPlantil
       <div style={{ background:C.surface, borderRadius:18, width:"min(820px,96vw)", maxHeight:"92vh", display:"flex", flexDirection:"column", boxShadow:"var(--shadow-lg)", overflow:"hidden" }}>
         <div style={{ padding:"18px 24px", borderBottom:`1px solid ${C.line}`, display:"flex", alignItems:"center", justifyContent:"space-between" }}>
           <div>
-            <h3 style={{ fontSize:17, color:C.ink, marginBottom:5 }}>Importar Excel del proveedor</h3>
+            <h3 style={{ fontSize:17, color:C.ink, marginBottom:5 }}>Importar catálogo del proveedor</h3>
             <div style={{ display:"flex", alignItems:"center" }}>
               {PASOS.map((s,i)=>(
                 <React.Fragment key={s}>
@@ -389,30 +408,40 @@ function WizardImport({ proveedores, materiales, onGuardarLote, onGuardarPlantil
               </div>
               <label style={{ fontSize:12, color:C.sub, display:"block", marginBottom:5 }}>Archivo Excel del proveedor *</label>
               <FileDrop onFile={leerArchivo}/>
-              <p style={{ fontSize:12, color:C.sub, marginTop:10 }}>Casaremos cada fila con tus materiales por el nombre. Lo que no case, lo completas a mano en la tabla.</p>
+              <p style={{ fontSize:12, color:C.sub, marginTop:10 }}>Se guardará el catálogo completo del proveedor. Reimportar reemplaza su catálogo anterior.</p>
             </div>
           )}
           {paso===1 && (
             <PasoColumnas {...{ hojas, hojaIdx, onHoja:onHojaChange, headerRow, setHeaderRow, headers, preview, rolDeCol, onAsignar:asignarCol, colMap, activeRole, setActiveRole, prov, colByKey }}/>
           )}
           {paso===2 && (
-            <PasoRevision {...{ items, selec, onToggle:(i)=>setSelec(s=>s.includes(i)?s.filter(x=>x!==i):[...s,i]), prov, guardarPl, setGuardarPl, colMap }}/>
+            <div style={{ textAlign:"center", padding:"32px 24px" }}>
+              <div style={{ width:56, height:56, borderRadius:999, background:C.okSoft, color:C.ok, display:"grid", placeItems:"center", margin:"0 auto 16px" }}><Check size={28}/></div>
+              <h3 style={{ fontSize:18, color:C.ink, marginBottom:8 }}>Catálogo importado</h3>
+              <p style={{ fontSize:14, color:C.sub }}>
+                <strong style={{ color:C.ok }}>{resultado?.guardados} ítems</strong> guardados para <span style={{ color:prov?.color }}>{prov?.nombre}</span>.<br/>
+                Ya puedes correlacionarlos con tus materiales.
+              </p>
+            </div>
           )}
-          {paso===3 && <PasoCompletado resultado={resultado}/>}
         </div>
 
         <div style={{ padding:"14px 24px", borderTop:`1px solid ${C.line}`, display:"flex", justifyContent:"space-between", alignItems:"center", gap:8 }}>
-          <div>
-            {paso===1 && <Btn outline onClick={()=>setPaso(0)}>← Volver</Btn>}
-            {paso===2 && <Btn outline onClick={()=>setPaso(1)}>← Volver</Btn>}
-          </div>
+          <div>{paso===1 && <Btn outline onClick={()=>setPaso(0)}>← Volver</Btn>}</div>
           <div>
             {paso===0 && <span style={{ fontSize:12.5, color:C.sub }}>Selecciona proveedor y sube su Excel</span>}
-            {paso===1 && <Btn onClick={irARevision} disabled={colMap.nombre==null}>Ver revisión →</Btn>}
-            {paso===2 && <Btn onClick={ejecutarImport} disabled={importando||selec.length===0}>{importando?"Guardando…":`Guardar ${selec.length} correlación${selec.length===1?"":"es"}`}</Btn>}
-            {paso===3 && <Btn onClick={onCerrar}>Cerrar</Btn>}
+            {paso===1 && <Btn onClick={ejecutar} disabled={colMap.nombre==null||guardando}>{guardando?"Guardando…":`Importar ${filasValidas} ítems`}</Btn>}
+            {paso===2 && <Btn onClick={onCerrar}>Cerrar</Btn>}
           </div>
         </div>
+        {paso===1 && (
+          <div style={{ padding:"0 24px 14px", marginTop:-8 }}>
+            <label style={{ display:"flex", alignItems:"center", gap:8, cursor:"pointer", fontSize:12.5, color:C.ink }}>
+              <input type="checkbox" checked={guardarPl} onChange={e=>setGuardarPl(e.target.checked)} style={{ cursor:"pointer" }}/>
+              Guardar plantilla de columnas de <strong>{prov?.nombre}</strong> (pre-asigna estas columnas la próxima vez).
+            </label>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -496,71 +525,6 @@ function PasoColumnas({ hojas, hojaIdx, onHoja, headerRow, setHeaderRow, headers
   );
 }
 
-function PasoRevision({ items, selec, onToggle, prov, guardarPl, setGuardarPl, colMap }) {
-  const casan = items.filter(it=>it.material_id).length;
-  const camposAsignados = ROLES_WIZARD.filter(r => colMap?.[r.key] != null);
-  return (
-    <div>
-      <p style={{ fontSize:14, color:C.ink, fontWeight:600, marginBottom:3 }}>{items.length} filas en el Excel para <span style={{ color:prov?.color }}>{prov?.nombre}</span></p>
-      <p style={{ fontSize:12.5, color:C.sub, marginBottom:8 }}>
-        <span style={{ color:C.ok }}>{casan} casan</span> con un material tuyo. <span style={{ color:C.dim }}>{items.length-casan} sin coincidencia</span> (se ignoran; complétalas a mano luego).
-      </p>
-      {/* Campos del proveedor que se guardarán */}
-      <div style={{ display:"flex", gap:6, flexWrap:"wrap", marginBottom:12 }}>
-        {camposAsignados.map(r => (
-          <span key={r.key} style={{ fontSize:11, fontWeight:600, color:"#fff", background:r.color, borderRadius:999, padding:"2px 9px" }}>{r.label}</span>
-        ))}
-      </div>
-      <div style={{ maxHeight:320, overflowY:"auto", borderRadius:10, border:`1px solid ${C.line}` }}>
-        <table style={{ borderCollapse:"collapse", width:"100%" }}>
-          <thead>
-            <tr style={{ background:C.s2, position:"sticky", top:0, zIndex:1 }}>
-              <th style={{ width:36, padding:"9px 10px", borderBottom:`1px solid ${C.line}` }}/>
-              <th style={{ padding:"9px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:C.sub, textTransform:"uppercase", borderBottom:`1px solid ${C.line}` }}>Nombre proveedor</th>
-              <th style={{ padding:"9px 12px", textAlign:"left", fontSize:11, fontWeight:700, color:C.sub, textTransform:"uppercase", borderBottom:`1px solid ${C.line}` }}>↔ Tu material</th>
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((it,i)=>{
-              const checked = selec.includes(i); const casa = !!it.material_id;
-              return (
-                <tr key={i} style={{ background:checked?(i%2===0?C.bg:C.surface):"transparent", opacity:casa?(checked?1:.5):.35 }}>
-                  <td style={{ padding:"7px 10px", textAlign:"center", borderBottom:`1px solid ${C.line}` }}>
-                    <input type="checkbox" checked={checked} disabled={!casa} onChange={()=>onToggle(i)} style={{ cursor:casa?"pointer":"not-allowed" }}/>
-                  </td>
-                  <td style={{ padding:"7px 12px", fontSize:13, color:C.ink, borderBottom:`1px solid ${C.line}` }}>{it.nombre}</td>
-                  <td style={{ padding:"7px 12px", fontSize:13, borderBottom:`1px solid ${C.line}`, color:casa?C.ok:C.dim }}>
-                    {casa ? it.materialNombre : "sin coincidencia"}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-      <label style={{ display:"flex", alignItems:"center", gap:8, marginTop:14, cursor:"pointer", fontSize:13, color:C.ink }}>
-        <input type="checkbox" checked={guardarPl} onChange={e=>setGuardarPl(e.target.checked)} style={{ cursor:"pointer" }}/>
-        Guardar plantilla de columnas de <strong>{prov?.nombre}</strong> (la próxima importación pre-asignará estas columnas).
-      </label>
-    </div>
-  );
-}
-
-function PasoCompletado({ resultado }) {
-  return (
-    <div style={{ textAlign:"center", padding:"32px 24px" }}>
-      <div style={{ width:56, height:56, borderRadius:999, background:C.okSoft, color:C.ok, display:"grid", placeItems:"center", margin:"0 auto 16px" }}><Check size={28}/></div>
-      <h3 style={{ fontSize:18, color:C.ink, marginBottom:8 }}>Importación completada</h3>
-      {resultado && (
-        <p style={{ fontSize:14, color:C.sub, lineHeight:1.7 }}>
-          <strong style={{ color:C.ok }}>{resultado.guardados} correlaciones</strong> guardadas.
-          {resultado.sinCasar>0 && <><br/><span style={{ color:C.dim }}>{resultado.sinCasar} sin coincidencia (complétalas en la tabla).</span></>}
-        </p>
-      )}
-    </div>
-  );
-}
-
 // ══════════════════════════════════════════════════════════════════
 // TabDistribuidor (Proveedores) — export default
 // ══════════════════════════════════════════════════════════════════
@@ -569,26 +533,26 @@ export default function TabDistribuidor({ empresa, materiales = [] }) {
   const esSupabase = !!cid && cid !== "demo" && cid !== "local";
 
   const [proveedores, setProveedores] = useState([]);
-  // cor[material_id][proveedor_id] = { id, nombre_proveedor, referencia, coste, descuento }
+  const [itemsByProv, setItemsByProv] = useState({});   // { [provId]: items[] }
+  // cor[material_id][proveedor_id] = { id, nombre_proveedor, referencia, coste, descuento, datos, proveedor_item_id }
   const [cor, setCor] = useState({});
   const [cargando, setCargando] = useState(esSupabase);
   const [subTab, setSubTab] = useState("correlacion");
-  const [wizard, setWizard] = useState(false);
+  const [wizardProv, setWizardProv] = useState(null);   // id de proveedor a importar, o null
 
-  // Carga inicial: proveedores + sus correlaciones (selectiva por proveedor).
   const recargar = useCallback(async () => {
     if (!esSupabase) { setCargando(false); return; }
     setCargando(true);
     try {
       const provs = await cargarProveedores(cid);
       setProveedores(provs);
-      const mapa = {};
-      // Carga las correlaciones de cada proveedor (consultas indexadas, baratas).
+      const mapa = {}, items = {};
       for (const p of provs) {
         const cs = await cargarCorrelacionesDeProveedor(p.id);
         cs.forEach(c => { (mapa[c.material_id] ||= {})[c.proveedor_id] = c; });
+        items[p.id] = await cargarItemsDeProveedor(p.id);
       }
-      setCor(mapa);
+      setCor(mapa); setItemsByProv(items);
     } catch (e) { console.warn("[Proveedores] carga:", e?.message); }
     finally { setCargando(false); }
   }, [cid, esSupabase]);
@@ -596,45 +560,56 @@ export default function TabDistribuidor({ empresa, materiales = [] }) {
   useEffect(() => { recargar(); }, [recargar]);
 
   // ── Proveedores CRUD ──
-  async function onCrearProv(p) { if (!esSupabase) return; const nuevo = await crearProveedor(p, cid); setProveedores(ps=>[...ps,nuevo]); }
+  async function onCrearProv(p) { if (!esSupabase) return; const nuevo = await crearProveedor(p, cid); setProveedores(ps=>[...ps,nuevo]); setItemsByProv(m=>({...m,[nuevo.id]:[]})); }
   async function onEditarProv(id, cambios) { if (!esSupabase) return; const upd = await actualizarProveedor(id, cambios); setProveedores(ps=>ps.map(p=>p.id===id?upd:p)); }
   async function onBorrarProv(p) {
     if (!esSupabase) return;
-    if (!confirm(`¿Eliminar el proveedor "${p.nombre}"? Se borrarán sus correlaciones.`)) return;
+    if (!confirm(`¿Eliminar el proveedor "${p.nombre}"? Se borrarán su catálogo y sus correlaciones.`)) return;
     await borrarProveedor(p.id);
     setProveedores(ps=>ps.filter(x=>x.id!==p.id));
+    setItemsByProv(m=>{ const n={...m}; delete n[p.id]; return n; });
     setCor(prev => { const n={}; for (const mid in prev){ const row={...prev[mid]}; delete row[p.id]; if(Object.keys(row).length) n[mid]=row; } return n; });
   }
 
-  // ── Editar celda de correlación (upsert o borrar) ──
-  async function onCommitCelda(materialId, proveedorId, valor) {
+  // ── Import del catálogo del proveedor (reemplaza el anterior) ──
+  async function onGuardarCatalogo(proveedorId, items) {
     if (!esSupabase) return;
-    const v = (valor||"").trim();
-    const actual = cor[materialId]?.[proveedorId];
-    try {
-      if (!v) { // vaciar = borrar correlación
-        if (actual?.id) await borrarCorrelacion(actual.id);
-        setCor(prev => { const n={...prev}; if(n[materialId]){ const row={...n[materialId]}; delete row[proveedorId]; n[materialId]=row; } return n; });
-        return;
-      }
-      const guardada = await guardarCorrelacion({ material_id:materialId, proveedor_id:proveedorId, nombre_proveedor:v, referencia:actual?.referencia, coste:actual?.coste, descuento:actual?.descuento }, cid);
-      setCor(prev => ({ ...prev, [materialId]: { ...(prev[materialId]||{}), [proveedorId]: guardada } }));
-    } catch (e) { alert("No se pudo guardar: "+(e?.message||e)); }
+    const guardados = await reemplazarItemsProveedor(proveedorId, items, cid);
+    setItemsByProv(m => ({ ...m, [proveedorId]: guardados }));
   }
-
-  // ── Import en lote ──
-  async function onGuardarLote(proveedorId, lote) {
-    if (!esSupabase) return;
-    const guardadas = await guardarCorrelacionesLote(proveedorId, lote, cid);
-    setCor(prev => { const n={...prev}; guardadas.forEach(c=>{ n[c.material_id]={ ...(n[c.material_id]||{}), [c.proveedor_id]:c }; }); return n; });
-  }
-  // Guarda la plantilla de mapeo de columnas del proveedor (reusable).
   async function onGuardarPlantilla(proveedorId, plantilla) {
     if (!esSupabase) return;
     try { const upd = await actualizarProveedor(proveedorId, { plantilla }); setProveedores(ps=>ps.map(p=>p.id===proveedorId?upd:p)); }
     catch (e) { console.warn("[plantilla]", e?.message); }
   }
 
+  // ── Guardar correlación de UN material para todos los proveedores ──
+  async function onGuardarMaterial(materialId, seleccion) {
+    if (!esSupabase) return;
+    const nuevoCor = { ...(cor[materialId] || {}) };
+    for (const p of proveedores) {
+      const item = seleccion[p.id];
+      const actual = cor[materialId]?.[p.id];
+      if (item) {
+        const guardada = await guardarCorrelacion({
+          material_id: materialId, proveedor_id: p.id, nombre_proveedor: item.nombre,
+          referencia: item.referencia, coste: item.coste, descuento: item.descuento,
+          datos: item.datos || {}, proveedor_item_id: item.id,
+        }, cid);
+        nuevoCor[p.id] = guardada;
+      } else if (actual?.id) {
+        await borrarCorrelacion(actual.id);
+        delete nuevoCor[p.id];
+      }
+    }
+    setCor(prev => {
+      const n = { ...prev };
+      if (Object.keys(nuevoCor).length) n[materialId] = nuevoCor; else delete n[materialId];
+      return n;
+    });
+  }
+
+  const nItemsTotal = Object.values(itemsByProv).reduce((s,a)=>s+(a?.length||0),0);
   const SUB_TABS = [
     { id:"correlacion", label:"Correlación" },
     { id:"proveedores", label:`Proveedores (${proveedores.length})` },
@@ -651,29 +626,35 @@ export default function TabDistribuidor({ empresa, materiales = [] }) {
 
   return (
     <div style={{ flex:1, display:"flex", flexDirection:"column", overflow:"hidden", fontFamily:"var(--font-body)" }}>
-      <div style={{ display:"flex", borderBottom:`1px solid ${C.line}`, padding:"0 24px", background:C.surface, flexShrink:0 }}>
-        {SUB_TABS.map(t=>(
-          <button key={t.id} onClick={()=>setSubTab(t.id)}
-            style={{ padding:"12px 18px", background:"none", border:"none", cursor:"pointer", fontFamily:"inherit", fontSize:13.5, fontWeight:subTab===t.id?700:400, color:subTab===t.id?C.brand:C.sub, borderBottom:subTab===t.id?`2px solid ${C.brand}`:"2px solid transparent", marginBottom:-1 }}>
-            {t.label}
-          </button>
-        ))}
+      <div style={{ display:"flex", borderBottom:`1px solid ${C.line}`, padding:"0 24px", background:C.surface, flexShrink:0, alignItems:"center", justifyContent:"space-between" }}>
+        <div style={{ display:"flex" }}>
+          {SUB_TABS.map(t=>(
+            <button key={t.id} onClick={()=>setSubTab(t.id)}
+              style={{ padding:"12px 18px", background:"none", border:"none", cursor:"pointer", fontFamily:"inherit", fontSize:13.5, fontWeight:subTab===t.id?700:400, color:subTab===t.id?C.brand:C.sub, borderBottom:subTab===t.id?`2px solid ${C.brand}`:"2px solid transparent", marginBottom:-1 }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        <button onClick={recargar} title="Recargar" style={{ background:"none", border:"none", color:C.dim, cursor:"pointer", padding:6, display:"flex" }}><RefreshCw size={15}/></button>
       </div>
 
       {cargando ? (
         <div style={{ flex:1, display:"grid", placeItems:"center", color:C.sub }}><Loader size={22} className="spin"/></div>
       ) : subTab==="correlacion" ? (
-        <TablaCorrelacion materiales={materiales} proveedores={proveedores} cor={cor}
-          onCommitCelda={onCommitCelda} onImportar={()=>setWizard(true)}/>
+        <CorrelacionClic materiales={materiales} proveedores={proveedores} itemsByProv={itemsByProv} cor={cor}
+          onGuardarMaterial={onGuardarMaterial} onAbrirProveedores={()=>setSubTab("proveedores")}/>
       ) : (
         <div style={{ flex:1, overflowY:"auto" }}>
-          <PanelProveedores proveedores={proveedores} onCrear={onCrearProv} onEditar={onEditarProv} onBorrar={onBorrarProv}/>
+          <PanelProveedores proveedores={proveedores} itemsByProv={itemsByProv}
+            onCrear={onCrearProv} onEditar={onEditarProv} onBorrar={onBorrarProv}
+            onImportar={(id)=>setWizardProv(id)}/>
         </div>
       )}
 
-      {wizard && proveedores.length>0 && (
-        <WizardImport proveedores={proveedores} materiales={materiales}
-          onGuardarLote={onGuardarLote} onGuardarPlantilla={onGuardarPlantilla} onCerrar={()=>setWizard(false)}/>
+      {wizardProv != null && proveedores.length>0 && (
+        <WizardImportCatalogo proveedores={proveedores} provIdInicial={wizardProv}
+          onGuardarCatalogo={onGuardarCatalogo} onGuardarPlantilla={onGuardarPlantilla}
+          onCerrar={()=>setWizardProv(null)}/>
       )}
     </div>
   );

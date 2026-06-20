@@ -540,7 +540,7 @@ export async function borrarProveedor(id) {
 // un pedido. Las columnas justas (no select * innecesario en listados grandes).
 // `datos` (jsonb) lleva los campos flexibles que aporta cada proveedor
 // (categoria, y cualquier otro que asigne en su plantilla de import).
-const COR_COLS = "id,material_id,proveedor_id,nombre_proveedor,referencia,coste,descuento,datos";
+const COR_COLS = "id,material_id,proveedor_id,nombre_proveedor,referencia,coste,descuento,datos,proveedor_item_id";
 
 // Correlaciones de UN proveedor (para ver/editar su columna o traducir su compra).
 export async function cargarCorrelacionesDeProveedor(proveedorId) {
@@ -564,6 +564,7 @@ export async function guardarCorrelacion(c, companyId) {
     nombre_proveedor: c.nombre_proveedor, referencia: c.referencia || null,
     coste: c.coste ?? null, descuento: c.descuento ?? null, datos: c.datos || {},
   };
+  if (c.proveedor_item_id !== undefined) row.proveedor_item_id = c.proveedor_item_id ?? null;
   const { data, error } = await lsc().from("correlaciones")
     .upsert(row, { onConflict: "material_id,proveedor_id" }).select().single();
   if (error) throw error;
@@ -587,5 +588,47 @@ export async function guardarCorrelacionesLote(proveedorId, items, companyId) {
 
 export async function borrarCorrelacion(id) {
   const { error } = await lsc().from("correlaciones").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   PROVEEDOR_ITEMS — catálogo completo de cada proveedor (migración 011)
+   Guardamos TODAS las filas del Excel del proveedor (casen o no con un
+   material tuyo). La correlación clic-a-clic enlaza tu material con uno
+   de estos ítems. Carga selectiva: solo el catálogo del proveedor abierto.
+   ═══════════════════════════════════════════════════════════════════ */
+const ITEM_COLS = "id,proveedor_id,nombre,referencia,categoria,coste,descuento,datos";
+
+// Catálogo de UN proveedor (para correlacionar clic-a-clic).
+export async function cargarItemsDeProveedor(proveedorId) {
+  const { data, error } = await lsc().from("proveedor_items").select(ITEM_COLS).eq("proveedor_id", proveedorId).order("nombre");
+  if (error) throw error;
+  return data || [];
+}
+
+// Reemplaza el catálogo del proveedor por el del Excel recién importado
+// (borra el anterior y vuelve a insertar; un proveedor = un catálogo vigente).
+export async function reemplazarItemsProveedor(proveedorId, items, companyId) {
+  await lsc().from("proveedor_items").delete().eq("proveedor_id", proveedorId);
+  const num = (v) => (v === 0 || v) ? (Number(String(v).replace(",", ".")) || null) : null;
+  const rows = (items || []).filter(i => (i.nombre || "").trim()).map(i => ({
+    company_id: companyId, proveedor_id: proveedorId,
+    nombre: String(i.nombre).trim(),
+    referencia: i.referencia || null, categoria: i.categoria || null,
+    coste: num(i.coste), descuento: num(i.descuento), datos: i.datos || {},
+  }));
+  if (!rows.length) return [];
+  // Inserta por lotes (~500) para Excels grandes.
+  const out = [];
+  for (let i = 0; i < rows.length; i += 500) {
+    const { data, error } = await lsc().from("proveedor_items").insert(rows.slice(i, i + 500)).select(ITEM_COLS);
+    if (error) throw error;
+    out.push(...(data || []));
+  }
+  return out;
+}
+
+export async function borrarItemsDeProveedor(proveedorId) {
+  const { error } = await lsc().from("proveedor_items").delete().eq("proveedor_id", proveedorId);
   if (error) throw error;
 }
