@@ -1,6 +1,6 @@
 // MARK: - TabEtiquetas — Creador de etiquetas A4/A3 para palés de almacén
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Tag, Printer, Save, Trash2, Plus, FileText, RotateCcw } from "lucide-react";
+import { Tag, Printer, Save, Trash2, Plus, FileText, RotateCcw, ArrowLeft } from "lucide-react";
 
 const C = {
   bg:"var(--bg)", surface:"var(--surface)", s2:"var(--surface-2)",
@@ -174,9 +174,9 @@ function imprimirEtiqueta(config, pedido) {
 }
 
 /* ─── TabEtiquetas principal ─────────────────────────────────────────────── */
-export default function TabEtiquetas({ pedidos = [], plantillas: plantillasProp, onGuardarPlantillas, L }) {
+export default function TabEtiquetas({ pedidos = [], plantillas: plantillasProp, onGuardarPlantillas, pedidoInicial = null, onVolver, L }) {
   const [config, setConfig]       = useState({ ...CONFIG_DEFECTO });
-  const [pedidoId, setPedidoId]   = useState(null);
+  const [pedidoId, setPedidoId]   = useState(pedidoInicial ? String(pedidoInicial) : null);
   // Las plantillas vienen del padre (Supabase, compartidas por la organización).
   // Fallback a localStorage si se usa el componente sin esas props.
   const controlado = typeof onGuardarPlantillas === "function";
@@ -192,6 +192,17 @@ export default function TabEtiquetas({ pedidos = [], plantillas: plantillasProp,
   };
 
   const pedido = pedidos.find(p => String(p.id) === String(pedidoId)) || null;
+
+  // Si se abre desde un pedido concreto, aplica su nombre como título de la etiqueta.
+  useEffect(() => {
+    if (!pedidoInicial) return;
+    const p = pedidos.find(x => String(x.id) === String(pedidoInicial));
+    if (p) {
+      const nombrePedido = p.nombre || p.codigo || `Pedido ${p.id}`;
+      setConfig(prev => prev.titulo === CONFIG_DEFECTO.titulo ? { ...prev, titulo: nombrePedido } : prev);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pedidoInicial]);
 
   const set = (k) => (v) => setConfig(prev => ({ ...prev, [k]: v }));
 
@@ -248,6 +259,14 @@ export default function TabEtiquetas({ pedidos = [], plantillas: plantillasProp,
 
         {/* Header */}
         <div style={{ padding:"14px 18px", borderBottom:`1px solid ${C.line}`, display:"flex", alignItems:"center", gap:8 }}>
+          {onVolver && (
+            <button onClick={onVolver} title={L("Volver al pedido","Back to order")}
+              style={{ display:"flex", alignItems:"center", gap:4, padding:"4px 10px", borderRadius:8,
+                border:`1px solid ${C.line}`, background:C.s2, color:C.sub, fontFamily:"inherit",
+                fontWeight:600, fontSize:12.5, cursor:"pointer" }}>
+              <ArrowLeft size={13}/>{L("Pedido","Order")}
+            </button>
+          )}
           <Tag size={16} color={C.brand}/>
           <span style={{ fontWeight:700, fontSize:15, color:C.ink }}>Etiquetas de almacén</span>
         </div>

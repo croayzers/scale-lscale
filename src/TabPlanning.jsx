@@ -26,11 +26,14 @@ const AXIS_H    = 40;     // eje de horas sticky
 const SNAP      = 0.25;
 const DRAG_THRESH = 4;
 
-// Canvas: 3 días completos = 72 horas
-// Hora 0 = medianoche del día anterior al seleccionado
-const DIAS_CANVAS = 3;
-const H_TOTAL     = DIAS_CANVAS * 24;   // 72
-const H_OFFSET    = 0;                  // hora 0 del canvas = 00:00 día anterior
+// Canvas continuo: el día seleccionado va al inicio (a la izquierda) con 1 día
+// previo de contexto (retornos nocturnos) y muchos días por delante para deslizar.
+// Hora 0 del canvas = medianoche del día anterior al seleccionado (= DIAS_ANTES días antes).
+const DIAS_ANTES  = 1;                  // días previos al seleccionado (contexto)
+const DIAS_DESPUES = 16;                // días posteriores visibles deslizando
+const DIAS_CANVAS = DIAS_ANTES + 1 + DIAS_DESPUES;   // 18
+const H_TOTAL     = DIAS_CANVAS * 24;
+const H_OFFSET    = 0;                  // hora 0 del canvas = 00:00 del día ancla
 
 const TIPOS_INICIO = ["salir_almacen","llevar_evento","descargar_evento","regresar_almacen"];
 const TIPOS_FINAL  = ["llevar_evento","recoger_evento","regresar_almacen","descargar_almacen"];
@@ -1100,12 +1103,12 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, mat
     }
   }, [tramosIniciales]);
 
-  /* ── Fecha ancla del canvas = día anterior al seleccionado ─────────────── */
-  const anchorIso = useMemo(() => isoPlus(fecha, -1), [fecha]);
+  /* ── Fecha ancla del canvas = DIAS_ANTES antes del seleccionado ─────────── */
+  const anchorIso = useMemo(() => isoPlus(fecha, -DIAS_ANTES), [fecha]);
 
-  // Fechas visibles en el canvas
+  // Fechas visibles en el canvas (DIAS_CANVAS días desde el ancla)
   const fechasCanvas = useMemo(() =>
-    [0,1,2].map(i => isoPlus(anchorIso, i)),
+    Array.from({ length: DIAS_CANVAS }, (_, i) => isoPlus(anchorIso, i)),
     [anchorIso]
   );
 
@@ -1155,23 +1158,27 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, mat
 
   useEffect(() => { tramosRef.current = tramosDelDia; }, [tramosDelDia]);
 
-  /* ── Auto-scroll: llevar hora_ida_min - 5h a la vista ──────────────────── */
+  /* ── Auto-scroll: dejar el día seleccionado al inicio (a la izquierda) ──── */
   useEffect(() => {
     if (!scrollRef.current) return;
-    // Buscar el mínimo hora_ida de los pedidos del día seleccionado
+    // El día seleccionado empieza en la hora-canvas DIAS_ANTES*24.
+    const inicioDiaSel = DIAS_ANTES * 24;
+    // Si hay pedidos ese día y su primera hora es más tarde, centra en ella
+    // (con 2h de margen) para que se vean; si no, arranca al inicio del día.
     const pedidosDia = eventosDia.filter(p =>
       p.fecha_entrega === fecha || p.fecha_retorno === fecha
     );
-    let scrollH = 24; // default: medianoche del día seleccionado (offset 24h del canvas)
+    let scrollH = inicioDiaSel;
     if (pedidosDia.length > 0) {
       const minHora = pedidosDia.reduce((min, p) => {
-        const hi = dec2hm(p.hora_ida) ?? dec2hm(p.hora_vuelta) ?? 12;
+        const hi = dec2hm(p.hora_ida) ?? dec2hm(p.hora_vuelta) ?? 0;
         const off = offsetForPedido(p);
         return Math.min(min, off + hi);
       }, Infinity);
-      if (isFinite(minHora)) scrollH = minHora;
+      if (isFinite(minHora)) scrollH = Math.max(inicioDiaSel, minHora - 2);
     }
-    const targetX = Math.max(0, hToX(scrollH - 5));
+    // Margen de 2h a la izquierda para ver el final del día previo (retornos noche)
+    const targetX = Math.max(0, hToX(scrollH - 2));
     scrollRef.current.scrollLeft = targetX;
   }, [fecha, eventosDia, offsetForPedido]);
 
@@ -1436,7 +1443,7 @@ export default function TabPlanning({ pedidos, setPedidos, vehiculosEmpresa, mat
           <ChevronRight size={15}/>
         </button>
         <span style={{ fontSize:12, color:"var(--text-2)" }}>
-          {vista === "dia" && `${fmtD(anchorIso)} → ${fmtD(fechasCanvas[2])} · ${eventosDia.length} ${L("evento(s)","event(s)")}`}
+          {vista === "dia" && `${fmtD(fecha)} → ${fmtD(fechasCanvas[fechasCanvas.length-1])} · ${eventosDia.length} ${L("evento(s)","event(s)")}`}
           {vista === "semana" && (() => { const l=lunesDe(fecha); return `${fmtD(l)} – ${fmtD(isoPlus(l,6))}`; })()}
           {vista === "mes" && (() => { const [y,m]=fecha.slice(0,7).split("-"); return `${MESES_ES[Number(m)-1]} ${y}`; })()}
         </span>

@@ -13,7 +13,7 @@ import * as XLSX from "xlsx";
 import {
   Upload, Loader, X, Check, AlertTriangle, Plus, Trash2,
   Warehouse, ArrowLeft, FileSpreadsheet, Pencil, ClipboardList,
-  ChevronRight, ArrowRight, Download, FileDown, Save, Bell, BellOff,
+  ChevronRight, ArrowRight, Download, FileDown, Save, Bell, BellOff, Tag,
 } from "lucide-react";
 import { useL } from "./lib/i18n.js";
 import { parsearExcelPedido } from "./lib/parseExcelPedido.js";
@@ -955,7 +955,7 @@ function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato
    DETALLE / EDICIÓN DE PEDIDO
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - DetallePedido
-function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, onAgregarCesta, onComprobarStock, rolesImport, empresaId, modo, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, L }) {
+function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, onEtiquetas, onAgregarCesta, onComprobarStock, rolesImport, empresaId, modo, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, L }) {
   const [exportModal, setExportModal] = useState(null); // null | "pdf" | "excel"
   const [p, setP] = useState({ ...pedido });
   const [editando, setEditando] = useState(false);
@@ -1180,6 +1180,9 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
           </Btn>
           <Btn outline onClick={() => setExportModal("excel")} style={{ padding:"6px 14px", fontSize:13, gap:5 }}>
             <FileSpreadsheet size={13} color="#16a34a"/>Excel
+          </Btn>
+          <Btn outline onClick={() => onEtiquetas?.(p)} style={{ padding:"6px 14px", fontSize:13, gap:5 }}>
+            <Tag size={13} color={C.brand}/>{L("Etiquetas","Labels")}
           </Btn>
         </div>
 
@@ -1806,7 +1809,7 @@ function ModalNotificaciones({ pedido, companyId, onClose }) {
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - TabPedidos [export default]
-export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, onNotificarStock, onAgregarCesta, guardarPlantillaConf, cargarPlantillasConf, highlightedPedidoId, highlightedCategoria, puedeEditar, onNotificarEvento }) {
+export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, onEtiquetas, onNotificarStock, onAgregarCesta, guardarPlantillaConf, cargarPlantillasConf, highlightedPedidoId, highlightedCategoria, puedeEditar, onNotificarEvento }) {
   const L = useL();
   const fileRef = useRef(null);
 
@@ -2055,6 +2058,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         onDelete={eliminarPedido}
         onCambiarVehiculo={cambiarVehiculoPedido}
         onPlanning={onPlanning}
+        onEtiquetas={onEtiquetas}
         onAgregarCesta={onAgregarCesta}
         onComprobarStock={async () => {
           if (modo === "supabase") {

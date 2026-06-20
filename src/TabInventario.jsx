@@ -8,7 +8,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { ClipboardCheck, Plus, X, Check, AlertTriangle, ChevronRight,
   RotateCcw, TrendingDown, TrendingUp, Minus, Loader, Package,
-  BarChart2, Clock, ChevronDown, Trash2, Download, Upload } from "lucide-react";
+  BarChart2, Clock, ChevronDown, Trash2, Download, Upload, ArrowLeft } from "lucide-react";
 import {
   cargarSesiones, cargarLineasSesion, cargarHistorico,
   abrirRecuento, actualizarLinea, cerrarRecuento, cancelarRecuento, borrarSesion,
@@ -1442,7 +1442,7 @@ function SubvistaAnalisis({ historico, materiales, pedidos = [], almacenes = [],
 
 // ── Componente principal ───────────────────────────────────────────────────
 // MARK: - TabInventario [export default]
-export default function TabInventario({ materiales, setMateriales, empresa, modo, almacenes, sesion, pedidos = [], puedeEditar, L }) {
+export default function TabInventario({ materiales, setMateriales, empresa, modo, almacenes, sesion, pedidos = [], puedeEditar, onVolver, L }) {
   const [subvista,      setSubvista]      = useState("recuento");
   const [sesiones,      setSesiones]      = useState([]);
   const [lineasActivas, setLineasActivas] = useState([]);
@@ -1561,8 +1561,16 @@ export default function TabInventario({ materiales, setMateriales, empresa, modo
     <div style={{ height:"100%", display:"flex", flexDirection:"column", minHeight:0 }}>
 
       {/* Segmented control */}
-      <div style={{ display:"flex", gap:2, padding:"10px 16px 0", borderBottom:`1px solid ${C.line}`,
+      <div style={{ display:"flex", alignItems:"center", gap:2, padding:"10px 16px 0", borderBottom:`1px solid ${C.line}`,
         background:C.surface, flexShrink:0 }}>
+        {onVolver && (
+          <button onClick={onVolver} title={L("Volver a Almacén","Back to Warehouse")}
+            style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 12px", marginBottom:4,
+              borderRadius:8, border:`1px solid ${C.line}`, background:C.s2, color:C.sub,
+              fontFamily:"inherit", fontWeight:600, fontSize:13, cursor:"pointer" }}>
+            <ArrowLeft size={14}/>{L("Almacén","Warehouse")}
+          </button>
+        )}
         {[
           { id:"recuento",  label:"Recuento",  icon:<ClipboardCheck size={14}/> },
           { id:"historial", label:"Historial", icon:<Clock size={14}/> },

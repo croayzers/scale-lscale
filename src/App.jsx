@@ -57,20 +57,20 @@ const NAV = [
     items: [
       { id: "distribuidor", label: "Proveedores", Icon: Building2      },
       { id: "almacen",      label: "Almacén",      Icon: Warehouse      },
-      { id: "inventario",   label: "Inventario",   Icon: ClipboardCheck },
+      // Inventario ya no va en la barra: es un botón dentro del header de Almacén.
     ],
   },
   {
     label: "Distribución", Icon: ClipboardList,
     items: [
       { id: "pedido",    label: "Pedidos",         Icon: ClipboardList },
-      { id: "etiquetas", label: "Etiquetas",       Icon: Tag           },
+      // Etiquetas ya no va en la barra: es un botón dentro del detalle de cada pedido.
       { id: "planning",  label: "Planning",        Icon: CalendarDays  },
       { id: "retorno",   label: "Retorno/Cierre",  Icon: RotateCcw     },
     ],
   },
   { id: "flota",  label: "Flota",          Icon: Truck    },
-  { id: "config", label: "Configuración",  Icon: Settings },
+  // Configuración ya no va en la barra de pestañas: es la tuerca junto a la campana.
 ];
 
 // Lista plana de pestañas derivada de NAV (aplana los grupos con `items`).
@@ -142,6 +142,7 @@ export default function App() {
   const [tema,  setTema]  = useState(() => localStorage.getItem("scale.theme") || "light");
   const [tab,   setTab]   = useState("almacen");
   const [planningFecha, setPlanningFecha] = useState(null);
+  const [etiquetaPedido, setEtiquetaPedido] = useState(null); // pedido preseleccionado al abrir Etiquetas desde un pedido
   const [carga, setCarga] = useState(true);
   const [modo,  setModo]  = useState(null);
   const [empresa,       setEmpresa]       = useState(null);
@@ -541,6 +542,11 @@ export default function App() {
             {supabaseConfigurado && empresa?.id && (
               <BellButton unread={chatUnread} onClick={() => chatRef.current?.openPanel()} title={L("Mensajes","Messages")} />
             )}
+            <button onClick={() => setTab("config")} title={L("Configuración","Settings")}
+              style={{ background: tab === "config" ? C.brandSoft : "none", border:"none", cursor:"pointer",
+                color: tab === "config" ? C.brand : C.sub, padding:6, borderRadius:8, display:"flex" }}>
+              <Settings size={16}/>
+            </button>
             <AppLauncher empresa={empresa} currentAppId="lscale" />
             <button onClick={cambiarLang} title={L("Cambiar idioma","Change language")} style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, padding:6, borderRadius:8, display:"flex" }}><Globe size={16}/></button>
             <button onClick={toggleTema} title={L("Cambiar tema","Toggle theme")} style={{ background:"none", border:"none", cursor:"pointer", color:C.sub, padding:6, borderRadius:8, display:"flex" }}>
@@ -592,12 +598,14 @@ export default function App() {
         <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column", minHeight:0 }}>
           {tab === "almacen"  && <TabAlmacen  materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} silenciados={silenciados}
             puedeEditar={puedeEditar}
+            onInventario={() => setTab("inventario")}
             guardarPlantillaConf={(almId, pl) => guardarPlantillaConf("almconf", almId, pl)}
             cargarPlantillasConf={(almId) => cargarPlantillasConf("almconf", almId)} L={L}/>}
           {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} rolesImport={rolesImport} formatoFecha={formatoFecha} sesion={sesion} highlightedPedidoId={highlightedPedido?.id ?? highlightedPedido}
             highlightedCategoria={highlightedPedido?.categoria ?? null}
             puedeEditar={puedeEditar}
             onPlanning={(p) => { setPlanningFecha(p?.fecha_entrega || null); setTab("planning"); }}
+            onEtiquetas={(p) => { setEtiquetaPedido(p?.id ?? null); setTab("etiquetas"); }}
             onNotificarStock={notificarStock}
             onAgregarCesta={agregarACesta}
             guardarPlantillaConf={(almId, pl) => guardarPlantillaConf("pedconf", almId, pl)}
@@ -616,7 +624,7 @@ export default function App() {
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }}
             tramosIniciales={tramosIniciales}
             onSaveTramos={async (pid, tramos) => { if (modo === "supabase" && empresa?.id) await guardarTramos(pid, tramos, empresa.id); }}/>}
-          {tab === "inventario" && <TabInventario materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} sesion={sesion} pedidos={pedidos} puedeEditar={puedeEditar} L={L}/>}
+          {tab === "inventario" && <TabInventario materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} sesion={sesion} pedidos={pedidos} puedeEditar={puedeEditar} onVolver={() => setTab("almacen")} L={L}/>}
           {tab === "retorno"  && <TabRetorno  pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha}
             materiales={materiales} setMateriales={setMateriales} modo={modo} empresa={empresa}
             puedeEditar={puedeEditar}
@@ -624,7 +632,9 @@ export default function App() {
             onNotificarEvento={notificarEvento}
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} L={L}/>}
           {tab === "flota"     && <TabFlota pedidos={pedidos} vehiculosEmpresa={vehiculosEmpresa} empresa={empresa} formatoFecha={formatoFecha} L={L}/>}
-          {tab === "etiquetas" && <TabEtiquetas pedidos={pedidos} plantillas={plantillasEtiquetas} onGuardarPlantillas={guardarPlantillasEtiquetas} L={L}/>}
+          {tab === "etiquetas" && <TabEtiquetas pedidos={pedidos} plantillas={plantillasEtiquetas} onGuardarPlantillas={guardarPlantillasEtiquetas}
+            pedidoInicial={etiquetaPedido}
+            onVolver={() => { setEtiquetaPedido(null); setTab("pedido"); }} L={L}/>}
           {tab === "cesta"     && <TabCesta cesta={cesta} setCesta={setCesta} materiales={materiales} setMateriales={setMateriales} almacenes={almacenes} modo={modo} empresa={empresa} sesion={sesion} colsIniciales={cestaCols} onGuardarCols={guardarCestaCols} onNotificarEvento={notificarEvento} L={L}/>}
           {tab === "distribuidor" && <TabDistribuidor empresa={empresa} materiales={materiales}/>}
           {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={puedeAdmin} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} portalUrl={import.meta.env?.VITE_PORTAL_URL || "http://localhost:3000"} L={L}/>}

@@ -4,7 +4,7 @@ import React, { useState, useRef } from "react";
 import * as XLSX from "xlsx";
 import {
   Search, Columns3, MapPin, Upload, Download, FileDown,
-  Plus, Pencil, Trash2, X, Check, Loader, AlertTriangle, Combine, ImageIcon, SlidersHorizontal,
+  Plus, Pencil, Trash2, X, Check, Loader, AlertTriangle, Combine, ImageIcon, SlidersHorizontal, ClipboardCheck,
 } from "lucide-react";
 import { C, Badge, Btn, ModalField } from "./lib/ui.jsx";
 import { crearMaterial, actualizarMaterial, borrarMaterial, subirImagenMaterial, borrarImagenMaterial } from "./lib/data.js";
@@ -192,7 +192,7 @@ function useCatsAbiertas() {
 }
 
 // MARK: - TabAlmacen
-export default function TabAlmacen({ materiales, setMateriales, empresa, modo, almacenes, silenciados, guardarPlantillaConf, cargarPlantillasConf, L }) {
+export default function TabAlmacen({ materiales, setMateriales, empresa, modo, almacenes, silenciados, guardarPlantillaConf, cargarPlantillasConf, onInventario, L }) {
   const EMP_ID = `lscale.cols.${empresa?.id}`;
   const defCols = TODAS_COLS.filter((c) => c.def).map((c) => c.id);
   const [colsVis, setColsVis]       = useState(() => { try { return JSON.parse(localStorage.getItem(EMP_ID)) || defCols; } catch { return defCols; } });
@@ -453,7 +453,7 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
     <div style={{ display:"flex", flexDirection:"column", height:"100%", minHeight:0 }}>
 
       {almacenes && almacenes.length > 0 && (
-        <div style={{ display:"flex", gap:2, padding:"8px 20px", borderBottom:`1px solid ${C.line}`, flexShrink:0, background:C.surface }}>
+        <div style={{ display:"flex", alignItems:"center", gap:2, padding:"8px 20px", borderBottom:`1px solid ${C.line}`, flexShrink:0, background:C.surface }}>
           {almacenes.map(a => (
             <button key={a.id} onClick={() => setAlmacenSel(a.id)}
               style={{ padding:"5px 16px", borderRadius:8, border:"none", fontFamily:"inherit",
@@ -463,6 +463,17 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
               {a.nombre}
             </button>
           ))}
+          {onInventario && (
+            <>
+              <div style={{ width:1, height:22, background:C.line, margin:"0 10px 0 auto" }}/>
+              <button onClick={onInventario} title={L("Inventario","Inventory")}
+                style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 14px", borderRadius:8,
+                  border:`1.5px solid ${C.brand}`, background:C.brandSoft, color:C.brand,
+                  fontFamily:"inherit", fontWeight:600, fontSize:13, cursor:"pointer" }}>
+                <ClipboardCheck size={15}/>{L("Inventario","Inventory")}
+              </button>
+            </>
+          )}
         </div>
       )}
 
