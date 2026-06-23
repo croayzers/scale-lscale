@@ -35,6 +35,10 @@ const TODAS_COLS = [
   { id: "proveedor",             label: "PROVEEDOR",      fija: false, def: true  },
   { id: "referencia_proveedor", label: "REF. PROVEEDOR", fija: false, def: true  },
   { id: "precio_coste",         label: "COSTE",          fija: false, def: false },
+  { id: "precio",               label: "PVP",            fija: false, def: false },
+  { id: "margen",               label: "MARGEN",         fija: false, def: false },
+  { id: "periodo_amortizacion", label: "AMORT. PER.",   fija: false, def: false },
+  { id: "coste_amortizacion",   label: "COSTE AMORT.",  fija: false, def: false },
   { id: "notas",        label: "NOTAS",         fija: false, def: false },
 ];
 
@@ -191,6 +195,21 @@ function useCatsAbiertas() {
   return [cerradas, toggle];
 }
 
+function calcularIndicadoresMaterial(m) {
+  const coste = m.precio_coste != null ? Number(m.precio_coste) : null;
+  const precio = m.precio != null ? Number(m.precio) : null;
+  const margen = (coste != null && precio != null && precio !== 0)
+    ? Math.round(((precio - coste) / precio) * 10000) / 100
+    : null;
+  const periodo = (coste != null && precio != null && precio > coste)
+    ? Math.round((coste / (precio - coste)) * 10) / 10
+    : null;
+  const costeAmort = (coste != null && precio != null && precio > coste)
+    ? Math.round((precio - coste) * 100) / 100
+    : null;
+  return { margen, periodo, costeAmort };
+}
+
 // MARK: - TabAlmacen
 export default function TabAlmacen({ materiales, setMateriales, empresa, modo, almacenes, silenciados, guardarPlantillaConf, cargarPlantillasConf, onInventario, onAgregarCesta, L }) {
   const EMP_ID = `lscale.cols.${empresa?.id}`;
@@ -267,7 +286,7 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
         || (m.referencia_proveedor||"").toLowerCase().includes(q);
   });
 
-  const blankMaterial = { referencia:"", nombre:"", descripcion:"", categoria:"", unidad:"ud", stock_actual:0, stock_minimo:0, ubicacion:"", estado:"activo", proveedor:"", referencia_proveedor:"", precio_coste:"", notas:"", almacen_id: almacenSel, imagen_url: null, _imgFile: null };
+  const blankMaterial = { referencia:"", nombre:"", descripcion:"", categoria:"", unidad:"ud", stock_actual:0, stock_minimo:0, ubicacion:"", estado:"activo", proveedor:"", referencia_proveedor:"", precio_coste:"", precio:"", notas:"", almacen_id: almacenSel, imagen_url: null, _imgFile: null, coste_adquisicion:"", margen:"", pvp:"", periodo_amortizacion_dias:"", tipo_activo:"propio" };
 
   const guardarEdit = async () => {
     if (!editObj.nombre?.trim()) return;
@@ -290,10 +309,10 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
       const esNuevo = !obj.id;
       if (modo === "demo") {
         if (esNuevo) {
-          const nuevo = { ...obj, id: Date.now(), emp: empresa.id, stock_actual: Number(obj.stock_actual)||0, stock_minimo: Number(obj.stock_minimo)||0, precio_coste: obj.precio_coste !== "" ? Number(obj.precio_coste) : null };
+          const nuevo = { ...obj, id: Date.now(), emp: empresa.id, stock_actual: Number(obj.stock_actual)||0, stock_minimo: Number(obj.stock_minimo)||0, precio_coste: obj.precio_coste !== "" ? Number(obj.precio_coste) : null, precio: obj.precio !== "" ? Number(obj.precio) : null, coste_adquisicion: obj.coste_adquisicion !== "" ? Number(obj.coste_adquisicion) : null, margen: obj.margen !== "" ? Number(obj.margen) : null, pvp: obj.pvp !== "" ? Number(obj.pvp) : null, periodo_amortizacion_dias: obj.periodo_amortizacion_dias !== "" ? Number(obj.periodo_amortizacion_dias) : null, tipo_activo: obj.tipo_activo ?? 'propio' };
           setMateriales((p) => [nuevo, ...p]);
         } else {
-          setMateriales((p) => p.map((m) => m.id === obj.id ? { ...m, ...obj, stock_actual: Number(obj.stock_actual)||0, stock_minimo: Number(obj.stock_minimo)||0 } : m));
+          setMateriales((p) => p.map((m) => m.id === obj.id ? { ...m, ...obj, stock_actual: Number(obj.stock_actual)||0, stock_minimo: Number(obj.stock_minimo)||0, precio: obj.precio !== "" ? Number(obj.precio) : null } : m));
         }
       } else {
         const fn = esNuevo ? crearMaterial : actualizarMaterial;
@@ -453,7 +472,20 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
         const col = ESTADO_COLOR[es] || ESTADO_COLOR.activo;
         return <Badge color={col.bg} ink={col.ink}>{ESTADO_LABEL[es] || es}</Badge>;
       }
-      case "precio_coste": return m.precio_coste != null ? <span>{m.precio_coste}€</span> : <span style={{ color:C.dim }}>—</span>;
+      case "precio_coste": return m.precio_coste != null ? <span>{Number(m.precio_coste).toFixed(2)}€</span> : <span style={{ color:C.dim }}>—</span>;
+      case "precio": return m.precio != null ? <span>{Number(m.precio).toFixed(2)}€</span> : <span style={{ color:C.dim }}>—</span>;
+      case "margen": {
+        const { margen } = calcularIndicadoresMaterial(m);
+        return margen != null ? <span>{margen.toFixed(2)}%</span> : <span style={{ color:C.dim }}>—</span>;
+      }
+      case "periodo_amortizacion": {
+        const { periodo } = calcularIndicadoresMaterial(m);
+        return periodo != null ? <span>{periodo.toFixed(1)}</span> : <span style={{ color:C.dim }}>—</span>;
+      }
+      case "coste_amortizacion": {
+        const { costeAmort } = calcularIndicadoresMaterial(m);
+        return costeAmort != null ? <span>{costeAmort.toFixed(2)}€</span> : <span style={{ color:C.dim }}>—</span>;
+      }
       default: return <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m[colId] || <span style={{ color:C.dim }}>—</span>}</span>;
     }
   };
@@ -724,6 +756,75 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
               <ModalField label={L("Ref. Proveedor","Supplier Ref.")} value={editObj.referencia_proveedor}
                 onChange={(v) => setEditObj((p) => ({ ...p, referencia_proveedor:v }))} placeholder="SKU, código proveedor…"/>
               <ModalField label={L("Coste (€)","Cost (€)")}      value={editObj.precio_coste} onChange={(v) => setEditObj((p) => ({ ...p, precio_coste:v }))} type="number" placeholder="0.00"/>
+              <ModalField label={L("PVP (€)","Sale price (€)")} value={editObj.precio} onChange={(v) => setEditObj((p) => ({ ...p, precio:v }))} type="number" placeholder="0.00"/>
+              {(() => {
+                const { margen, periodo, costeAmort } = calcularIndicadoresMaterial(editObj);
+                return (
+                  <>
+                    <ModalField label={L("Margen (%)","Margin (%)")} value={margen != null ? margen.toFixed(2) : ""} readOnly={true} style={{ opacity:0.75 }}/>
+                    <ModalField label={L("Periodo amortización","Amortization period")} value={periodo != null ? periodo.toFixed(1) : ""} readOnly={true} style={{ opacity:0.75 }}/>
+                    <ModalField label={L("Coste amortización","Amortization cost")} value={costeAmort != null ? `${costeAmort.toFixed(2)} €` : ""} readOnly={true} style={{ opacity:0.75 }}/>
+                  </>
+                );
+              })()}
+              {/* Campos de inventario dinámico por fechas */}
+              <div style={{ gridColumn:"1 / -1", borderTop:`1px solid var(--border)`, paddingTop:12, marginTop:4 }}>
+                <label style={{ fontSize:11.5, fontWeight:700, color:"var(--text-2)", letterSpacing:.5 }}>{L("INVENTARIO DINÁMICO / AMORTIZACIÓN","DYNAMIC INVENTORY / AMORTIZATION")}</label>
+              </div>
+              <ModalField label={L("Coste Adquisición (€)","Acquisition Cost (€)")} value={editObj.coste_adquisicion}
+                onChange={(v) => {
+                  const ca = v !== "" ? Number(v) : "";
+                  const pvpV = editObj.pvp !== "" && editObj.pvp != null ? Number(editObj.pvp) : null;
+                  const margenCalc = (ca !== "" && pvpV != null && pvpV > 0)
+                    ? Math.round(((pvpV - ca) / ca) * 10000) / 100
+                    : editObj.margen;
+                  setEditObj((p) => ({ ...p, coste_adquisicion: v, margen: margenCalc != null && margenCalc !== editObj.margen ? String(margenCalc) : p.margen }));
+                }}
+                type="number" placeholder="0.00"/>
+              <ModalField label={L("Margen % (activo)","Margin % (asset)")} value={editObj.margen}
+                onChange={(v) => {
+                  const m = v !== "" ? Number(v) : "";
+                  const ca = editObj.coste_adquisicion !== "" && editObj.coste_adquisicion != null ? Number(editObj.coste_adquisicion) : null;
+                  const pvpCalc = (m !== "" && ca != null) ? Math.round(ca * (1 + m / 100) * 100) / 100 : null;
+                  setEditObj((p) => ({ ...p, margen: v, pvp: pvpCalc != null ? String(pvpCalc) : p.pvp }));
+                }}
+                type="number" placeholder="0.00"/>
+              <ModalField label={L("PVP Activo (€)","Asset Sale Price (€)")} value={editObj.pvp}
+                onChange={(v) => {
+                  const pv = v !== "" ? Number(v) : "";
+                  const ca = editObj.coste_adquisicion !== "" && editObj.coste_adquisicion != null ? Number(editObj.coste_adquisicion) : null;
+                  const margenCalc = (pv !== "" && ca != null && ca > 0) ? Math.round(((pv - ca) / ca) * 10000) / 100 : null;
+                  setEditObj((p) => ({ ...p, pvp: v, margen: margenCalc != null ? String(margenCalc) : p.margen }));
+                }}
+                type="number" placeholder="0.00"/>
+              <ModalField label={L("Amortización (días)","Amortization (days)")} value={editObj.periodo_amortizacion_dias}
+                onChange={(v) => setEditObj((p) => ({ ...p, periodo_amortizacion_dias:v }))}
+                type="number" placeholder="ej. 1825 = 5 años"/>
+              {(() => {
+                const ca = editObj.coste_adquisicion !== "" && editObj.coste_adquisicion != null ? Number(editObj.coste_adquisicion) : null;
+                const per = editObj.periodo_amortizacion_dias !== "" && editObj.periodo_amortizacion_dias != null ? Number(editObj.periodo_amortizacion_dias) : null;
+                const amortDiario = (ca != null && per != null && per > 0) ? ca / per : null;
+                return (
+                  <ModalField label={L("Amortización diaria (€)","Daily amortization (€)")}
+                    value={amortDiario != null ? amortDiario.toFixed(4) : ""}
+                    readOnly={true} style={{ opacity:0.75 }}/>
+                );
+              })()}
+              <div style={{ gridColumn:"1 / -1" }}>
+                <label style={{ fontSize:11.5, fontWeight:600, color:"var(--text-2)", letterSpacing:.5 }}>{L("TIPO ACTIVO","ASSET TYPE")}</label>
+                <div style={{ display:"flex", gap:8, marginTop:6 }}>
+                  {[["propio", L("Propio","Own")], ["subalquilado", L("Subalquilado","Subleased")]].map(([val, lbl]) => (
+                    <button key={val} onClick={() => setEditObj((p) => ({ ...p, tipo_activo: val }))}
+                      style={{ padding:"5px 14px", borderRadius:999, fontFamily:"inherit", cursor:"pointer",
+                        border: `1.5px solid ${editObj.tipo_activo === val ? "var(--brand)" : "var(--border-strong)"}`,
+                        background: editObj.tipo_activo === val ? "var(--brand-soft)" : "transparent",
+                        color: editObj.tipo_activo === val ? "var(--brand)" : "var(--text-2)",
+                        fontWeight:600, fontSize:12.5 }}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
               {/* Imagen */}
               <div style={{ gridColumn:"1 / -1" }}>
                 <label style={{ fontSize:11.5, fontWeight:600, color:C.sub, letterSpacing:.5 }}>IMAGEN</label>

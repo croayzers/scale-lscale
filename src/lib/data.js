@@ -50,6 +50,12 @@ function mapMaterial(r) {
     notas:        r.notas        || null,
     almacen_id:   r.almacen_id   ?? null,
     imagen_url:   r.imagen_url   || null,
+    coste_adquisicion:             r.coste_adquisicion             ?? null,
+    margen:                        r.margen                        ?? null,
+    pvp:                           r.pvp                           ?? null,
+    periodo_amortizacion_dias:     r.periodo_amortizacion_dias     ?? null,
+    coste_amortizacion_diario:     r.coste_amortizacion_diario     ?? null,
+    tipo_activo:                   r.tipo_activo                   || 'propio',
   };
 }
 
@@ -72,6 +78,11 @@ function materialToRow(m, companyId) {
     notas:        m.notas        ?? null,
     almacen_id:   m.almacen_id   ?? null,
     imagen_url:   m.imagen_url   ?? null,
+    coste_adquisicion:         m.coste_adquisicion != null ? Number(m.coste_adquisicion) : null,
+    margen:                    m.margen            != null ? Number(m.margen)            : null,
+    pvp:                       m.pvp               != null ? Number(m.pvp)               : null,
+    periodo_amortizacion_dias: m.periodo_amortizacion_dias != null ? Number(m.periodo_amortizacion_dias) : null,
+    tipo_activo:               m.tipo_activo ?? 'propio',
   };
 }
 
@@ -82,7 +93,10 @@ function mapPedido(r) {
     destino: r.destino, notas: r.notas,
     creado_por_id: r.creado_por_id ?? null,
     creado_por_nombre: r.creado_por_nombre ?? null,
-    vistos_por: Array.isArray(r.vistos_por) ? r.vistos_por : [] };
+    vistos_por: Array.isArray(r.vistos_por) ? r.vistos_por : [],
+    fecha_evento_inicio: r.fecha_evento_inicio ?? null,
+    fecha_evento_fin:    r.fecha_evento_fin    ?? null,
+    tipo_pedido:         r.tipo_pedido         || 'estandar' };
 }
 
 function pedidoToRow(p, companyId) {
@@ -95,6 +109,9 @@ function pedidoToRow(p, companyId) {
     creado_por_id: p.creado_por_id ?? null,
     creado_por_nombre: p.creado_por_nombre ?? null,
     vistos_por: p.vistos_por ?? [],
+    fecha_evento_inicio: p.fecha_evento_inicio ?? null,
+    fecha_evento_fin:    p.fecha_evento_fin    ?? null,
+    tipo_pedido:         p.tipo_pedido         ?? 'estandar',
     datos: p,
   };
 }
@@ -183,12 +200,12 @@ const MATERIALES_DEMO = [
 
 export async function cargarDatos() {
   if (!supabaseConfigurado) {
-    return { modo: "demo", empresas: [EMPRESA_DEMO], materiales: MATERIALES_DEMO, pedidos: PEDIDOS_DEMO, expediciones: [] };
+    return { modo: "demo", empresas: [EMPRESA_DEMO], materiales: MATERIALES_DEMO, pedidos: PEDIDOS_DEMO, expediciones: [], reservas: [] };
   }
   try {
     const { data: { user }, error: eUser } = await sb().auth.getUser();
     if (import.meta.env?.DEV) console.log("%c[L-Scale] Auth getUser", "color:#2563eb;font-weight:bold", user?.id ?? "null", eUser?.message ?? "ok");
-    if (!user) return { modo: "sin_sesion", empresas: [], materiales: [], pedidos: [], expediciones: [] };
+    if (!user) return { modo: "sin_sesion", empresas: [], materiales: [], pedidos: [], expediciones: [], reservas: [] };
 
     const { data: comps, error: eComps } = await sb().from("companies").select("*");
     const { data: cfgs,  error: eCfgs  } = await lsc().from("empresa_config").select("*");
@@ -208,7 +225,7 @@ export async function cargarDatos() {
       myRol = memb?.rol ?? "member";
       const memberApps = memb?.apps ?? null;
       if (myRol !== "owner" && memberApps !== null && !memberApps.includes("lscale")) {
-        return { modo: "sin_acceso", empresas, materiales: [], pedidos: [], expediciones: [], rol: myRol };
+        return { modo: "sin_acceso", empresas, materiales: [], pedidos: [], expediciones: [], reservas: [], rol: myRol };
       }
       // Nivel de permiso en lscale: ver | editar | admin (null = sin restricción)
       nivelApp = (memb?.app_permisos?.["lscale"]) ?? null;
@@ -223,6 +240,8 @@ export async function cargarDatos() {
     const { data: exps, error: eExps } = await lsc().from("expediciones").select("*");
     const expediciones = (exps || []).map(mapExpedicion);
 
+    const { data: reservas, error: eReservas } = await lsc().from("reservas_stock").select("*");
+
     if (import.meta.env?.DEV) {
       console.log("%c[L-Scale] Carga desde Supabase", "color:#16a34a;font-weight:bold");
       console.log("  companies:", comps?.length ?? 0, eComps ? `❌ ${eComps.message}` : "ok");
@@ -230,11 +249,12 @@ export async function cargarDatos() {
       console.log("  materiales:", mats?.length ?? 0, eMats ? `❌ ${eMats.message}` : "ok");
       console.log("  pedidos:", peds?.length ?? 0, ePeds ? `❌ ${ePeds.message}` : "ok");
       console.log("  expediciones:", exps?.length ?? 0, eExps ? `❌ ${eExps.message}` : "ok");
+      console.log("  reservas_stock:", reservas?.length ?? 0, eReservas ? `❌ ${eReservas.message}` : "ok");
     }
 
-    if (!empresas.length) return { modo: "sin_empresa", empresas: [], materiales: [], pedidos: [], expediciones: [], rol: myRol };
+    if (!empresas.length) return { modo: "sin_empresa", empresas: [], materiales: [], pedidos: [], expediciones: [], reservas: [], rol: myRol };
     const tieneConfig = cfgs && cfgs.length > 0;
-    if (!tieneConfig) return { modo: "sin_config", empresas, materiales: [], pedidos: [], expediciones: [], rol: myRol };
+    if (!tieneConfig) return { modo: "sin_config", empresas, materiales: [], pedidos: [], expediciones: [], reservas: [], rol: myRol };
 
     // Extraer prefs del registro de config ya cargado (evita un segundo round-trip)
     const cfgRow = cfgBy[empresas[0]?.id];
@@ -244,10 +264,10 @@ export async function cargarDatos() {
                ?? (cc && (cc.almacenes || cc.vehiculos || cc.roles) ? cc : null)
                ?? dj ?? cc ?? {};
 
-    return { modo: "supabase", empresas, materiales, pedidos, expediciones, rol: myRol, prefs, nivelApp };
+    return { modo: "supabase", empresas, materiales, pedidos, expediciones, reservas: reservas || [], rol: myRol, prefs, nivelApp };
   } catch (e) {
     console.warn("[L-Scale] Error cargando de Supabase, uso demo:", e?.message);
-    return { modo: "demo", empresas: [EMPRESA_DEMO], materiales: MATERIALES_DEMO, pedidos: [], expediciones: [] };
+    return { modo: "demo", empresas: [EMPRESA_DEMO], materiales: MATERIALES_DEMO, pedidos: [], expediciones: [], reservas: [] };
   }
 }
 
@@ -262,7 +282,8 @@ export async function crearMaterial(m, companyId) {
 
 export async function actualizarMaterial(id, cambios) {
   const permitidas = ["referencia","nombre","descripcion","categoria","unidad","stock_actual",
-    "stock_minimo","ubicacion","estado","proveedor","referencia_proveedor","precio_coste","notas","imagen_url","almacen_id"];
+    "stock_minimo","ubicacion","estado","proveedor","referencia_proveedor","precio_coste","notas","imagen_url","almacen_id",
+    "coste_adquisicion","margen","pvp","periodo_amortizacion_dias","tipo_activo"];
   const patch = {};
   for (const k of permitidas) if (k in cambios) patch[k] = cambios[k];
   if ("stock_actual" in patch) patch.stock_actual = Number(patch.stock_actual) || 0;
@@ -653,4 +674,75 @@ export async function reemplazarItemsProveedor(proveedorId, items, companyId) {
 export async function borrarItemsDeProveedor(proveedorId) {
   const { error } = await lsc().from("proveedor_items").delete().eq("proveedor_id", proveedorId);
   if (error) throw error;
+}
+
+// MARK: - Inventario dinámico por fechas (reservas_stock, subalquiler)
+
+export async function calcularStockDisponible(materialId, fechaInicio, fechaFin, excluirPedidoId = null) {
+  if (!supabaseConfigurado) return null;
+  const { data, error } = await lsc().rpc('stock_disponible', {
+    p_material_id: materialId,
+    p_fecha_inicio: fechaInicio,
+    p_fecha_fin: fechaFin,
+    p_excluir_pedido: excluirPedidoId,
+  });
+  if (error) { console.error('[L-Scale] stock_disponible RPC error', error); return null; }
+  return data;
+}
+
+export async function sincronizarReservasPedido(pedido, companyId) {
+  if (!supabaseConfigurado || pedido.tipo_pedido !== 'evento') return;
+  const { fecha_evento_inicio: fi, fecha_evento_fin: ff, id: pedidoId } = pedido;
+  if (!fi || !ff) return;
+
+  await lsc().from('reservas_stock').delete().eq('pedido_id', pedidoId);
+
+  const reservas = (pedido.lineas || [])
+    .filter(l => l.material_id && Number(l.cantidad) > 0)
+    .map(l => ({
+      company_id:  companyId,
+      pedido_id:   pedidoId,
+      material_id: l.material_id,
+      cantidad:    Number(l.cantidad),
+      fecha_inicio: fi,
+      fecha_fin:    ff,
+      tipo_origen:  l.tipo_origen ?? 'propio',
+    }));
+
+  if (reservas.length > 0) {
+    await lsc().from('reservas_stock').insert(reservas);
+  }
+}
+
+export async function cargarSubalquilerPedido(pedidoId) {
+  if (!supabaseConfigurado) return [];
+  const { data, error } = await lsc().from('lineas_subalquiler')
+    .select('*')
+    .eq('pedido_id', pedidoId)
+    .order('created_at');
+  if (error) return [];
+  return data || [];
+}
+
+export async function guardarSubalquilerPedido(pedidoId, lineas, companyId) {
+  if (!supabaseConfigurado) return;
+  await lsc().from('lineas_subalquiler').delete().eq('pedido_id', pedidoId);
+  if (!lineas?.length) return;
+  const rows = lineas.map(l => ({
+    company_id:      companyId,
+    pedido_id:       pedidoId,
+    material_id:     l.material_id ?? null,
+    nombre_material: l.nombre_material || l.nombre || '?',
+    cantidad:        Number(l.cantidad) || 0,
+    cantidad_propia: Number(l.cantidad_propia) || 0,
+    cantidad_sub:    Number(l.cantidad_sub) || 0,
+    proveedor_id:    l.proveedor_id ?? null,
+    coste_sub:       l.coste_sub != null ? Number(l.coste_sub) : null,
+    coste_total_sub: l.coste_total_sub != null ? Number(l.coste_total_sub) : null,
+    opcion_logistica: l.opcion_logistica ?? 'mixto',
+    alerta_retorno:  Boolean(l.alerta_retorno),
+    notas:           l.notas ?? null,
+    estado:          l.estado ?? 'pendiente',
+  }));
+  await lsc().from('lineas_subalquiler').insert(rows);
 }

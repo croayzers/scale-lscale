@@ -50,10 +50,12 @@ export function calcularConflictosStock(pedidos = [], materiales = []) {
     }
   }
 
-  // Orden cronológico: fecha_entrega ASC → hora_ida ASC
+  // Orden cronológico: para pedidos de evento usa fecha_evento_inicio; en caso contrario fecha_entrega
+  const fechaOrden = p => (p.tipo_pedido === "evento" ? p.fecha_evento_inicio : null) || p.fecha_entrega || "9999";
+
   const sorted = [...activos].sort((a, b) => {
-    const fa = a.fecha_entrega || "9999";
-    const fb = b.fecha_entrega || "9999";
+    const fa = fechaOrden(a);
+    const fb = fechaOrden(b);
     if (fa !== fb) return fa < fb ? -1 : 1;
     const ha = dec2hm(a.hora_ida) ?? 99;
     const hb = dec2hm(b.hora_ida) ?? 99;

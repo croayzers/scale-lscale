@@ -18,7 +18,8 @@ import {
 import { useL } from "./lib/i18n.js";
 import { parsearExcelPedido } from "./lib/parseExcelPedido.js";
 import ExcelConfigurador from "./ExcelConfigurador.jsx";
-import { guardarPedido, borrarPedido, cargarMiembrosEmpresa, enviarNotificacionPedido, recargarMateriales, guardarPrefs, cargarProveedores, cargarCorrelacionesDeMateriales, cargarProveedorPrincipal } from "./lib/data.js";
+import { guardarPedido, borrarPedido, cargarMiembrosEmpresa, enviarNotificacionPedido, recargarMateriales, guardarPrefs, cargarProveedores, cargarCorrelacionesDeMateriales, cargarProveedorPrincipal, sincronizarReservasPedido, guardarSubalquilerPedido } from "./lib/data.js";
+import PantallaEventoLogistica from "./PantallaEventoLogistica.jsx";
 import { fmtFecha, siguienteCodigo } from "./lib/fechas.js";
 import { conflictosPedido, calcularConflictosStock } from "./lib/stockConflictos.js";
 
@@ -963,7 +964,7 @@ function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato
    DETALLE / EDICIÓN DE PEDIDO
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - DetallePedido
-function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, onEtiquetas, onAgregarCesta, onComprobarStock, rolesImport, empresaId, modo, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, L }) {
+function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, onEtiquetas, onAgregarCesta, onComprobarStock, rolesImport, empresaId, modo, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, reservas = [], L }) {
   const [exportModal, setExportModal] = useState(null); // null | "pdf" | "excel"
   const [p, setP] = useState({ ...pedido });
   // Un pedido recién creado (vacío) arranca en modo edición para añadir artículos ya.
@@ -984,6 +985,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
   const [corr,         setCorr]         = useState({}); // corr[material_id][proveedor_id] = {nombre_proveedor,...}
   const [principalId,  setPrincipalId]  = useState(null); // proveedor principal global (solo para marcar ⭐ en el menú)
   const [menuLinea,    setMenuLinea]    = useState(null); // { idx, x, y } menú contextual abierto
+  const [pantallaEvento, setPantallaEvento] = useState(false);
 
   useEffect(() => {
     setP({ ...pedido });
@@ -1055,6 +1057,22 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
     const cAlm = item.material_id != null ? costeAlmacen[item.material_id] : null;
     if (cAlm != null) return { coste: cAlm, origen: "almacen" };
     return { coste: null, origen: null };
+  };
+
+  const indicadoresLinea = (item) => {
+    const mat = item.material_id != null ? materiales.find((m) => String(m.id) === String(item.material_id)) : null;
+    const costeLinea = costeDeLinea(item).coste;
+    const precio = mat?.precio != null ? Number(mat.precio) : null;
+    const margen = (costeLinea != null && precio != null && precio !== 0)
+      ? Math.round(((precio - costeLinea) / precio) * 10000) / 100
+      : null;
+    const periodo = (costeLinea != null && precio != null && precio > costeLinea)
+      ? Math.round((costeLinea / (precio - costeLinea)) * 10) / 10
+      : null;
+    const costeAmort = (costeLinea != null && precio != null && precio > costeLinea)
+      ? Math.round((precio - costeLinea) * 100) / 100
+      : null;
+    return { precio, margen, periodo, costeAmort };
   };
 
   // Scroll a categoría si se abre desde un link de chat con #categoria
@@ -1226,6 +1244,11 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
             </Btn>
           </>
         )}
+        {p.tipo_pedido === "evento" && p.fecha_evento_inicio && p.fecha_evento_fin && (p.lineas || []).length > 0 && (
+          <Btn outline onClick={() => setPantallaEvento(true)} style={{ padding:"6px 14px", fontSize:13, gap:5 }}>
+            {L("Verificar Disponibilidad","Check Availability")}
+          </Btn>
+        )}
         {p.estado !== "finalizado" && p.estado !== "cancelado" && (
           <Btn onClick={() => onPlanning?.(p)} color={C.brand} style={{ padding:"6px 14px", fontSize:13 }}>
             <ArrowRight size={13}/>{L("Pasar a Planning","Send to Planning")}
@@ -1355,6 +1378,27 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
             <Field label="FECHA RETORNO"     value={p.fecha_retorno}  onChange={f("fecha_retorno")} placeholder="YYYY-MM-DD"/>
             <Field label={L("HORA IDA","DEPARTURE TIME")}    value={p.hora_ida}    onChange={f("hora_ida")}    placeholder="HH:MM" type="time"/>
             <Field label={L("HORA VUELTA","RETURN TIME")}    value={p.hora_vuelta} onChange={f("hora_vuelta")} placeholder="HH:MM" type="time"/>
+            <div style={{ gridColumn:"1 / -1" }}>
+              <label style={{ fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.5, display:"block", marginBottom:6 }}>{L("TIPO PEDIDO","ORDER TYPE")}</label>
+              <div style={{ display:"flex", gap:6 }}>
+                {[["estandar", L("Estándar","Standard")], ["evento", L("Evento","Event")]].map(([val, lbl]) => (
+                  <button key={val} onClick={() => f("tipo_pedido")(val)}
+                    style={{ padding:"5px 14px", borderRadius:999, fontFamily:"inherit", cursor:"pointer",
+                      border: `1.5px solid ${(p.tipo_pedido || "estandar") === val ? C.brand : C.strong}`,
+                      background: (p.tipo_pedido || "estandar") === val ? C.brandSoft : "transparent",
+                      color: (p.tipo_pedido || "estandar") === val ? C.brand : C.sub,
+                      fontWeight:600, fontSize:12.5 }}>
+                    {lbl}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {(p.tipo_pedido === "evento") && (
+              <>
+                <Field label={L("INICIO EVENTO","EVENT START")} value={p.fecha_evento_inicio || ""} onChange={f("fecha_evento_inicio")} placeholder="YYYY-MM-DD"/>
+                <Field label={L("FIN EVENTO","EVENT END")}     value={p.fecha_evento_fin    || ""} onChange={f("fecha_evento_fin")}    placeholder="YYYY-MM-DD"/>
+              </>
+            )}
           </div>
         ) : (
           <>
@@ -1393,6 +1437,11 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
               {p.hora_ida     && <span>🚚 {L("Ida","Out")}: <strong style={{ color:C.ink }}>{p.hora_ida}</strong></span>}
               {p.fecha_retorno && <span>↩ <strong style={{ color:C.ink }}>{fmtFecha(p.fecha_retorno, formatoFecha)}</strong></span>}
               {p.hora_vuelta  && <span>🏠 {L("Vuelta","Back")}: <strong style={{ color:C.ink }}>{p.hora_vuelta}</strong></span>}
+              {p.tipo_pedido === "evento" && p.fecha_evento_inicio && (
+                <span style={{ background:C.brandSoft, color:C.brand, borderRadius:999, padding:"2px 10px", fontSize:11.5, fontWeight:700 }}>
+                  {L("EVENTO","EVENT")}: {fmtFecha(p.fecha_evento_inicio, formatoFecha)}{p.fecha_evento_fin && p.fecha_evento_fin !== p.fecha_evento_inicio ? ` → ${fmtFecha(p.fecha_evento_fin, formatoFecha)}` : ""}
+                </span>
+              )}
               <span>🏭 <strong style={{ color:C.ink }}>{almNombre}</strong></span>
               {p.vehiculo_id && vehiculosEmpresa?.length > 0 && (() => {
                 const v = vehiculosEmpresa.find(v => String(v.id) === String(p.vehiculo_id));
@@ -1414,7 +1463,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
         {/* Cabecera sticky */}
         {(() => {
           const rolesCols = (rolesImport || []).filter(r => r.tipo === "columna");
-          const gtc = `220px 1fr${rolesCols.map(() => " minmax(80px,1fr)").join("")} 90px 80px 44px`;
+          const gtc = `220px 1fr${rolesCols.map(() => " minmax(80px,1fr)").join("")} 90px 90px 90px 90px 90px 80px 44px`;
           return (
             <div style={{ display:"grid", gridTemplateColumns:gtc,
               position:"sticky", top:0, zIndex:10, background:C.surface,
@@ -1427,6 +1476,10 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                 </div>
               ))}
               <div style={{ padding:"9px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, textAlign:"right" }}>{L("COSTE","COST")}</div>
+              <div style={{ padding:"9px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, textAlign:"right" }}>{L("PVP","PVP")}</div>
+              <div style={{ padding:"9px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, textAlign:"right" }}>{L("MARGEN","MARGIN")}</div>
+              <div style={{ padding:"9px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, textAlign:"right" }}>{L("AMORT. PER.","AMORT. PD")}</div>
+              <div style={{ padding:"9px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, textAlign:"right" }}>{L("COSTE AMORT.","AMORT. COST")}</div>
               <div style={{ padding:"9px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, textAlign:"right" }}>{L("CANT.","QTY")}</div>
               <div/>
             </div>
@@ -1476,13 +1529,14 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                   const provLinea = item.proveedor_id != null ? String(item.proveedor_id) : "";
                   // Coste efectivo: proveedor de la línea o, si no, coste de almacén.
                   const { coste: costeLinea, origen: costeOrigen } = costeDeLinea(item);
+                  const indicadores = indicadoresLinea(item);
                   // Separar roles en "descripcion" (bajo el nombre) y "columna" (columna propia)
                   const rolesDesc = (rolesImport || []).filter(r => r.tipo === "descripcion" && item[r.key]);
                   const rolesCols = (rolesImport || []).filter(r => r.tipo === "columna" && item[r.key]);
                   return (
                     <div key={i} style={{
                       display:"grid",
-                      gridTemplateColumns:`220px 1fr${rolesCols.map(() => " minmax(80px,1fr)").join("")} 90px 80px 44px`,
+                      gridTemplateColumns:`220px 1fr${rolesCols.map(() => " minmax(80px,1fr)").join("")} 90px 90px 90px 90px 90px 80px 44px`,
                       padding:"0 20px", borderBottom:`1px solid ${C.line}`, alignItems:"start",
                       background: item._editado_por ? "rgba(251,146,60,.10)" : "",
                       transition:"background .1s" }}
@@ -1574,7 +1628,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
             {/* Subtotal por almacén (solo si hay más de uno) */}
             {multiAlm && (() => {
               const rolesCols = (rolesImport || []).filter(r => r.tipo === "columna");
-              const gtcSub = `220px 1fr${rolesCols.map(() => " minmax(80px,1fr)").join("")} 90px 80px 44px`;
+              const gtcSub = `220px 1fr${rolesCols.map(() => " minmax(80px,1fr)").join("")} 90px 90px 90px 90px 90px 80px 44px`;
               const colSpanNombre = 2 + rolesCols.length;
               // Coste total del almacén = Σ (coste efectivo de línea × cantidad).
               const costeAlm = alm.cats.reduce((s, c) => s + c.items.reduce((ss, it) => {
@@ -1590,6 +1644,10 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                   <div style={{ padding:"7px 8px", fontSize:12, fontWeight:800, textAlign:"right", color:"#b45309" }}>
                     {costeAlm > 0 ? `${costeAlm.toFixed(2)} €` : ""}
                   </div>
+                  <div/>
+                  <div/>
+                  <div/>
+                  <div/>
                   <div style={{ padding:"7px 8px", fontSize:13, fontWeight:800, textAlign:"right", color:C.brand }}>
                     {alm.total}
                   </div>
@@ -1615,7 +1673,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
         {/* Total global */}
         {(() => {
           const rolesCols = (rolesImport || []).filter(r => r.tipo === "columna");
-          const gtcTotal = `220px 1fr${rolesCols.map(() => " minmax(80px,1fr)").join("")} 90px 80px 44px`;
+          const gtcTotal = `220px 1fr${rolesCols.map(() => " minmax(80px,1fr)").join("")} 90px 90px 90px 90px 90px 80px 44px`;
           const colSpanNombre = 2 + rolesCols.length;
           // Coste total del pedido = Σ (coste efectivo de línea × cantidad).
           const costeTotal = (p.lineas || []).reduce((s, it) => {
@@ -1810,6 +1868,27 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
         </div>
       )}
 
+      {/* Pantalla logística de evento */}
+      {pantallaEvento && (
+        <PantallaEventoLogistica
+          pedido={p}
+          materiales={materiales || []}
+          reservas={reservas}
+          proveedores={provs}
+          correlaciones={Object.values(corr).flatMap(m => Object.values(m))}
+          proveedor_items={[]}
+          onGuardarSubalquiler={async (lineas) => {
+            const esDemo = !empresaId || empresaId === "demo";
+            if (!esDemo) {
+              await sincronizarReservasPedido(p, empresaId);
+              await guardarSubalquilerPedido(p.id, lineas, empresaId);
+            }
+            setPantallaEvento(false);
+          }}
+          onCerrar={() => setPantallaEvento(false)}
+        />
+      )}
+
       {/* Confirmar borrar pedido */}
       {delConf && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)", zIndex:500, display:"grid", placeItems:"center" }}
@@ -1989,7 +2068,7 @@ function ModalNotificaciones({ pedido, companyId, onClose }) {
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - TabPedidos [export default]
-export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, onEtiquetas, onNotificarStock, onAgregarCesta, guardarPlantillaConf, cargarPlantillasConf, highlightedPedidoId, highlightedCategoria, puedeEditar, onNotificarEvento }) {
+export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, onEtiquetas, onNotificarStock, onAgregarCesta, guardarPlantillaConf, cargarPlantillasConf, highlightedPedidoId, highlightedCategoria, puedeEditar, onNotificarEvento, reservas = [] }) {
   const L = useL();
   const fileRef = useRef(null);
 
@@ -2278,6 +2357,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         sesion={sesion}
         materiales={materiales}
         pedidos={pedidos}
+        reservas={reservas}
         L={L}/>
     );
   }

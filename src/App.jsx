@@ -149,6 +149,7 @@ export default function App() {
   const [materiales,    setMateriales]    = useState([]);
   const [pedidos,       setPedidos]       = useState([]);
   const [expediciones,  setExpediciones]  = useState([]);
+  const [reservas,      setReservas]      = useState([]);
   const [sesion,        setSesion]        = useState(undefined);
   const [almacenes,         setAlmacenes]         = useState(DEFAULT_ALMACENES);
   const [vehiculosEmpresa,  setVehiculosEmpresa]  = useState(DEFAULT_VEHICULOS_EMPRESA);
@@ -449,6 +450,7 @@ export default function App() {
     setMateriales(res.materiales || []);
     setPedidos(res.pedidos || []);
     setExpediciones(res.expediciones || []);
+    setReservas(res.reservas || []);
     setMyRol(res.rol ?? "owner");
     setNivelApp(res.nivelApp ?? null);
     // Aplicar prefs ya cargadas (evita segundo round-trip a Supabase)
@@ -635,7 +637,8 @@ export default function App() {
                 await registrarVistoPor(pid, sesion.user.id, nombre);
               }
             }}
-            onNotificarEvento={notificarEvento}/>}
+            onNotificarEvento={notificarEvento}
+            reservas={reservas}/>}
           {tab === "planning" && <TabPlanning pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha}
             materiales={materiales} almacenes={almacenes}
             puedeEditar={puedeEditar}
