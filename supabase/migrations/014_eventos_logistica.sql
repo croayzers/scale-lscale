@@ -19,10 +19,11 @@ ALTER TABLE lscale.materiales
   ) STORED;
 
 -- ── Tabla reservas_stock ────────────────────────────────────────────────────
+-- pedido_id usa el mismo tipo que lscale.pedidos.id (bigint en producción)
 CREATE TABLE IF NOT EXISTS lscale.reservas_stock (
   id              bigserial PRIMARY KEY,
   company_id      uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
-  pedido_id       uuid NOT NULL REFERENCES lscale.pedidos(id) ON DELETE CASCADE,
+  pedido_id       bigint NOT NULL REFERENCES lscale.pedidos(id) ON DELETE CASCADE,
   material_id     bigint NOT NULL REFERENCES lscale.materiales(id) ON DELETE CASCADE,
   cantidad        numeric NOT NULL DEFAULT 0,
   fecha_inicio    date NOT NULL,
@@ -51,7 +52,7 @@ CREATE OR REPLACE FUNCTION lscale.stock_disponible(
   p_material_id bigint,
   p_fecha_inicio date,
   p_fecha_fin    date,
-  p_excluir_pedido uuid DEFAULT NULL
+  p_excluir_pedido bigint DEFAULT NULL
 )
 RETURNS numeric LANGUAGE sql STABLE AS $$
   SELECT COALESCE(m.stock_actual, 0)
@@ -79,7 +80,7 @@ ALTER TABLE lscale.pedidos
 CREATE TABLE IF NOT EXISTS lscale.lineas_subalquiler (
   id              bigserial PRIMARY KEY,
   company_id      uuid NOT NULL REFERENCES public.companies(id) ON DELETE CASCADE,
-  pedido_id       uuid NOT NULL REFERENCES lscale.pedidos(id) ON DELETE CASCADE,
+  pedido_id       bigint NOT NULL REFERENCES lscale.pedidos(id) ON DELETE CASCADE,
   material_id     bigint REFERENCES lscale.materiales(id) ON DELETE SET NULL,
   nombre_material text NOT NULL,
   cantidad        numeric NOT NULL DEFAULT 0,
