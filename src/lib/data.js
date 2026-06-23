@@ -458,6 +458,23 @@ export async function guardarPrefs(companyId, patch) {
   if (error) throw error;
 }
 
+// Proveedor PRINCIPAL global de la empresa: su coste es el que se usa por
+// defecto al importar/abrir un pedido. Se guarda en empresa_config.datos_json
+// (merge parcial), así no necesita columna ni migración propia.
+export async function cargarProveedorPrincipal(companyId) {
+  if (!supabaseConfigurado) return null;
+  const prefs = await cargarPrefs(companyId);
+  const v = prefs?.proveedor_principal_id;
+  return v != null ? Number(v) : null;
+}
+
+export async function guardarProveedorPrincipal(companyId, proveedorId) {
+  if (!supabaseConfigurado) return;
+  await guardarPrefs(companyId, {
+    proveedor_principal_id: proveedorId != null ? Number(proveedorId) : null,
+  });
+}
+
 // MARK: - Notificaciones (cargarMiembrosEmpresa, enviarNotificacionPedido)
 
 // Carga miembros con email y rol (para el panel de empresa y el chat)

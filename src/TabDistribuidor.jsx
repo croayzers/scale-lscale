@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { Plus, Trash2, Search, Upload, X, Check, Building2, Edit2, Save, Package, ArrowRight, Loader, RefreshCw } from "lucide-react";
+import { Plus, Trash2, Search, Upload, X, Check, Building2, Edit2, Save, Package, ArrowRight, Loader, RefreshCw, Star } from "lucide-react";
 import * as XLSX from "xlsx";
 import { C, Btn } from "./lib/ui.jsx";
 import {
   cargarProveedores, crearProveedor, actualizarProveedor, borrarProveedor,
   cargarCorrelacionesDeProveedor, guardarCorrelacion, borrarCorrelacion,
   cargarItemsDeProveedor, reemplazarItemsProveedor, borrarItemsDeProveedor,
+  cargarProveedorPrincipal, guardarProveedorPrincipal,
 } from "./lib/data.js";
 
 function norm(s) {
@@ -39,7 +40,7 @@ const DATOS_PROV = [
 // ══════════════════════════════════════════════════════════════════
 // PanelProveedores — lista de empresas suministradoras (Supabase)
 // ══════════════════════════════════════════════════════════════════
-function PanelProveedores({ proveedores, itemsByProv, onCrear, onEditar, onBorrar, onImportar }) {
+function PanelProveedores({ proveedores, itemsByProv, principalId, onMarcarPrincipal, onCrear, onEditar, onBorrar, onImportar }) {
   const [nuevo, setNuevo] = useState({ nombre:"", contacto:"" });
   const [editId, setEditId] = useState(null);
   const [editData, setEditData] = useState({});
@@ -114,7 +115,21 @@ function PanelProveedores({ proveedores, itemsByProv, onCrear, onEditar, onBorra
                 </div>
               ) : (
                 <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                  <span style={{ flex:2, fontSize:14, fontWeight:600, color:C.ink }}>{p.nombre}</span>
+                  <button onClick={()=>onMarcarPrincipal?.(p.id)}
+                    title={principalId===p.id ? "Proveedor principal (coste por defecto del pedido). Clic para quitar." : "Marcar como proveedor principal (su coste será el por defecto al importar pedidos)"}
+                    style={{ background:"none", border:"none", cursor:"pointer", padding:2, display:"flex",
+                      color: principalId===p.id ? "#f59e0b" : C.dim }}
+                    onMouseEnter={e=>{ if(principalId!==p.id) e.currentTarget.style.color="#f59e0b"; }}
+                    onMouseLeave={e=>{ if(principalId!==p.id) e.currentTarget.style.color=C.dim; }}>
+                    <Star size={15} fill={principalId===p.id ? "#f59e0b" : "none"}/>
+                  </button>
+                  <span style={{ flex:2, fontSize:14, fontWeight:600, color:C.ink }}>
+                    {p.nombre}
+                    {principalId===p.id && (
+                      <span style={{ marginLeft:8, fontSize:10.5, fontWeight:700, color:"#b45309",
+                        background:"#fff7ed", borderRadius:999, padding:"2px 8px", letterSpacing:.3 }}>PRINCIPAL</span>
+                    )}
+                  </span>
                   <span style={{ flex:1.3, fontSize:12.5, color:C.sub }}>{p.contacto||"—"}</span>
                   <span style={{ fontSize:12, color:nItems?C.sub:C.dim, display:"inline-flex", alignItems:"center", gap:4, minWidth:96 }}>
                     <Package size={12}/> {nItems? `${nItems} ítems` : "sin catálogo"}
@@ -568,6 +583,7 @@ export default function TabDistribuidor({ empresa, materiales = [] }) {
   const [cargando, setCargando] = useState(esSupabase);
   const [subTab, setSubTab] = useState("correlacion");
   const [wizardProv, setWizardProv] = useState(null);   // id de proveedor a importar, o null
+  const [principalId, setPrincipalId] = useState(null); // proveedor cuyo coste es el por defecto
 
   const recargar = useCallback(async () => {
     if (!esSupabase) { setCargando(false); return; }
@@ -575,6 +591,7 @@ export default function TabDistribuidor({ empresa, materiales = [] }) {
     try {
       const provs = await cargarProveedores(cid);
       setProveedores(provs);
+      setPrincipalId(await cargarProveedorPrincipal(cid));
       const mapa = {}, items = {};
       for (const p of provs) {
         const cs = await cargarCorrelacionesDeProveedor(p.id);
@@ -591,10 +608,19 @@ export default function TabDistribuidor({ empresa, materiales = [] }) {
   // ── Proveedores CRUD ──
   async function onCrearProv(p) { if (!esSupabase) return; const nuevo = await crearProveedor(p, cid); setProveedores(ps=>[...ps,nuevo]); setItemsByProv(m=>({...m,[nuevo.id]:[]})); }
   async function onEditarProv(id, cambios) { if (!esSupabase) return; const upd = await actualizarProveedor(id, cambios); setProveedores(ps=>ps.map(p=>p.id===id?upd:p)); }
+  // Marca/desmarca el proveedor principal (su coste = coste por defecto del pedido).
+  async function onMarcarPrincipal(id) {
+    if (!esSupabase) return;
+    const nuevo = principalId === id ? null : id;
+    setPrincipalId(nuevo);
+    try { await guardarProveedorPrincipal(cid, nuevo); }
+    catch (e) { console.warn("[principal]", e?.message); setPrincipalId(principalId); }
+  }
   async function onBorrarProv(p) {
     if (!esSupabase) return;
     if (!confirm(`¿Eliminar el proveedor "${p.nombre}"? Se borrarán su catálogo y sus correlaciones.`)) return;
     await borrarProveedor(p.id);
+    if (principalId === p.id) { setPrincipalId(null); guardarProveedorPrincipal(cid, null).catch(()=>{}); }
     setProveedores(ps=>ps.filter(x=>x.id!==p.id));
     setItemsByProv(m=>{ const n={...m}; delete n[p.id]; return n; });
     setCor(prev => { const n={}; for (const mid in prev){ const row={...prev[mid]}; delete row[p.id]; if(Object.keys(row).length) n[mid]=row; } return n; });
@@ -675,6 +701,7 @@ export default function TabDistribuidor({ empresa, materiales = [] }) {
       ) : (
         <div style={{ flex:1, overflowY:"auto" }}>
           <PanelProveedores proveedores={proveedores} itemsByProv={itemsByProv}
+            principalId={principalId} onMarcarPrincipal={onMarcarPrincipal}
             onCrear={onCrearProv} onEditar={onEditarProv} onBorrar={onBorrarProv}
             onImportar={(id)=>setWizardProv(id)}/>
         </div>
