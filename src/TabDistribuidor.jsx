@@ -610,9 +610,9 @@ function PasoColumnas({ hojas, hojaIdx, onHoja, headerRow, setHeaderRow, headers
 // ══════════════════════════════════════════════════════════════════
 // TabDistribuidor (Proveedores) — export default
 // ══════════════════════════════════════════════════════════════════
-export default function TabDistribuidor({ empresa, materiales = [] }) {
-  const cid = empresa?.id;
-  const esSupabase = !!cid && cid !== "demo" && cid !== "local";
+export default function TabDistribuidor({ empresa, materiales = [], modo }) {
+  const cid = empresa?.id ?? empresa?.company_id ?? empresa?.companyId;
+  const esSupabase = modo === "supabase" && !!cid && cid !== "demo" && cid !== "local";
 
   const [proveedores, setProveedores] = useState([]);
   const [itemsByProv, setItemsByProv] = useState({});   // { [provId]: items[] }
@@ -712,7 +712,7 @@ export default function TabDistribuidor({ empresa, materiales = [] }) {
     return (
       <div style={{ padding:40, textAlign:"center", color:C.sub }}>
         <Building2 size={36} style={{ opacity:.3, marginBottom:12 }}/>
-        <p style={{ fontSize:14 }}>La gestión de proveedores requiere estar conectado a tu empresa (Supabase).</p>
+        <p style={{ fontSize:14 }}>La gestión de proveedores requiere estar conectado a la base de datos de la empresa.</p>
       </div>
     );
   }
