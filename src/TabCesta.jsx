@@ -1,7 +1,7 @@
 // MARK: - TabCesta — Cesta de compra para reposición de almacén
 import React, { useState, useCallback, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
-import { ShoppingCart, Trash2, Plus, Minus, Download, Check, Loader, Package, ChevronDown, ChevronRight, AlertTriangle, FileText, Warehouse, Building2, X, Eye } from "lucide-react";
+import { ShoppingCart, Trash2, Plus, Minus, Download, Check, Loader, Package, ChevronDown, ChevronRight, AlertTriangle, FileText, Warehouse, Building2, X, Eye, PackagePlus, ArrowDownToLine, Search } from "lucide-react";
 import { actualizarMaterial, cargarProveedores, cargarCorrelacionesDeMateriales } from "./lib/data.js";
 import { registrarCompra } from "./lib/dataRecuentos.js";
 
@@ -81,13 +81,23 @@ function ConstructorColumnas({ cols, onChange }) {
 }
 
 /* ─── TabCesta ────────────────────────────────────────────────────────────── */
-export default function TabCesta({ cesta, setCesta, materiales, setMateriales, almacenes = [], modo, empresa, sesion, colsIniciales, onGuardarCols, onNotificarEvento, L }) {
+export default function TabCesta({ cesta, setCesta, materiales, setMateriales, almacenes = [], modo, empresa, sesion, colsIniciales, onGuardarCols, onNotificarEvento, onIrProveedores, L }) {
   const [comprando, setComprando] = useState(false);
   const [comprado,  setComprado]  = useState(false);
   const [cols,      setCols]      = useState(() => colsIniciales || cargarCols());
   const [mostrarConstructor, setMostrarConstructor] = useState(false);
-  const [colapsados, setColapsados] = useState(() => new Set());  // ids de almacén colapsados
+  const [colapsados, setColapsados] = useState(() => new Set());
   const [avisoAlmacen, setAvisoAlmacen] = useState(null);
+
+  // ── Modal añadir material ──────────────────────────────────────────────────
+  const [modalAnyadir, setModalAnyadir] = useState(false);   // paso 1: elegir flujo
+  const [modalFlujo,   setModalFlujo]   = useState(null);    // "cesta" | "entrada"
+  const [busqueda,     setBusqueda]     = useState("");
+  const [matSel,       setMatSel]       = useState(null);    // material elegido
+  const [cantAnyadir,  setCantAnyadir]  = useState(1);
+  const [almAnyadir,   setAlmAnyadir]   = useState("");
+  const [guardandoEntrada, setGuardandoEntrada] = useState(false);
+  const [sinProveedor, setSinProveedor] = useState(false);   // aviso proveedor tras entrada
 
   // ── Pedido a proveedor ──────────────────────────────────────────────────
   const [proveedores, setProveedores] = useState([]);
@@ -508,6 +518,210 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
     doc.save(`cesta_compra_${new Date().toISOString().slice(0,10)}.pdf`);
   };
 
+  // Materiales filtrados por búsqueda para el modal
+  const materialesFiltrados = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    if (!q) return materiales.slice(0, 60);
+    return materiales.filter(m =>
+      (m.nombre || "").toLowerCase().includes(q) ||
+      (m.referencia || "").toLowerCase().includes(q) ||
+      (m.categoria || "").toLowerCase().includes(q)
+    ).slice(0, 60);
+  }, [materiales, busqueda]);
+
+  const cerrarModal = () => {
+    setModalAnyadir(false); setModalFlujo(null);
+    setBusqueda(""); setMatSel(null); setCantAnyadir(1); setAlmAnyadir(""); setSinProveedor(false);
+  };
+
+  const confirmarAnyadir = async () => {
+    if (!matSel) return;
+    const almId = almAnyadir === "" ? null : Number(almAnyadir);
+    if (modalFlujo === "cesta") {
+      setCesta(prev => {
+        const existe = prev.find(i => i.material_id === matSel.id && (i.almacen_id ?? null) === almId);
+        if (existe) return prev.map(i =>
+          i === existe ? { ...i, cantidad: (Number(i.cantidad) || 0) + Number(cantAnyadir) } : i
+        );
+        return [...prev, { material_id: matSel.id, nombre: matSel.nombre, cantidad: Number(cantAnyadir), almacen_id: almId }];
+      });
+      cerrarModal();
+    } else {
+      // Entrada directa de stock
+      setGuardandoEntrada(true);
+      try {
+        const nuevoStock = (Number(matSel.stock_actual) || 0) + Number(cantAnyadir);
+        await actualizarMaterial(matSel.id, { stock_actual: nuevoStock });
+        setMateriales(prev => prev.map(m => m.id === matSel.id ? { ...m, stock_actual: nuevoStock } : m));
+        const userEmail = sesion?.user?.email || null;
+        await registrarCompra([{
+          material_id: matSel.id, nombre: matSel.nombre,
+          cantidad: Number(cantAnyadir), unidad: matSel.unidad || "ud",
+          almacen_id: almId, almacen_nombre: almacenes.find(a => a.id === almId)?.nombre || null,
+          precio_coste: matSel.precio_coste ?? null,
+        }], empresa?.id, userEmail, modo);
+        // ¿Tiene proveedor?
+        const tieneProv = !!(matSel.proveedor || matSel.proveedor_id);
+        if (!tieneProv) { setSinProveedor(true); }
+        else { cerrarModal(); }
+      } catch (e) { console.error("[TabCesta] entrada directa:", e); }
+      finally { setGuardandoEntrada(false); }
+    }
+  };
+
+  // ── Modal añadir material (JSX reutilizado en pantalla vacía y con items) ──
+  const ModalAnyadirMaterial = modalAnyadir && (
+    <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.55)", zIndex:900,
+      display:"grid", placeItems:"center", padding:16 }} onClick={cerrarModal}>
+      <div style={{ background:C.surface, borderRadius:16, width:"100%", maxWidth:480,
+        boxShadow:"0 20px 60px #0004", display:"flex", flexDirection:"column" }}
+        onClick={e => e.stopPropagation()}>
+
+        {/* Header */}
+        <div style={{ padding:"14px 20px", borderBottom:`1px solid ${C.line}`,
+          display:"flex", alignItems:"center", gap:10 }}>
+          <PackagePlus size={17} color={C.brand}/>
+          <span style={{ fontWeight:700, fontSize:15, flex:1 }}>Añadir material</span>
+          <button onClick={cerrarModal} style={{ background:"none", border:"none", cursor:"pointer", color:C.sub }}><X size={17}/></button>
+        </div>
+
+        <div style={{ padding:"16px 20px", display:"flex", flexDirection:"column", gap:14 }}>
+
+          {/* Paso 1: elegir flujo */}
+          {!modalFlujo && !sinProveedor && (
+            <>
+              <p style={{ fontSize:13, color:C.sub, margin:0 }}>¿Qué quieres hacer?</p>
+              {[
+                { val:"cesta", Icon:ShoppingCart, label:"Añadir a la cesta",
+                  desc:"Planifica la compra. El stock se actualiza cuando pulses «Comprar»." },
+                { val:"entrada", Icon:ArrowDownToLine, label:"Registrar entrada de stock",
+                  desc:"Ya tienes el material en mano. El stock sube ahora y queda en el historial de compras." },
+              ].map(({ val, Icon, label, desc }) => (
+                <button key={val} onClick={() => setModalFlujo(val)}
+                  style={{ display:"flex", alignItems:"flex-start", gap:12, padding:"12px 16px",
+                    borderRadius:10, border:`1.5px solid ${C.line}`, background:C.s2,
+                    cursor:"pointer", fontFamily:"inherit", textAlign:"left",
+                    transition:"border-color .15s" }}
+                  onMouseEnter={e => e.currentTarget.style.borderColor = C.brand}
+                  onMouseLeave={e => e.currentTarget.style.borderColor = C.line}>
+                  <div style={{ width:36, height:36, borderRadius:8, background:C.brandSoft,
+                    display:"grid", placeItems:"center", flexShrink:0 }}>
+                    <Icon size={17} color={C.brand}/>
+                  </div>
+                  <div>
+                    <div style={{ fontWeight:700, fontSize:13.5, color:C.ink, marginBottom:3 }}>{label}</div>
+                    <div style={{ fontSize:12, color:C.sub, lineHeight:1.5 }}>{desc}</div>
+                  </div>
+                </button>
+              ))}
+            </>
+          )}
+
+          {/* Aviso sin proveedor tras entrada directa */}
+          {sinProveedor && (
+            <div style={{ display:"flex", flexDirection:"column", gap:14, alignItems:"center", textAlign:"center", padding:"8px 0" }}>
+              <div style={{ width:48, height:48, borderRadius:999, background:C.warnSoft, display:"grid", placeItems:"center" }}>
+                <AlertTriangle size={22} color={C.warn}/>
+              </div>
+              <div style={{ fontSize:14, fontWeight:700, color:C.ink }}>Stock actualizado</div>
+              <div style={{ fontSize:13, color:C.sub, lineHeight:1.6 }}>
+                <strong>{matSel?.nombre}</strong> no tiene proveedor asignado.<br/>
+                ¿Quieres correlacionarlo con un proveedor ahora?
+              </div>
+              <div style={{ display:"flex", gap:10 }}>
+                <button onClick={cerrarModal}
+                  style={{ padding:"8px 18px", borderRadius:8, border:`1px solid ${C.strong}`,
+                    background:"transparent", color:C.sub, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+                  Ahora no
+                </button>
+                <button onClick={() => { cerrarModal(); onIrProveedores?.(); }}
+                  style={{ padding:"8px 18px", borderRadius:8, border:"none",
+                    background:C.brand, color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit" }}>
+                  Ir a Proveedores
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Paso 2: elegir material + cantidad + almacén */}
+          {modalFlujo && !sinProveedor && (
+            <>
+              <div style={{ display:"flex", alignItems:"center", gap:8, padding:"7px 12px",
+                borderRadius:8, background:C.s2, border:`1px solid ${C.line}` }}>
+                <Search size={14} color={C.dim}/>
+                <input autoFocus value={busqueda} onChange={e => setBusqueda(e.target.value)}
+                  placeholder="Buscar material…"
+                  style={{ flex:1, border:"none", background:"transparent", outline:"none",
+                    fontSize:13.5, color:C.ink, fontFamily:"inherit" }}/>
+              </div>
+
+              <div style={{ maxHeight:200, overflowY:"auto", border:`1px solid ${C.line}`,
+                borderRadius:8, background:C.bg }}>
+                {materialesFiltrados.length === 0
+                  ? <div style={{ padding:"20px", textAlign:"center", fontSize:13, color:C.dim }}>Sin resultados</div>
+                  : materialesFiltrados.map(m => (
+                    <button key={m.id} onClick={() => { setMatSel(m); setAlmAnyadir(String(m.almacen_id ?? "")); }}
+                      style={{ width:"100%", display:"flex", alignItems:"center", gap:10,
+                        padding:"9px 14px", border:"none", borderBottom:`1px solid ${C.line}`,
+                        background: matSel?.id === m.id ? C.brandSoft : "transparent",
+                        color: matSel?.id === m.id ? C.brand : C.ink,
+                        cursor:"pointer", fontFamily:"inherit", textAlign:"left" }}>
+                      <Package size={14} color={matSel?.id === m.id ? C.brand : C.dim}/>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:13, fontWeight:600, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>{m.nombre}</div>
+                        <div style={{ fontSize:11, color:C.sub }}>{m.categoria || "—"} · stock: {m.stock_actual ?? 0}</div>
+                      </div>
+                      {matSel?.id === m.id && <Check size={14} color={C.brand}/>}
+                    </button>
+                  ))
+                }
+              </div>
+
+              {matSel && (
+                <div style={{ display:"flex", gap:10, alignItems:"flex-end" }}>
+                  <div style={{ flex:1 }}>
+                    <label style={{ fontSize:11.5, fontWeight:600, color:C.sub, display:"block", marginBottom:4 }}>CANTIDAD</label>
+                    <input type="number" min={1} value={cantAnyadir}
+                      onChange={e => setCantAnyadir(Math.max(1, Number(e.target.value)))}
+                      style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:`1px solid ${C.strong}`,
+                        background:C.s2, color:C.ink, fontSize:14, fontFamily:"inherit", outline:"none" }}/>
+                  </div>
+                  {almacenes.length > 1 && (
+                    <div style={{ flex:2 }}>
+                      <label style={{ fontSize:11.5, fontWeight:600, color:C.sub, display:"block", marginBottom:4 }}>ALMACÉN</label>
+                      <select value={almAnyadir} onChange={e => setAlmAnyadir(e.target.value)}
+                        style={{ width:"100%", padding:"8px 10px", borderRadius:8, border:`1px solid ${C.strong}`,
+                          background:C.s2, color:C.ink, fontSize:13, fontFamily:"inherit", outline:"none", cursor:"pointer" }}>
+                        <option value="">Sin almacén</option>
+                        {almacenes.map(a => <option key={a.id} value={a.id}>{a.nombre}</option>)}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:4 }}>
+                <button onClick={() => setModalFlujo(null)}
+                  style={{ padding:"8px 16px", borderRadius:8, border:`1px solid ${C.strong}`,
+                    background:"transparent", color:C.sub, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+                  Atrás
+                </button>
+                <button onClick={confirmarAnyadir} disabled={!matSel || guardandoEntrada}
+                  style={{ padding:"8px 20px", borderRadius:8, border:"none",
+                    background: matSel ? C.ok : C.strong, color:"#fff",
+                    fontWeight:700, fontSize:13, cursor: matSel ? "pointer" : "not-allowed", fontFamily:"inherit",
+                    display:"flex", alignItems:"center", gap:6 }}>
+                  {guardandoEntrada ? <Loader size={13} className="spin"/> : <Check size={13}/>}
+                  {modalFlujo === "cesta" ? "Añadir a cesta" : "Registrar entrada"}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   if (comprado) {
     return (
       <div style={{ flex:1, display:"grid", placeItems:"center", background:C.bg }}>
@@ -533,7 +747,14 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
             Añade materiales desde el <strong>Almacén</strong> (botón 🛒 en cada fila)
             o desde el banner de stock insuficiente de un pedido.
           </div>
+          <button onClick={() => setModalAnyadir(true)}
+            style={{ marginTop:8, display:"flex", alignItems:"center", gap:6, padding:"9px 20px",
+              borderRadius:999, border:"none", background:C.brand, color:"#fff",
+              fontWeight:700, fontSize:13.5, cursor:"pointer", fontFamily:"inherit" }}>
+            <Plus size={15}/>Añadir material
+          </button>
         </div>
+        {ModalAnyadirMaterial}
       </div>
     );
   }
@@ -629,6 +850,13 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
             borderRadius:8, border:`1px solid ${C.strong}`, background:C.s2, color:C.ink,
             fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
           <FileText size={13} color="#dc2626"/>PDF almacén
+        </button>
+
+        <button onClick={() => setModalAnyadir(true)}
+          style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 14px",
+            borderRadius:8, border:"none", background:C.brand, color:"#fff",
+            fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+          <Plus size={14}/>Añadir material
         </button>
 
         <div style={{ flex:1 }}/>
@@ -800,6 +1028,8 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
           );
         })}
       </div>
+
+      {ModalAnyadirMaterial}
 
       {/* Modal vista previa del pedido al proveedor */}
       {showPreview && hayProveedor && (
