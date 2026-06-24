@@ -96,10 +96,21 @@ function mapPedido(r) {
     vistos_por: Array.isArray(r.vistos_por) ? r.vistos_por : [],
     fecha_evento_inicio: r.fecha_evento_inicio ?? null,
     fecha_evento_fin:    r.fecha_evento_fin    ?? null,
-    tipo_pedido:         r.tipo_pedido         || 'estandar' };
+    tipo_pedido:         r.tipo_pedido         || 'estandar',
+    margen_venta:        r.margen_venta        ?? null,
+    tipo_margen:         r.tipo_margen         || 'pct',
+    precio_venta:        r.precio_venta        ?? null,
+  };
 }
 
 function pedidoToRow(p, companyId) {
+  // Calcular precio_venta desnormalizado para poder consultarlo en analytics
+  const _coste = typeof p._coste_total === "number" ? p._coste_total : null;
+  const _mv    = p.margen_venta != null ? Number(p.margen_venta) : null;
+  const _pv    = (_coste != null && _mv != null)
+    ? (p.tipo_margen === "fijo" ? _coste + _mv : _coste * (1 + _mv / 100))
+    : (p.precio_venta ?? null);
+
   return {
     id: p.id ? String(p.id) : undefined,
     company_id: companyId,
@@ -112,6 +123,9 @@ function pedidoToRow(p, companyId) {
     fecha_evento_inicio: p.fecha_evento_inicio ?? null,
     fecha_evento_fin:    p.fecha_evento_fin    ?? null,
     tipo_pedido:         p.tipo_pedido         ?? 'estandar',
+    margen_venta:        p.margen_venta        != null ? Number(p.margen_venta) : null,
+    tipo_margen:         p.tipo_margen         ?? 'pct',
+    precio_venta:        _pv,
     datos: p,
   };
 }

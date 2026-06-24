@@ -1190,7 +1190,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
   const limpiarDraft = () => { if (DRAFT_KEY) try { localStorage.removeItem(DRAFT_KEY); } catch {} };
 
   const guardar = async () => {
-    await onSave(p);
+    await onSave({ ...p, _coste_total: costeTotalPedido });
     limpiarDraft();
     setEditando(false);
   };
