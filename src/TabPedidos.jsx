@@ -457,6 +457,15 @@ function exportarExcelCfg(pedido, almacenes, cfg) {
   const wb = XLSX.utils.book_new();
   const almNombre = almacenes.find(a => a.id === pedido.almacen_id)?.nombre || pedido.almacen_nombre || "—";
 
+  // Calcular totales para el export
+  const _costeTotalExp = (pedido.lineas || []).reduce((s, it) => {
+    const c = it.coste != null ? Number(it.coste) : null;
+    return s + (c != null ? c * (Number(it.cantidad) || 0) : 0);
+  }, 0);
+  const _tipoMExp  = pedido.tipo_margen || "pct";
+  const _margenExp = Number(pedido.margen_venta) || 0;
+  const _pvExp     = _tipoMExp === "pct" ? _costeTotalExp * (1 + _margenExp / 100) : _costeTotalExp + _margenExp;
+
   // Hoja datos pedido
   const datosRows = [
     ["PEDIDO", pedido.codigo || `PED-${pedido.id}`],
@@ -466,6 +475,9 @@ function exportarExcelCfg(pedido, almacenes, cfg) {
     ["Hora ida", pedido.hora_ida || ""], ["Fecha retorno", pedido.fecha_retorno || ""],
     ["Hora vuelta", pedido.hora_vuelta || ""], ["Pax", pedido.pax_adults || ""],
     ["Notas", pedido.notas || ""],
+    [],
+    ["Coste total", _costeTotalExp > 0 ? `${_costeTotalExp.toFixed(2)} €` : "—"],
+    ["Precio venta", _pvExp > 0 ? `${_pvExp.toFixed(2)} €` : "—"],
   ];
   const wsDatos = XLSX.utils.aoa_to_sheet(datosRows);
   wsDatos["!cols"] = [{ wch:18 }, { wch:40 }];
@@ -561,7 +573,19 @@ function exportarPDFCfg(pedido, almacenes, cfg) {
   ${lineasHTML}
   <tr class="tot"><td style="padding:8px 10px" colspan="${ncols - 1}">TOTAL — ${lineasExp.length} líneas</td>
   <td style="padding:8px 10px;text-align:right">${totalUds}</td></tr>
-</tbody></table></body></html>`;
+</tbody></table>
+${(() => {
+  const ct = (pedido.lineas || []).reduce((s, it) => { const c = it.coste != null ? Number(it.coste) : null; return s + (c != null ? c * (Number(it.cantidad)||0) : 0); }, 0);
+  const tm = pedido.tipo_margen || "pct"; const mv = Number(pedido.margen_venta) || 0;
+  const pv = tm === "pct" ? ct * (1 + mv / 100) : ct + mv;
+  if (ct <= 0 && pv <= 0) return "";
+  return `<div style="margin-top:16px;display:flex;justify-content:flex-end">
+    <table style="width:auto;min-width:280px;font-size:13px;border-collapse:collapse">
+      ${ct > 0 ? `<tr><td style="padding:6px 14px;color:#6b7280">Coste total</td><td style="padding:6px 14px;text-align:right;font-weight:700;color:#b45309">${ct.toFixed(2)} €</td></tr>` : ""}
+      ${pv > 0 ? `<tr style="background:#f0fdf4"><td style="padding:8px 14px;font-weight:700;border-top:2px solid #16a34a">Precio venta</td><td style="padding:8px 14px;text-align:right;font-weight:800;font-size:15px;color:#16a34a;border-top:2px solid #16a34a">${pv.toFixed(2)} €</td></tr>` : ""}
+    </table></div>`;
+})()}
+</body></html>`;
 
   const win = window.open("", "_blank", "width=820,height=1000");
   win.document.write(html);
@@ -1155,6 +1179,14 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
   const totalUds   = (p.lineas || []).reduce((s, l) => s + (l.cantidad || 0), 0);
   const almNombre  = almacenes.find(a => a.id === p.almacen_id)?.nombre || p.almacen_nombre || "—";
 
+  // ── Totales coste / precio venta ──────────────────────────────────────────
+  const costeTotalPedido = (p.lineas || []).reduce((s, it) => s + costeTotalLinea(it), 0);
+  const tipoMargen = p.tipo_margen || "pct";   // "pct" | "fijo"
+  const margenVal  = Number(p.margen_venta) || 0;
+  const precioVenta = tipoMargen === "pct"
+    ? costeTotalPedido * (1 + margenVal / 100)
+    : costeTotalPedido + margenVal;
+
   const limpiarDraft = () => { if (DRAFT_KEY) try { localStorage.removeItem(DRAFT_KEY); } catch {} };
 
   const guardar = async () => {
@@ -1721,31 +1753,62 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
           </div>
         )}
 
-        {/* Total global */}
-        {(() => {
-          const rolesCols = (rolesImport || []).filter(r => r.tipo === "columna");
-          const gtcTotal = `220px 1fr${rolesCols.map(() => " minmax(80px,1fr)").join("")} 90px 90px 90px 90px 90px 80px 44px`;
-          const colSpanNombre = 2 + rolesCols.length;
-          // Coste total del pedido = Σ (coste efectivo de línea × cantidad).
-          const costeTotal = (p.lineas || []).reduce((s, it) => s + costeTotalLinea(it), 0);
-          return (
-            <div style={{ display:"grid", gridTemplateColumns:gtcTotal,
-              padding:"0 20px", borderTop:`2px solid ${C.strong}`, background:C.surface, position:"sticky", bottom:0 }}>
-              <div style={{ padding:"11px 8px", fontSize:12, fontWeight:700, color:C.ink, gridColumn:`1/${colSpanNombre + 1}` }}>
-                TOTAL — {totalRefs} {L("líneas","lines")}
-                {multiAlm && <span style={{ fontWeight:400, color:C.sub, marginLeft:8 }}>({almTable.length} {L("almacenes","warehouses")})</span>}
-              </div>
-              <div style={{ padding:"11px 8px", fontSize:13, fontWeight:800, textAlign:"right", color:"#b45309" }}
-                title={L("Coste total estimado del pedido","Estimated total cost of the order")}>
-                {costeTotal > 0 ? `${costeTotal.toFixed(2)} €` : "—"}
-              </div>
-              <div style={{ padding:"11px 8px", fontSize:14, fontWeight:800, textAlign:"right", color:C.brand }}>
-                {totalUds}
-              </div>
-              <div/>
+        {/* Total global + precio venta */}
+        <div style={{ borderTop:`2px solid ${C.strong}`, background:C.surface, position:"sticky", bottom:0,
+          display:"flex", alignItems:"center", gap:0, flexWrap:"wrap" }}>
+
+          {/* Columna izq: etiqueta */}
+          <div style={{ padding:"10px 20px", fontSize:12, fontWeight:700, color:C.ink, minWidth:200 }}>
+            TOTAL — {totalRefs} {L("líneas","lines")} · {totalUds} uds
+            {multiAlm && <span style={{ fontWeight:400, color:C.sub, marginLeft:8 }}>({almTable.length} almacenes)</span>}
+          </div>
+
+          <div style={{ flex:1 }}/>
+
+          {/* Bloque coste */}
+          <div style={{ padding:"10px 16px", borderLeft:`1px solid ${C.line}`, textAlign:"right", minWidth:130 }}>
+            <div style={{ fontSize:10.5, fontWeight:600, color:C.sub, letterSpacing:.4, marginBottom:2 }}>COSTE</div>
+            <div style={{ fontSize:15, fontWeight:800, color:"#b45309" }}>
+              {costeTotalPedido > 0 ? `${costeTotalPedido.toFixed(2)} €` : "—"}
             </div>
-          );
-        })()}
+          </div>
+
+          {/* Widget margen */}
+          <div style={{ padding:"8px 16px", borderLeft:`1px solid ${C.line}`, display:"flex", alignItems:"center", gap:8 }}>
+            <div style={{ fontSize:10.5, fontWeight:600, color:C.sub, letterSpacing:.4, whiteSpace:"nowrap" }}>MARGEN</div>
+            <div style={{ display:"flex", borderRadius:7, overflow:"hidden", border:`1px solid ${C.strong}` }}>
+              {["pct", "fijo"].map(t => (
+                <button key={t} onClick={() => setP(prev => ({ ...prev, tipo_margen: t }))}
+                  style={{ padding:"5px 10px", fontSize:12, fontWeight:700, fontFamily:"inherit", cursor:"pointer",
+                    border:"none", background: tipoMargen === t ? C.brand : C.s2,
+                    color: tipoMargen === t ? "#fff" : C.sub }}>
+                  {t === "pct" ? "%" : "€"}
+                </button>
+              ))}
+            </div>
+            <input type="number" min={0} value={margenVal || ""}
+              placeholder={tipoMargen === "pct" ? "%" : "€"}
+              onChange={e => setP(prev => ({ ...prev, margen_venta: e.target.value }))}
+              style={{ width:72, padding:"5px 8px", borderRadius:7, border:`1px solid ${C.strong}`,
+                background:C.s2, color:C.ink, fontSize:13, fontFamily:"inherit", outline:"none", textAlign:"right" }}/>
+          </div>
+
+          {/* Bloque precio venta */}
+          <div style={{ padding:"10px 20px", borderLeft:`1px solid ${C.line}`, textAlign:"right", minWidth:140,
+            background: precioVenta > costeTotalPedido ? C.okSoft : "transparent" }}>
+            <div style={{ fontSize:10.5, fontWeight:600, color:C.sub, letterSpacing:.4, marginBottom:2 }}>PRECIO VENTA</div>
+            <div style={{ fontSize:15, fontWeight:800, color: precioVenta > 0 ? C.ok : C.dim }}>
+              {precioVenta > 0 ? `${precioVenta.toFixed(2)} €` : "—"}
+            </div>
+            {precioVenta > 0 && costeTotalPedido > 0 && precioVenta !== costeTotalPedido && (
+              <div style={{ fontSize:10.5, color:C.sub, marginTop:1 }}>
+                {tipoMargen === "pct"
+                  ? `+${margenVal}%`
+                  : `+${margenVal} € fijo`}
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Menú contextual (clic derecho sobre una línea): elegir proveedor → coste */}
