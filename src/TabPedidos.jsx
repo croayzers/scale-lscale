@@ -13,7 +13,7 @@ import * as XLSX from "xlsx";
 import {
   Upload, Loader, X, Check, AlertTriangle, Plus, Trash2,
   Warehouse, ArrowLeft, FileSpreadsheet, Pencil, ClipboardList,
-  ChevronRight, ArrowRight, Download, FileDown, Save, Bell, BellOff, Tag, Star,
+  ChevronRight, ArrowRight, Download, FileDown, Save, Bell, BellOff, Tag, Star, Search,
 } from "lucide-react";
 import { useL } from "./lib/i18n.js";
 import { parsearExcelPedido } from "./lib/parseExcelPedido.js";
@@ -273,22 +273,86 @@ function MaterialesList({ grouped, updateMaterial, L }) {
    LISTA DE PEDIDOS
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - ListaPedidos
+const MESES_ES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
 function ListaPedidos({ pedidos, almacenes, vehiculosEmpresa, materiales = [], onSelect, onImport, onNuevo, formatoFecha = "DD/MM/YYYY", highlightedPedidoId, L }) {
-  const sorted = [...pedidos].sort((a, b) => {
-    const fa = a.fecha_entrega || a.fecha_pedido || "";
-    const fb = b.fecha_entrega || b.fecha_pedido || "";
-    return fb.localeCompare(fa);
+  const [busqueda, setBusqueda] = useState("");
+  const [abiertos, setAbiertos] = useState(() => {
+    // Abre el año/mes actual por defecto
+    const hoy = new Date();
+    return new Set([`${hoy.getFullYear()}-${hoy.getMonth()}`]);
   });
+
   const conflictosMap = calcularConflictosStock(pedidos, materiales);
+
+  const filtrados = useMemo(() => {
+    const q = busqueda.trim().toLowerCase();
+    const lista = [...pedidos].sort((a, b) => {
+      const fa = a.fecha_entrega || a.fecha_pedido || "";
+      const fb = b.fecha_entrega || b.fecha_pedido || "";
+      return fb.localeCompare(fa);
+    });
+    if (!q) return lista;
+    return lista.filter(p =>
+      (p.codigo || "").toLowerCase().includes(q) ||
+      (p.nombre || "").toLowerCase().includes(q) ||
+      (p.destino || "").toLowerCase().includes(q) ||
+      (p.estado || "").toLowerCase().includes(q)
+    );
+  }, [pedidos, busqueda]);
+
+  // Agrupa por año → mes
+  const grupos = useMemo(() => {
+    const map = new Map(); // "YYYY" → Map("M" → [pedidos])
+    for (const p of filtrados) {
+      const fecha = p.fecha_entrega || p.fecha_pedido || "";
+      const d = fecha ? new Date(fecha) : null;
+      const anyo = d ? String(d.getFullYear()) : "Sin fecha";
+      const mes  = d ? d.getMonth() : -1;
+      if (!map.has(anyo)) map.set(anyo, new Map());
+      if (!map.get(anyo).has(mes)) map.get(anyo).set(mes, []);
+      map.get(anyo).get(mes).push(p);
+    }
+    // Ordenar años desc, meses desc dentro de cada año
+    return [...map.entries()]
+      .sort(([a], [b]) => b.localeCompare(a))
+      .map(([anyo, meses]) => ({
+        anyo,
+        meses: [...meses.entries()]
+          .sort(([a], [b]) => b - a)
+          .map(([mes, items]) => ({ mes, label: mes >= 0 ? MESES_ES[mes] : "Sin fecha", items })),
+      }));
+  }, [filtrados]);
+
+  const toggleGrupo = (key) => setAbiertos(prev => {
+    const next = new Set(prev);
+    next.has(key) ? next.delete(key) : next.add(key);
+    return next;
+  });
 
   return (
     <div style={{ display:"flex", flexDirection:"column", height:"100%", minHeight:0 }}>
 
       {/* Toolbar */}
       <div style={{ display:"flex", alignItems:"center", gap:12, padding:"14px 20px",
-        borderBottom:`1px solid ${C.line}`, flexShrink:0 }}>
+        borderBottom:`1px solid ${C.line}`, flexShrink:0, flexWrap:"wrap" }}>
         <h2 style={{ fontSize:18, margin:0 }}>{L("Pedidos","Orders")}</h2>
         <span style={{ fontSize:12.5, color:C.sub }}>{pedidos.length} {L("pedidos","orders")}</span>
+
+        {/* Buscador */}
+        <div style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 12px",
+          borderRadius:8, border:`1px solid ${C.strong}`, background:C.s2, minWidth:200 }}>
+          <Search size={13} color={C.dim}/>
+          <input value={busqueda} onChange={e => setBusqueda(e.target.value)}
+            placeholder={L("Buscar pedido…","Search order…")}
+            style={{ border:"none", background:"transparent", outline:"none",
+              fontSize:13, color:C.ink, fontFamily:"inherit", width:"100%" }}/>
+          {busqueda && <button onClick={() => setBusqueda("")}
+            style={{ background:"none", border:"none", cursor:"pointer", color:C.dim, padding:0, display:"flex" }}>
+            <X size={12}/>
+          </button>}
+        </div>
+
         <div style={{ flex:1 }}/>
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
           {onNuevo && (
@@ -310,15 +374,41 @@ function ListaPedidos({ pedidos, almacenes, vehiculosEmpresa, materiales = [], o
         </div>
       </div>
 
-      {/* Lista */}
+      {/* Lista agrupada */}
       <div style={{ flex:1, overflowY:"auto" }}>
-        {sorted.length === 0 ? (
+        {filtrados.length === 0 ? (
           <div style={{ padding:48, textAlign:"center", color:C.sub }}>
             <ClipboardList size={36} color={C.line} style={{ display:"block", margin:"0 auto 14px" }}/>
-            <p style={{ fontSize:14 }}>{L("Sin pedidos. Importa un Excel para empezar.","No orders yet. Import an Excel to get started.")}</p>
+            <p style={{ fontSize:14 }}>{busqueda ? "Sin resultados para esa búsqueda." : L("Sin pedidos. Importa un Excel para empezar.","No orders yet. Import an Excel to get started.")}</p>
           </div>
-        ) : (
-          sorted.map(p => {
+        ) : grupos.map(({ anyo, meses }) => (
+          <div key={anyo}>
+            {/* Cabecera año */}
+            <div onClick={() => toggleGrupo(anyo)}
+              style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 20px",
+                background:C.s2, borderBottom:`1px solid ${C.line}`, cursor:"pointer",
+                position:"sticky", top:0, zIndex:2 }}>
+              <ChevronRight size={14} color={C.brand} style={{ transform: abiertos.has(anyo) ? "rotate(90deg)" : "rotate(0deg)", transition:"transform .2s" }}/>
+              <span style={{ fontWeight:800, fontSize:14, color:C.ink }}>{anyo}</span>
+              <span style={{ fontSize:12, color:C.sub }}>
+                {meses.reduce((s, m) => s + m.items.length, 0)} pedidos
+              </span>
+            </div>
+
+            {abiertos.has(anyo) && meses.map(({ mes, label, items }) => {
+              const key = `${anyo}-${mes}`;
+              return (
+                <div key={key}>
+                  {/* Cabecera mes */}
+                  <div onClick={() => toggleGrupo(key)}
+                    style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 32px",
+                      background:C.bg, borderBottom:`1px solid ${C.line}`, cursor:"pointer" }}>
+                    <ChevronRight size={12} color={C.sub} style={{ transform: abiertos.has(key) ? "rotate(90deg)" : "rotate(0deg)", transition:"transform .2s" }}/>
+                    <span style={{ fontWeight:600, fontSize:13, color:C.sub }}>{label}</span>
+                    <span style={{ fontSize:11.5, color:C.dim }}>{items.length} pedidos</span>
+                  </div>
+
+                  {abiertos.has(key) && items.map(p => {
             const chip = CHIP_ESTADO[p.estado] || CHIP_ESTADO.reservado;
             const almNombre = almacenes.find(a => a.id === p.almacen_id)?.nombre || p.almacen_nombre || "—";
             const tieneConflicto = (conflictosMap[String(p.id)] || []).length > 0;
@@ -388,8 +478,12 @@ function ListaPedidos({ pedidos, almacenes, vehiculosEmpresa, materiales = [], o
                 <ChevronRight size={16} color={C.dim}/>
               </div>
             );
-          })
-        )}
+          })}
+                </div>
+              );
+            })}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -2200,7 +2294,8 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
   // { file, almacen } — cuando está abierto el ExcelConfigurador
   const [configurador, setConfigurador] = useState(null);
   // { pedido } — modal de notificaciones post-confirmación
-  const [notifModal,   setNotifModal]   = useState(null);
+  const [notifModal,      setNotifModal]      = useState(null);
+  const [notifPregunta,   setNotifPregunta]   = useState(null); // { pedido, companyId } — ¿notificar?
 
   const empresaId = empresa?.id;
   const SEL_KEY = empresaId ? `lscale.pedidoSel.${empresaId}` : null;
@@ -2372,9 +2467,9 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
     // Notificación in-app a la empresa (campanita de todas las apps)
     const codigoPed = nuevo?.codigo || nuevo?.referencia || "";
     onNotificarEvento?.("pedido", "Nuevo pedido creado", nuevo?.nombre || codigoPed, codigoPed);
-    // Abrir modal de notificaciones solo en modo supabase
+    // Preguntar si notificar (solo en modo supabase)
     if (modo === "supabase" && empresa?.id) {
-      setNotifModal({ pedido: nuevo, companyId: empresa.id });
+      setNotifPregunta({ pedido: nuevo, companyId: empresa.id });
     }
   };
 
@@ -2847,6 +2942,40 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
                 </div>
               </>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Diálogo previo: ¿notificar? */}
+      {notifPregunta && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)", zIndex:800,
+          display:"grid", placeItems:"center", padding:16 }}>
+          <div style={{ background:C.surface, borderRadius:16, padding:"28px 32px", maxWidth:380, width:"100%",
+            boxShadow:"0 20px 60px #0004", textAlign:"center", display:"flex", flexDirection:"column", gap:16 }}>
+            <div style={{ width:48, height:48, borderRadius:999, background:"#ede9fe",
+              display:"grid", placeItems:"center", margin:"0 auto" }}>
+              <Bell size={22} color="#6366f1"/>
+            </div>
+            <div>
+              <div style={{ fontWeight:700, fontSize:16, color:C.ink, marginBottom:6 }}>¿Notificar el pedido?</div>
+              <div style={{ fontSize:13, color:C.sub, lineHeight:1.6 }}>
+                Puedes enviar una notificación por email a los miembros de la organización o a contactos externos.
+              </div>
+            </div>
+            <div style={{ display:"flex", gap:10, justifyContent:"center" }}>
+              <button onClick={() => setNotifPregunta(null)}
+                style={{ padding:"9px 22px", borderRadius:8, border:`1px solid ${C.strong}`,
+                  background:"transparent", color:C.sub, fontSize:13, fontWeight:600,
+                  cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:6 }}>
+                <BellOff size={14}/>No notificar
+              </button>
+              <button onClick={() => { setNotifModal(notifPregunta); setNotifPregunta(null); }}
+                style={{ padding:"9px 22px", borderRadius:8, border:"none",
+                  background:"#6366f1", color:"#fff", fontSize:13, fontWeight:700,
+                  cursor:"pointer", fontFamily:"inherit", display:"flex", alignItems:"center", gap:6 }}>
+                <Bell size={14}/>Notificar
+              </button>
+            </div>
           </div>
         </div>
       )}
