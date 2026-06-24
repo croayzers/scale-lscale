@@ -966,8 +966,18 @@ function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - DetallePedido
 function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, onEtiquetas, onAgregarCesta, onComprobarStock, rolesImport, empresaId, modo, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, reservas = [], L }) {
+  const DRAFT_KEY = empresaId && pedido?.id ? `lscale.pedidoDraft.${empresaId}.${pedido.id}` : null;
+
   const [exportModal, setExportModal] = useState(null); // null | "pdf" | "excel"
-  const [p, setP] = useState({ ...pedido });
+  const [p, setP] = useState(() => {
+    if (DRAFT_KEY) {
+      try {
+        const draft = JSON.parse(localStorage.getItem(DRAFT_KEY));
+        if (draft && draft.id === pedido.id) return draft;
+      } catch {}
+    }
+    return { ...pedido };
+  });
   // Un pedido recién creado (vacío) arranca en modo edición para añadir artículos ya.
   const [editando, setEditando] = useState((pedido?.lineas || []).length === 0);
   const [delConf, setDelConf]   = useState(false);
@@ -991,6 +1001,15 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
   useEffect(() => {
     setP({ ...pedido });
   }, [pedido]);
+
+  // Autoguardar borrador en localStorage (debounce 800ms)
+  useEffect(() => {
+    if (!DRAFT_KEY) return;
+    const t = setTimeout(() => {
+      try { localStorage.setItem(DRAFT_KEY, JSON.stringify(p)); } catch {}
+    }, 800);
+    return () => clearTimeout(t);
+  }, [DRAFT_KEY, p]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Carga proveedores + correlaciones de los materiales de ESTE pedido (selectiva).
   useEffect(() => {
@@ -1136,8 +1155,11 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
   const totalUds   = (p.lineas || []).reduce((s, l) => s + (l.cantidad || 0), 0);
   const almNombre  = almacenes.find(a => a.id === p.almacen_id)?.nombre || p.almacen_nombre || "—";
 
+  const limpiarDraft = () => { if (DRAFT_KEY) try { localStorage.removeItem(DRAFT_KEY); } catch {} };
+
   const guardar = async () => {
     await onSave(p);
+    limpiarDraft();
     setEditando(false);
   };
 
@@ -1196,7 +1218,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
       {/* Toolbar */}
       <div style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 20px",
         borderBottom:`1px solid ${C.line}`, flexShrink:0, flexWrap:"wrap" }}>
-        <Btn outline onClick={onBack} style={{ padding:"6px 14px", fontSize:13 }}>
+        <Btn outline onClick={() => { limpiarDraft(); onBack(); }} style={{ padding:"6px 14px", fontSize:13 }}>
           <ArrowLeft size={14}/>{L("Pedidos","Orders")}
         </Btn>
         <div style={{ flex:1 }}/>
@@ -2116,6 +2138,29 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
   const [configurador, setConfigurador] = useState(null);
   // { pedido } — modal de notificaciones post-confirmación
   const [notifModal,   setNotifModal]   = useState(null);
+
+  const empresaId = empresa?.id;
+  const SEL_KEY = empresaId ? `lscale.pedidoSel.${empresaId}` : null;
+
+  // Restaurar pedido abierto tras recarga
+  useEffect(() => {
+    if (!SEL_KEY || !pedidos?.length) return;
+    try {
+      const id = localStorage.getItem(SEL_KEY);
+      if (!id) return;
+      const p = pedidos.find(p => String(p.id) === id);
+      if (p) setPedidoSel(p);
+    } catch {}
+  }, [SEL_KEY, pedidos?.length]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persistir qué pedido está abierto
+  useEffect(() => {
+    if (!SEL_KEY) return;
+    try {
+      if (pedidoSel) localStorage.setItem(SEL_KEY, String(pedidoSel.id));
+      else localStorage.removeItem(SEL_KEY);
+    } catch {}
+  }, [SEL_KEY, pedidoSel?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Auto-abrir pedido cuando llega desde un link de chat
   useEffect(() => {
