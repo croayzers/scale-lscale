@@ -697,13 +697,21 @@ export async function sincronizarReservasPedido(pedido, companyId) {
 
   await lsc().from('reservas_stock').delete().eq('pedido_id', pedidoId);
 
+  const cantidadReservable = (l) => {
+    if (l._cantidad_propia != null) return Number(l._cantidad_propia) || 0;
+    if (l.cantidad_propia != null) return Number(l.cantidad_propia) || 0;
+    if (l.tipo_origen === 'subalquiler' || l._origen_logistico === 'subalquiler' || l.proveedor_id != null) return 0;
+    return Number(l.cantidad) || 0;
+  };
+
   const reservas = (pedido.lineas || [])
-    .filter(l => l.material_id && Number(l.cantidad) > 0)
-    .map(l => ({
+    .map(l => ({ linea: l, cantidad: cantidadReservable(l) }))
+    .filter(x => x.linea.material_id && x.cantidad > 0)
+    .map(({ linea: l, cantidad }) => ({
       company_id:  companyId,
       pedido_id:   pedidoId,
       material_id: l.material_id,
-      cantidad:    Number(l.cantidad),
+      cantidad,
       fecha_inicio: fi,
       fecha_fin:    ff,
       tipo_origen:  l.tipo_origen ?? 'propio',

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import { Plus, Trash2, Search, Upload, X, Check, Building2, Edit2, Save, Package, ArrowRight, Loader, RefreshCw, Star } from "lucide-react";
 import * as XLSX from "xlsx";
-import { C, Btn } from "./lib/ui.jsx";
+import { C, Btn, Help } from "./lib/ui.jsx";
 import {
   cargarProveedores, crearProveedor, actualizarProveedor, borrarProveedor,
   cargarCorrelacionesDeProveedor, guardarCorrelacion, borrarCorrelacion,
@@ -82,70 +82,108 @@ function PanelProveedores({ proveedores, itemsByProv, principalId, onMarcarPrinc
           <p style={{ fontSize:14 }}>Sin proveedores. Añade el primero arriba.</p>
         </div>
       ) : (
-        <div style={{ display:"flex", flexDirection:"column", gap:6 }}>
+        <div style={{ overflowX:"auto", border:`1px solid ${C.line}`, borderRadius:10 }}>
+        <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+          <thead>
+            <tr style={{ background:C.s2, borderBottom:`1px solid ${C.line}` }}>
+              {[
+                { l:"", w:"34px" },
+                { l:"Proveedor", h:"Nombre del proveedor. La estrella ★ marca el proveedor principal, cuyo coste se usa por defecto al importar pedidos." },
+                { l:"Contacto", h:"Email o teléfono de contacto rápido que escribiste al crear el proveedor." },
+                { l:"CIF / NIF" },
+                { l:"Teléfono" },
+                { l:"Email", h:"Email al que se dirigen los pedidos a proveedor (aparece en la cabecera del PDF/Excel)." },
+                { l:"Persona" },
+                { l:"Catálogo", h:"Nº de ítems importados del catálogo de este proveedor. Necesario para correlacionar tus materiales.", a:"center" },
+                { l:"", w:"160px", a:"right" },
+              ].map((c,i) => (
+                <th key={i} style={{ textAlign: c.a||"left", padding:"9px 10px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.4, textTransform:"uppercase", whiteSpace:"nowrap", width:c.w }}>
+                  <span style={{ display:"inline-flex", alignItems:"center" }}>{c.l}{c.h ? <Help text={c.h} pos="below"/> : null}</span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
           {proveedores.map(p => {
             const nItems = (itemsByProv[p.id]||[]).length;
-            return (
-            <div key={p.id} style={{ background:C.surface, border:`1px solid ${C.line}`, borderRadius:10, padding:"10px 14px", borderLeft:`4px solid ${p.color||C.brand}` }}>
-              {editId===p.id ? (
-                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
-                  <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                    <input value={editData.nombre||""} onChange={e=>setEditData(d=>({...d,nombre:e.target.value}))} placeholder="Nombre *"
-                      style={{ flex:2, padding:"6px 8px", border:`1px solid ${C.strong}`, borderRadius:7, fontSize:13.5, fontFamily:"inherit", background:C.bg, color:C.ink }}/>
-                    <input value={editData.contacto||""} onChange={e=>setEditData(d=>({...d,contacto:e.target.value}))} placeholder="Contacto / email"
-                      style={{ flex:1.5, padding:"6px 8px", border:`1px solid ${C.strong}`, borderRadius:7, fontSize:13, fontFamily:"inherit", background:C.bg, color:C.ink }}/>
-                    <Btn onClick={()=>guardarEdit(p.id)}><Save size={13}/> Guardar</Btn>
-                    <button onClick={()=>setEditId(null)} style={{ background:"none", border:"none", color:C.dim, cursor:"pointer", padding:4, display:"flex" }}><X size={13}/></button>
-                  </div>
-                  {/* Datos del proveedor (opcionales) — salen en la cabecera del PDF/Excel de pedido */}
-                  <div style={{ fontSize:11, fontWeight:700, color:C.sub, textTransform:"uppercase", letterSpacing:.5 }}>
-                    Datos del proveedor (opcional)
-                  </div>
-                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
-                    {DATOS_PROV.map(({ key, label, ph }) => (
-                      <div key={key}>
-                        <label style={{ fontSize:10.5, color:C.dim, display:"block", marginBottom:2 }}>{label}</label>
-                        <input value={editData.datos?.[key] || ""}
-                          onChange={e=>setEditData(d=>({ ...d, datos:{ ...(d.datos||{}), [key]: e.target.value } }))}
-                          placeholder={ph}
-                          style={{ width:"100%", padding:"6px 8px", border:`1px solid ${C.strong}`, borderRadius:7, fontSize:12.5, fontFamily:"inherit", background:C.bg, color:C.ink, boxSizing:"border-box" }}/>
+            const dp = p.datos || {};
+            if (editId===p.id) {
+              return (
+                <tr key={p.id} style={{ borderBottom:`1px solid ${C.line}`, borderLeft:`4px solid ${p.color||C.brand}` }}>
+                  <td colSpan={9} style={{ padding:"12px 14px", background:C.s2 }}>
+                    <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                        <input value={editData.nombre||""} onChange={e=>setEditData(prev=>({...prev,nombre:e.target.value}))} placeholder="Nombre *"
+                          style={{ flex:2, padding:"6px 8px", border:`1px solid ${C.strong}`, borderRadius:7, fontSize:13.5, fontFamily:"inherit", background:C.bg, color:C.ink }}/>
+                        <input value={editData.contacto||""} onChange={e=>setEditData(prev=>({...prev,contacto:e.target.value}))} placeholder="Contacto / email"
+                          style={{ flex:1.5, padding:"6px 8px", border:`1px solid ${C.strong}`, borderRadius:7, fontSize:13, fontFamily:"inherit", background:C.bg, color:C.ink }}/>
+                        <Btn onClick={()=>guardarEdit(p.id)}><Save size={13}/> Guardar</Btn>
+                        <button onClick={()=>setEditId(null)} style={{ background:"none", border:"none", color:C.dim, cursor:"pointer", padding:4, display:"flex" }}><X size={13}/></button>
                       </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                      <div style={{ fontSize:11, fontWeight:700, color:C.sub, textTransform:"uppercase", letterSpacing:.5 }}>
+                        Datos del proveedor (opcional) — se usan en la cabecera del PDF/Excel de pedido
+                      </div>
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:8 }}>
+                        {DATOS_PROV.map(({ key, label, ph }) => (
+                          <div key={key}>
+                            <label style={{ fontSize:10.5, color:C.dim, display:"block", marginBottom:2 }}>{label}</label>
+                            <input value={editData.datos?.[key] || ""}
+                              onChange={e=>setEditData(prev=>({ ...prev, datos:{ ...(prev.datos||{}), [key]: e.target.value } }))}
+                              placeholder={ph}
+                              style={{ width:"100%", padding:"6px 8px", border:`1px solid ${C.strong}`, borderRadius:7, fontSize:12.5, fontFamily:"inherit", background:C.bg, color:C.ink, boxSizing:"border-box" }}/>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              );
+            }
+            const cell = { padding:"9px 10px", color:C.ink, whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", maxWidth:220 };
+            const dimc = { ...cell, color:C.dim };
+            return (
+              <tr key={p.id} style={{ borderBottom:`1px solid ${C.line}`, borderLeft:`4px solid ${p.color||C.brand}` }}
+                onMouseEnter={e=>e.currentTarget.style.background=C.s2}
+                onMouseLeave={e=>e.currentTarget.style.background=""}>
+                <td style={{ padding:"9px 6px 9px 10px", textAlign:"center" }}>
                   <button onClick={()=>onMarcarPrincipal?.(p.id)}
-                    title={principalId===p.id ? "Proveedor principal (coste por defecto del pedido). Clic para quitar." : "Marcar como proveedor principal (su coste será el por defecto al importar pedidos)"}
-                    style={{ background:"none", border:"none", cursor:"pointer", padding:2, display:"flex",
-                      color: principalId===p.id ? "#f59e0b" : C.dim }}
+                    title={principalId===p.id ? "Proveedor principal (coste por defecto del pedido). Clic para quitar." : "Marcar como principal (su coste será el por defecto al importar pedidos)"}
+                    style={{ background:"none", border:"none", cursor:"pointer", padding:2, display:"flex", color: principalId===p.id ? "#f59e0b" : C.dim }}
                     onMouseEnter={e=>{ if(principalId!==p.id) e.currentTarget.style.color="#f59e0b"; }}
                     onMouseLeave={e=>{ if(principalId!==p.id) e.currentTarget.style.color=C.dim; }}>
                     <Star size={15} fill={principalId===p.id ? "#f59e0b" : "none"}/>
                   </button>
-                  <span style={{ flex:2, fontSize:14, fontWeight:600, color:C.ink }}>
-                    {p.nombre}
-                    {principalId===p.id && (
-                      <span style={{ marginLeft:8, fontSize:10.5, fontWeight:700, color:"#b45309",
-                        background:"#fff7ed", borderRadius:999, padding:"2px 8px", letterSpacing:.3 }}>PRINCIPAL</span>
-                    )}
+                </td>
+                <td style={{ ...cell, fontWeight:600 }}>
+                  {p.nombre}
+                  {principalId===p.id && (
+                    <span style={{ marginLeft:8, fontSize:10, fontWeight:700, color:"#b45309", background:"#fff7ed", borderRadius:999, padding:"2px 8px", letterSpacing:.3 }}>PRINCIPAL</span>
+                  )}
+                </td>
+                <td style={p.contacto?cell:dimc}>{p.contacto||"\u2014"}</td>
+                <td style={dp.cif?cell:dimc}>{dp.cif||"\u2014"}</td>
+                <td style={dp.telefono?cell:dimc}>{dp.telefono||"\u2014"}</td>
+                <td style={dp.email?cell:dimc}>{dp.email||"\u2014"}</td>
+                <td style={dp.persona?cell:dimc}>{dp.persona||"\u2014"}</td>
+                <td style={{ padding:"9px 10px", textAlign:"center", color:nItems?C.sub:C.dim, whiteSpace:"nowrap" }}>
+                  <span style={{ display:"inline-flex", alignItems:"center", gap:4 }}><Package size={12}/> {nItems||"\u2014"}</span>
+                </td>
+                <td style={{ padding:"9px 10px", textAlign:"right", whiteSpace:"nowrap" }}>
+                  <span style={{ display:"inline-flex", alignItems:"center", gap:6, justifyContent:"flex-end" }}>
+                    <Btn outline onClick={()=>onImportar(p.id)} style={{ padding:"4px 10px", fontSize:12 }}><Upload size={12}/> {nItems?"Reimportar":"Importar"}</Btn>
+                    <button onClick={()=>{ setEditId(p.id); setEditData({nombre:p.nombre,contacto:p.contacto||"",datos:p.datos||{}}); }}
+                      title="Editar datos" style={{ background:"none", border:"none", color:C.dim, cursor:"pointer", padding:4, display:"flex" }}
+                      onMouseEnter={e=>e.currentTarget.style.color=C.ink} onMouseLeave={e=>e.currentTarget.style.color=C.dim}><Edit2 size={13}/></button>
+                    <button onClick={()=>onBorrar(p)}
+                      style={{ background:"none", border:"none", color:C.dim, cursor:"pointer", padding:4, display:"flex" }}
+                      onMouseEnter={e=>e.currentTarget.style.color=C.danger} onMouseLeave={e=>e.currentTarget.style.color=C.dim}><Trash2 size={13}/></button>
                   </span>
-                  <span style={{ flex:1.3, fontSize:12.5, color:C.sub }}>{p.contacto||"—"}</span>
-                  <span style={{ fontSize:12, color:nItems?C.sub:C.dim, display:"inline-flex", alignItems:"center", gap:4, minWidth:96 }}>
-                    <Package size={12}/> {nItems? `${nItems} ítems` : "sin catálogo"}
-                  </span>
-                  <Btn outline onClick={()=>onImportar(p.id)}><Upload size={12}/> {nItems?"Reimportar":"Importar"}</Btn>
-                  <button onClick={()=>{ setEditId(p.id); setEditData({nombre:p.nombre,contacto:p.contacto||"",datos:p.datos||{}}); }}
-                    style={{ background:"none", border:"none", color:C.dim, cursor:"pointer", padding:4, display:"flex" }}
-                    title="Editar datos"
-                    onMouseEnter={e=>e.currentTarget.style.color=C.ink} onMouseLeave={e=>e.currentTarget.style.color=C.dim}><Edit2 size={13}/></button>
-                  <button onClick={()=>onBorrar(p)}
-                    style={{ background:"none", border:"none", color:C.dim, cursor:"pointer", padding:4, display:"flex" }}
-                    onMouseEnter={e=>e.currentTarget.style.color=C.danger} onMouseLeave={e=>e.currentTarget.style.color=C.dim}><Trash2 size={13}/></button>
-                </div>
-              )}
-            </div>
-          );})}
+                </td>
+              </tr>
+            );
+          })}
+          </tbody>
+        </table>
         </div>
       )}
     </div>

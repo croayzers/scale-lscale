@@ -8,3 +8,4 @@ dist/
 desktop.ini
 *.log
 .vite/
+vite.config.js.timestamp-*

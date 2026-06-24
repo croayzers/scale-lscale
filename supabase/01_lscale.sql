@@ -30,6 +30,7 @@ create table if not exists lscale.materiales (
   estado       text   not null default 'activo',
   proveedor    text,
   precio_coste numeric,
+  precio       numeric,
   notas        text,
   created_at   timestamptz default now()
 );

@@ -2,6 +2,7 @@ import React, { useState, useMemo } from "react";
 import { RotateCcw, ArrowRight, Check, Loader, X, Package } from "lucide-react";
 import { C, Btn } from "./lib/ui.jsx";
 import { actualizarMaterial } from "./lib/data.js";
+import { cantidadPropiaRetornable, cantidadSubalquilada, limitarRetornoAlmacen } from "./lib/retornos.js";
 
 const CHIP_ESTADO = {
   reservado:  { bg:"#f1f5f9", ink:"#64748b" },
@@ -18,7 +19,7 @@ function RetornoModal({ pedido, materiales, onConfirm, onCancel, saving }) {
 
   const [cantidades, setCantidades] = useState(() => {
     const init = {};
-    lineas.forEach((l, i) => { init[i] = String(l.cantidad ?? 0); });
+    lineas.forEach((l, i) => { init[i] = String(cantidadPropiaRetornable(l)); });
     return init;
   });
 
@@ -35,10 +36,12 @@ function RetornoModal({ pedido, materiales, onConfirm, onCancel, saving }) {
   const totalLineas   = lineas.length;
   const totalRetorno  = Object.values(cantidades).reduce((s, v) => s + (Number(v) || 0), 0);
   const totalPedido   = lineas.reduce((s, l) => s + (Number(l.cantidad) || 0), 0);
+  const totalPropio   = lineas.reduce((s, l) => s + cantidadPropiaRetornable(l), 0);
+  const totalProveedor= lineas.reduce((s, l) => s + cantidadSubalquilada(l), 0);
 
   const setTodos = () => {
     const next = {};
-    lineas.forEach((l, i) => { next[i] = String(l.cantidad ?? 0); });
+    lineas.forEach((l, i) => { next[i] = String(cantidadPropiaRetornable(l)); });
     setCantidades(next);
   };
   const setNada = () => {
@@ -79,9 +82,14 @@ function RetornoModal({ pedido, materiales, onConfirm, onCancel, saving }) {
         <div style={{ padding:"10px 22px", borderBottom:`1px solid ${C.line}`,
           display:"flex", alignItems:"center", gap:10, flexShrink:0 }}>
           <span style={{ fontSize:12, color:C.sub, flex:1 }}>
-            {totalLineas} líneas · retorno: <strong style={{ color: totalRetorno === totalPedido ? C.ok : C.warn }}>
-              {totalRetorno} / {totalPedido} uds
+            {totalLineas} líneas · retorno: <strong style={{ color: totalRetorno === totalPropio ? C.ok : C.warn }}>
+              {totalRetorno} / {totalPropio} uds propias
             </strong>
+            {totalProveedor > 0 && (
+              <span style={{ marginLeft:6, color:C.warn }}>
+                · {totalProveedor} uds proveedor no vuelven al almacén
+              </span>
+            )}
           </span>
           <button onClick={setTodos}
             style={{ padding:"4px 12px", borderRadius:999, border:`1px solid ${C.ok}`,
@@ -111,8 +119,10 @@ function RetornoModal({ pedido, materiales, onConfirm, onCancel, saving }) {
                   const idx = linea._idx;
                   const val = cantidades[idx] ?? "";
                   const orig = Number(linea.cantidad) || 0;
+                  const propio = cantidadPropiaRetornable(linea);
+                  const sub = cantidadSubalquilada(linea);
                   const cur  = Number(val) || 0;
-                  const diff = cur - orig;
+                  const diff = cur - propio;
                   return (
                     <div key={idx} style={{ display:"grid", gridTemplateColumns:"1fr auto auto",
                       gap:10, alignItems:"center", padding:"6px 8px", borderRadius:8,
@@ -126,10 +136,16 @@ function RetornoModal({ pedido, materiales, onConfirm, onCancel, saving }) {
                         {linea.referencia && (
                           <div style={{ fontSize:10.5, color:C.dim }}>{linea.referencia}</div>
                         )}
+                        {sub > 0 && (
+                          <div style={{ fontSize:10.5, color:C.warn, marginTop:2 }}>
+                            Proveedor: {sub} uds · no se suman al almacén
+                          </div>
+                        )}
                       </div>
                       {/* Cantidad original */}
                       <div style={{ fontSize:11.5, color:C.sub, whiteSpace:"nowrap", textAlign:"right" }}>
                         pedido: <strong style={{ color:C.ink }}>{orig}</strong>
+                        {sub > 0 && <div>propio: <strong style={{ color:C.ink }}>{propio}</strong></div>}
                       </div>
                       {/* Input retorno */}
                       <div style={{ display:"flex", alignItems:"center", gap:4 }}>
@@ -140,19 +156,22 @@ function RetornoModal({ pedido, materiales, onConfirm, onCancel, saving }) {
                           −
                         </button>
                         <input
-                          type="number" min={0} max={orig * 2}
+                          type="number" min={0} max={propio}
                           value={val}
-                          onChange={e => setCantidades(p => ({ ...p, [idx]: e.target.value }))}
+                          disabled={propio === 0}
+                          onChange={e => setCantidades(p => ({ ...p, [idx]: String(limitarRetornoAlmacen(linea, e.target.value)) }))}
                           onFocus={e => e.target.select()}
                           style={{ width:52, padding:"4px 6px", border:`1.5px solid ${
                             diff < 0 ? C.warn : diff > 0 ? C.ok : C.strong
                           }`, borderRadius:7, fontSize:13, fontWeight:700,
                             fontFamily:"inherit", textAlign:"center", outline:"none",
                             background: diff < 0 ? C.warnSoft : diff > 0 ? C.okSoft : C.s2,
-                            color: diff < 0 ? C.warn : diff > 0 ? C.ok : C.ink }}/>
-                        <button onClick={() => setCantidades(p => ({ ...p, [idx]: String((Number(p[idx])||0) + 1) }))}
+                            color: diff < 0 ? C.warn : diff > 0 ? C.ok : C.ink,
+                            opacity: propio === 0 ? 0.55 : 1 }}/>
+                        <button onClick={() => setCantidades(p => ({ ...p, [idx]: String(Math.min(propio, (Number(p[idx])||0) + 1)) }))}
+                          disabled={propio === 0}
                           style={{ width:22, height:22, borderRadius:6, border:`1px solid ${C.strong}`,
-                            background:C.s2, cursor:"pointer", fontSize:14, lineHeight:1,
+                            background:C.s2, cursor: propio === 0 ? "not-allowed" : "pointer", fontSize:14, lineHeight:1,
                             display:"flex", alignItems:"center", justifyContent:"center", color:C.ink, fontFamily:"inherit" }}>
                           +
                         </button>
@@ -232,14 +251,15 @@ export default function TabRetorno({ pedidos = [], setPedidos, vehiculosEmpresa 
     // Guardar cantidades de retorno en el pedido
     const lineasConRetorno = lineas.map((l, i) => ({
       ...l,
-      _retorno: Number(cantidades[i]) || 0,
+      _retorno: limitarRetornoAlmacen(l, cantidades[i]),
+      _retorno_proveedor: cantidadSubalquilada(l),
     }));
 
     // Actualizar stock de materiales
     const nuevosMateriales = [...materiales];
     for (let i = 0; i < lineas.length; i++) {
       const linea = lineas[i];
-      const cantRet = Number(cantidades[i]) || 0;
+      const cantRet = limitarRetornoAlmacen(linea, cantidades[i]);
       if (cantRet === 0) continue;
 
       // Buscar material por id o por nombre normalizado

@@ -126,8 +126,45 @@ export function construirLineasSubalquiler(analisis, opcionLogistica = 'mixto') 
         coste_sub:       bloqueSub?.coste_unitario ?? null,
         coste_total_sub: bloqueSub?.coste_total    ?? null,
         opcion_logistica: opcionLogistica,
-        alerta_retorno:  false,
+        alerta_retorno:  opcionLogistica === 'retorno_express',
         estado:          'pendiente',
       };
     });
+}
+
+export function aplicarLineasSubalquilerAPedido(pedido, lineasSubalquiler = []) {
+  if (!pedido || !Array.isArray(pedido.lineas) || !lineasSubalquiler.length) return pedido;
+
+  const pendientes = [...lineasSubalquiler];
+  const norm = v => String(v ?? '').trim().toLowerCase();
+
+  const lineas = pedido.lineas.map(linea => {
+    const idx = pendientes.findIndex(l =>
+      (l.material_id != null && linea.material_id != null && String(l.material_id) === String(linea.material_id)) ||
+      (norm(l.nombre_material || l.nombre) && norm(l.nombre_material || l.nombre) === norm(linea.nombre))
+    );
+    if (idx === -1) return linea;
+
+    const sub = pendientes.splice(idx, 1)[0];
+    const cantidadPropia = Math.max(0, Number(sub.cantidad_propia) || 0);
+    const cantidadSub = Math.max(0, Number(sub.cantidad_sub) || 0);
+    const origen = cantidadSub > 0
+      ? (cantidadPropia > 0 ? 'mixto' : 'subalquiler')
+      : 'propio';
+
+    return {
+      ...linea,
+      _cantidad_propia: cantidadPropia,
+      _cantidad_sub: cantidadSub,
+      _proveedor_id: sub.proveedor_id ?? null,
+      _coste_sub: sub.coste_sub ?? null,
+      _coste_total_sub: sub.coste_total_sub ?? null,
+      _opcion_logistica: sub.opcion_logistica ?? 'mixto',
+      _alerta_retorno: Boolean(sub.alerta_retorno),
+      _origen_logistico: origen,
+      tipo_origen: origen === 'subalquiler' ? 'subalquiler' : 'propio',
+    };
+  });
+
+  return { ...pedido, lineas };
 }

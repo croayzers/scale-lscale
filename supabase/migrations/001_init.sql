@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS lscale.materiales (
   estado       text NOT NULL DEFAULT 'activo',
   proveedor    text,
   precio_coste numeric,
+  precio       numeric,
   notas        text,
   almacen_id   bigint,
   created_at   timestamptz NOT NULL DEFAULT now()

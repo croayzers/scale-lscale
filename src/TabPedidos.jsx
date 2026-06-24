@@ -22,6 +22,7 @@ import { guardarPedido, borrarPedido, cargarMiembrosEmpresa, enviarNotificacionP
 import PantallaEventoLogistica from "./PantallaEventoLogistica.jsx";
 import { fmtFecha, siguienteCodigo } from "./lib/fechas.js";
 import { conflictosPedido, calcularConflictosStock } from "./lib/stockConflictos.js";
+import { aplicarLineasSubalquilerAPedido } from "./lib/stockEventos.js";
 
 // MARK: - Constantes UI (C, CHIP_ESTADO, ESTADOS)
 /* ─── Paleta ──────────────────────────────────────────────────────────────── */
@@ -1059,6 +1060,22 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
     return { coste: null, origen: null };
   };
 
+  const costeTotalLinea = (item) => {
+    const tieneReparto = item._cantidad_propia != null || item._cantidad_sub != null;
+    if (tieneReparto) {
+      const propia = Number(item._cantidad_propia) || 0;
+      const sub = Number(item._cantidad_sub) || 0;
+      const cAlm = item.material_id != null ? costeAlmacen[item.material_id] : null;
+      const costePropio = cAlm != null ? cAlm * propia : 0;
+      const costeSub = item._coste_total_sub != null
+        ? Number(item._coste_total_sub)
+        : (item._coste_sub != null ? Number(item._coste_sub) * sub : 0);
+      return costePropio + costeSub;
+    }
+    const { coste } = costeDeLinea(item);
+    return coste != null ? coste * (Number(item.cantidad) || 0) : 0;
+  };
+
   const indicadoresLinea = (item) => {
     const mat = item.material_id != null ? materiales.find((m) => String(m.id) === String(item.material_id)) : null;
     const costeLinea = costeDeLinea(item).coste;
@@ -1578,6 +1595,19 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                             </span>
                           </div>
                         )}
+                        {(item._cantidad_sub != null || item._cantidad_propia != null) && (
+                          <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginTop:4 }}>
+                            <span style={{ fontSize:10.5, fontWeight:700, color:C.ok, background:C.okSoft, borderRadius:999, padding:"1px 7px" }}>
+                              Almacén: {Number(item._cantidad_propia) || 0}
+                            </span>
+                            {(Number(item._cantidad_sub) || 0) > 0 && (
+                              <span style={{ fontSize:10.5, fontWeight:700, color:C.warn, background:C.warnSoft, borderRadius:999, padding:"1px 7px" }}>
+                                Proveedor: {Number(item._cantidad_sub) || 0}
+                                {item._coste_total_sub != null ? ` · ${Number(item._coste_total_sub).toFixed(2)} €` : ""}
+                              </span>
+                            )}
+                          </div>
+                        )}
                         {rolesDesc.length > 0 && (
                           <div style={{ display:"flex", gap:5, flexWrap:"wrap", marginTop:3 }}>
                             {rolesDesc.map(r => (
@@ -1632,8 +1662,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
               const colSpanNombre = 2 + rolesCols.length;
               // Coste total del almacén = Σ (coste efectivo de línea × cantidad).
               const costeAlm = alm.cats.reduce((s, c) => s + c.items.reduce((ss, it) => {
-                const { coste: co } = costeDeLinea(it);
-                return ss + (co != null ? co * (Number(it.cantidad) || 0) : 0);
+                return ss + costeTotalLinea(it);
               }, 0), 0);
               return (
                 <div style={{ display:"grid", gridTemplateColumns:gtcSub,
@@ -1676,10 +1705,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
           const gtcTotal = `220px 1fr${rolesCols.map(() => " minmax(80px,1fr)").join("")} 90px 90px 90px 90px 90px 80px 44px`;
           const colSpanNombre = 2 + rolesCols.length;
           // Coste total del pedido = Σ (coste efectivo de línea × cantidad).
-          const costeTotal = (p.lineas || []).reduce((s, it) => {
-            const { coste: co } = costeDeLinea(it);
-            return s + (co != null ? co * (Number(it.cantidad) || 0) : 0);
-          }, 0);
+          const costeTotal = (p.lineas || []).reduce((s, it) => s + costeTotalLinea(it), 0);
           return (
             <div style={{ display:"grid", gridTemplateColumns:gtcTotal,
               padding:"0 20px", borderTop:`2px solid ${C.strong}`, background:C.surface, position:"sticky", bottom:0 }}>
@@ -1879,8 +1905,11 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
           proveedor_items={[]}
           onGuardarSubalquiler={async (lineas) => {
             const esDemo = !empresaId || empresaId === "demo";
+            const pedidoConLogistica = aplicarLineasSubalquilerAPedido(p, lineas);
+            setP(pedidoConLogistica);
+            await onSave?.(pedidoConLogistica, { silent: true });
             if (!esDemo) {
-              await sincronizarReservasPedido(p, empresaId);
+              await sincronizarReservasPedido(pedidoConLogistica, empresaId);
               await guardarSubalquilerPedido(p.id, lineas, empresaId);
             }
             setPantallaEvento(false);

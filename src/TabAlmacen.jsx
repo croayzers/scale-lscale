@@ -6,7 +6,7 @@ import {
   Search, Columns3, MapPin, Upload, Download, FileDown,
   Plus, Pencil, Trash2, X, Check, Loader, AlertTriangle, Combine, ImageIcon, SlidersHorizontal, ClipboardCheck, ShoppingCart, Cloud,
 } from "lucide-react";
-import { C, Badge, Btn, ModalField } from "./lib/ui.jsx";
+import { C, Badge, Btn, ModalField, Help } from "./lib/ui.jsx";
 import { crearMaterial, actualizarMaterial, borrarMaterial, subirImagenMaterial, borrarImagenMaterial } from "./lib/data.js";
 import { sb } from "./lib/supabase.js";
 import AlmacenConfigurador from "./AlmacenConfigurador.jsx";
@@ -28,17 +28,22 @@ const TODAS_COLS = [
   { id: "nombre",       label: "NOMBRE",        fija: true,  def: true  },
   { id: "categoria",    label: "CATEGORÍA",     fija: false, def: true  },
   { id: "unidad",       label: "UNIDAD",        fija: false, def: true  },
-  { id: "stock_actual", label: "STOCK",         fija: false, def: true  },
-  { id: "stock_minimo", label: "MÍN.",          fija: false, def: false },
+  { id: "stock_actual", label: "STOCK",         fija: false, def: true, help: "Existencias actuales en este almacén. En verde si está por encima del mínimo; en ámbar si está al límite o por debajo." },
+  { id: "stock_minimo", label: "MÍN.",          fija: false, def: false, help: "Nivel mínimo deseado. Cuando el stock baja de aquí, el material se marca con alerta ⚠." },
+  { id: "valor_stock",  label: "VALOR STOCK",   fija: false, def: false, help: "Valor total del material en almacén = stock actual × coste unitario." },
   { id: "ubicacion",    label: "UBICACIÓN",     fija: false, def: true  },
   { id: "estado",       label: "ESTADO",        fija: false, def: true  },
   { id: "proveedor",             label: "PROVEEDOR",      fija: false, def: true  },
   { id: "referencia_proveedor", label: "REF. PROVEEDOR", fija: false, def: true  },
-  { id: "precio_coste",         label: "COSTE",          fija: false, def: false },
-  { id: "precio",               label: "PVP",            fija: false, def: false },
-  { id: "margen",               label: "MARGEN",         fija: false, def: false },
-  { id: "periodo_amortizacion", label: "AMORT. PER.",   fija: false, def: false },
-  { id: "coste_amortizacion",   label: "COSTE AMORT.",  fija: false, def: false },
+  { id: "precio_coste",         label: "COSTE",          fija: false, def: false, help: "Coste unitario de compra del material." },
+  { id: "precio",               label: "PVP",            fija: false, def: false, help: "Precio de venta al público por unidad." },
+  { id: "margen",               label: "MARGEN",         fija: false, def: false, help: "Margen sobre PVP = (PVP − coste) ÷ PVP. Se calcula a partir de Coste y PVP." },
+  { id: "periodo_amortizacion", label: "RECUP. UD",     fija: false, def: false, help: "Unidades a vender para recuperar el coste (coste ÷ margen por unidad). No es el periodo de amortización del activo en días." },
+  { id: "coste_amortizacion",   label: "MARGEN €/UD",   fija: false, def: false, help: "Beneficio por unidad vendida = PVP − coste." },
+  { id: "coste_adquisicion",    label: "COSTE ADQ.",    fija: false, def: false, help: "Coste de adquisición del activo. Base para calcular la amortización diaria de alquiler." },
+  { id: "periodo_amort_dias",   label: "AMORT. (DÍAS)", fija: false, def: false, help: "Periodo de amortización del activo en días (lo fija el financiero). Ej: 1825 = 5 años." },
+  { id: "amort_diaria",         label: "AMORT. €/DÍA",  fija: false, def: false, help: "Coste imputado por día de alquiler en eventos = coste de adquisición ÷ días de amortización." },
+  { id: "tipo_activo",          label: "TIPO",          fija: false, def: false, help: "Origen del activo: Propio (tuyo) o Subalquilado (de un proveedor)." },
   { id: "notas",        label: "NOTAS",         fija: false, def: false },
 ];
 
@@ -220,6 +225,8 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
   const [editObj, setEditObj]       = useState(null);
   const [saving, setSaving]         = useState(false);
   const [delConf, setDelConf]       = useState(null);
+  const [vaciarConf, setVaciarConf] = useState(false);
+  const [vaciando,   setVaciando]   = useState(false);
   const [almacenSel, setAlmacenSel] = useState(() => almacenes?.[0]?.id ?? 1);
   const [showUbicaciones, setShowUbicaciones] = useState(false);
   const [importFile, setImportFile] = useState(null);
@@ -242,9 +249,11 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
   const nFiltrosActivos = Object.values(filtros).filter(Boolean).length;
 
   // Columnas fijas al principio, luego las visibles en el orden guardado
+  const colsFijas = TODAS_COLS.filter((c) => c.fija);
+  const idsFijos = new Set(colsFijas.map((c) => c.id));
   const colsActivas = [
-    ...TODAS_COLS.filter((c) => c.fija),
-    ...colsVis.map((id) => TODAS_COLS.find((c) => c.id === id)).filter(Boolean),
+    ...colsFijas,
+    ...colsVis.map((id) => TODAS_COLS.find((c) => c.id === id && !idsFijos.has(c.id))).filter(Boolean),
   ];
   const toggleCol = (id) => {
     const next = colsVis.includes(id) ? colsVis.filter((x) => x !== id) : [...colsVis, id];
@@ -329,6 +338,41 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
     if (modo !== "demo") try { await borrarMaterial(id); } catch (e) { console.error(e); return; }
     setMateriales((p) => p.filter((m) => m.id !== id));
     setDelConf(null);
+  };
+
+  // Materiales del almacén activo (mismo criterio que la tabla, sin filtros/búsqueda).
+  const almacenNombreSel = almacenes?.find(a => a.id === almacenSel)?.nombre || L("almacén","warehouse");
+  const materialesAlmacen = materiales.filter(m =>
+    (m.almacen_id != null && m.almacen_id === almacenSel) ||
+    (m.almacen_id == null && almacenSel === primerAlmacenId)
+  );
+
+  // Copia de seguridad (Excel) de TODO el almacén actual.
+  const exportarCopiaAlmacen = () => {
+    const cols = ["referencia","nombre","descripcion","categoria","unidad","stock_actual","stock_minimo","ubicacion","estado","proveedor","referencia_proveedor","precio_coste","precio","margen","pvp","coste_adquisicion","periodo_amortizacion_dias","tipo_activo","notas"];
+    const rows = materialesAlmacen.map(m => Object.fromEntries(cols.map(k => [k, m[k] ?? ""])));
+    const ws = XLSX.utils.json_to_sheet(rows, { header: cols });
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, (almacenNombreSel || "Almacen").slice(0, 31));
+    const hoy = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `copia-${(almacenNombreSel || "almacen").replace(/\s+/g, "-")}-${hoy}.xlsx`);
+  };
+
+  // Vacía el almacén actual (borra todos sus materiales), con copia previa opcional.
+  const vaciarAlmacen = async (conCopia) => {
+    if (vaciando) return;
+    if (conCopia) exportarCopiaAlmacen();
+    setVaciando(true);
+    const ids = materialesAlmacen.map(m => m.id);
+    try {
+      if (modo !== "demo") { for (const id of ids) await borrarMaterial(id); }
+      setMateriales(prev => prev.filter(m => !ids.includes(m.id)));
+      setVaciarConf(false);
+    } catch (e) {
+      console.error("[vaciarAlmacen]", e);
+      alert(L("Error al vaciar el almacén: ", "Error emptying warehouse: ") + (e?.message || e));
+    }
+    setVaciando(false);
   };
 
   // ── Unificar duplicados del almacén actual ──────────────────────────────────
@@ -486,6 +530,24 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
         const { costeAmort } = calcularIndicadoresMaterial(m);
         return costeAmort != null ? <span>{costeAmort.toFixed(2)}€</span> : <span style={{ color:C.dim }}>—</span>;
       }
+      case "valor_stock": {
+        const v = (Number(m.stock_actual) || 0) * (m.precio_coste != null ? Number(m.precio_coste) : 0);
+        return m.precio_coste != null ? <span style={{ fontWeight:600 }}>{v.toFixed(2)}€</span> : <span style={{ color:C.dim }}>—</span>;
+      }
+      case "coste_adquisicion": return m.coste_adquisicion != null ? <span>{Number(m.coste_adquisicion).toFixed(2)}€</span> : <span style={{ color:C.dim }}>—</span>;
+      case "periodo_amort_dias": return m.periodo_amortizacion_dias != null ? <span>{m.periodo_amortizacion_dias} d</span> : <span style={{ color:C.dim }}>—</span>;
+      case "amort_diaria": {
+        const a = m.coste_amortizacion_diario != null
+          ? Number(m.coste_amortizacion_diario)
+          : (m.coste_adquisicion != null && Number(m.periodo_amortizacion_dias) > 0
+              ? Number(m.coste_adquisicion) / Number(m.periodo_amortizacion_dias) : null);
+        return a != null ? <span>{a.toFixed(4)}€</span> : <span style={{ color:C.dim }}>—</span>;
+      }
+      case "tipo_activo": {
+        const t = m.tipo_activo || "propio";
+        const sub = t === "subalquilado";
+        return <Badge color={sub ? "var(--warn-soft)" : "var(--brand-soft)"} ink={sub ? "var(--warn)" : "var(--brand)"}>{sub ? "Subalq." : "Propio"}</Badge>;
+      }
       default: return <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m[colId] || <span style={{ color:C.dim }}>—</span>}</span>;
     }
   };
@@ -597,6 +659,11 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
           <Btn outline onClick={handleExportAlmExcel} style={{ padding:"8px 12px" }}><Download size={15}/>Excel</Btn>
           <Btn outline onClick={handleExportAlmPdf} style={{ padding:"8px 12px" }}><FileDown size={15}/>PDF</Btn>
         </div>
+        <Btn outline onClick={() => setVaciarConf(true)} disabled={materialesAlmacen.length === 0}
+          title={L("Vaciar el almacén (con copia de seguridad opcional)","Empty the warehouse (optional backup)")}
+          style={{ padding:"8px 12px", borderColor:C.danger, color:C.danger }}>
+          <Trash2 size={15}/>{L("Vaciar","Empty")}
+        </Btn>
         <Btn onClick={() => setEditObj({ ...blankMaterial, _originalImagenUrl: null })}><Plus size={15}/>{L("Nuevo","New")}</Btn>
       </div>
 
@@ -637,7 +704,7 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
       <div style={{ flex:1, overflow:"auto" }}>
         <div style={{ display:"grid", gridTemplateColumns:gtc, gap:0, position:"sticky", top:0, zIndex:10, background:C.surface, borderBottom:`1px solid ${C.line}`, padding:"0 20px" }}>
           {colsActivas.map((c) => (
-            <div key={c.id} style={{ padding:"10px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, overflow:"hidden" }}>{c.label}</div>
+            <div key={c.id} style={{ padding:"10px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, display:"flex", alignItems:"center", overflow:"visible" }}>{c.label}{c.help ? <Help text={c.help} pos="below"/> : null}</div>
           ))}
           <div/><div/>
         </div>
@@ -771,7 +838,7 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
               <div style={{ gridColumn:"1 / -1", borderTop:`1px solid var(--border)`, paddingTop:12, marginTop:4 }}>
                 <label style={{ fontSize:11.5, fontWeight:700, color:"var(--text-2)", letterSpacing:.5 }}>{L("INVENTARIO DINÁMICO / AMORTIZACIÓN","DYNAMIC INVENTORY / AMORTIZATION")}</label>
               </div>
-              <ModalField label={L("Coste Adquisición (€)","Acquisition Cost (€)")} value={editObj.coste_adquisicion}
+              <ModalField label={L("Coste Adquisición (€)","Acquisition Cost (€)")} help={L("Coste de compra del activo. Se divide entre los días de amortización para obtener el coste por día de alquiler.","Asset purchase cost. Divided by amortization days to get the daily rental cost.")} value={editObj.coste_adquisicion}
                 onChange={(v) => {
                   const ca = v !== "" ? Number(v) : "";
                   const pvpV = editObj.pvp !== "" && editObj.pvp != null ? Number(editObj.pvp) : null;
@@ -789,7 +856,7 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
                   setEditObj((p) => ({ ...p, margen: v, pvp: pvpCalc != null ? String(pvpCalc) : p.pvp }));
                 }}
                 type="number" placeholder="0.00"/>
-              <ModalField label={L("PVP Activo (€)","Asset Sale Price (€)")} value={editObj.pvp}
+              <ModalField label={L("PVP Activo (€)","Asset Sale Price (€)")} help={L("Precio de venta del activo si se vendiera (no es el alquiler). Sirve para calcular el margen del activo.","Sale price if the asset were sold (not the rental). Used to compute asset margin.")} value={editObj.pvp}
                 onChange={(v) => {
                   const pv = v !== "" ? Number(v) : "";
                   const ca = editObj.coste_adquisicion !== "" && editObj.coste_adquisicion != null ? Number(editObj.coste_adquisicion) : null;
@@ -797,7 +864,7 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
                   setEditObj((p) => ({ ...p, pvp: v, margen: margenCalc != null ? String(margenCalc) : p.margen }));
                 }}
                 type="number" placeholder="0.00"/>
-              <ModalField label={L("Amortización (días)","Amortization (days)")} value={editObj.periodo_amortizacion_dias}
+              <ModalField label={L("Amortización (días)","Amortization (days)")} help={L("Días en los que se amortiza el activo. Lo define el financiero. Ej: 1825 = 5 años.","Days over which the asset is amortized. Set by finance. E.g. 1825 = 5 years.")} value={editObj.periodo_amortizacion_dias}
                 onChange={(v) => setEditObj((p) => ({ ...p, periodo_amortizacion_dias:v }))}
                 type="number" placeholder="ej. 1825 = 5 años"/>
               {(() => {
@@ -805,7 +872,7 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
                 const per = editObj.periodo_amortizacion_dias !== "" && editObj.periodo_amortizacion_dias != null ? Number(editObj.periodo_amortizacion_dias) : null;
                 const amortDiario = (ca != null && per != null && per > 0) ? ca / per : null;
                 return (
-                  <ModalField label={L("Amortización diaria (€)","Daily amortization (€)")}
+                  <ModalField label={L("Amortización diaria (€)","Daily amortization (€)")} help={L("Coste imputado por día de alquiler en eventos. Calculado: coste adquisición ÷ días.","Cost charged per rental day in events. Computed: acquisition cost ÷ days.")}
                     value={amortDiario != null ? amortDiario.toFixed(4) : ""}
                     readOnly={true} style={{ opacity:0.75 }}/>
                 );
@@ -917,6 +984,32 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
             <div style={{ display:"flex", gap:10, justifyContent:"flex-end" }}>
               <Btn outline onClick={() => setDelConf(null)}>{L("Cancelar","Cancel")}</Btn>
               <Btn color={C.danger} onClick={() => eliminar(delConf)}>{L("Eliminar","Delete")}</Btn>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {vaciarConf && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)", display:"grid", placeItems:"center", zIndex:500 }} onClick={() => !vaciando && setVaciarConf(false)}>
+          <div style={{ background:C.surface, borderRadius:14, padding:24, maxWidth:430, width:"100%", margin:16, boxShadow:"var(--shadow-lg)" }} onClick={(e) => e.stopPropagation()}>
+            <AlertTriangle size={28} color={C.danger} style={{ marginBottom:10 }}/>
+            <h3 style={{ marginBottom:8 }}>{L("¿Vaciar","Empty")} «{almacenNombreSel}»?</h3>
+            <p style={{ color:C.sub, fontSize:13.5, marginBottom:8 }}>
+              {L(`Se eliminarán los ${materialesAlmacen.length} materiales de este almacén. Esta acción no se puede deshacer.`, `${materialesAlmacen.length} materials in this warehouse will be deleted. This cannot be undone.`)}
+            </p>
+            <p style={{ color:C.ink, fontSize:13.5, marginBottom:20, fontWeight:600 }}>
+              {L("¿Quieres descargar antes una copia de seguridad en Excel?", "Download an Excel backup first?")}
+            </p>
+            <div style={{ display:"flex", gap:10, justifyContent:"flex-end", flexWrap:"wrap" }}>
+              <Btn outline onClick={() => setVaciarConf(false)} disabled={vaciando}>{L("Cancelar","Cancel")}</Btn>
+              <Btn outline onClick={() => vaciarAlmacen(false)} disabled={vaciando}
+                style={{ borderColor:C.danger, color:C.danger }}>
+                {L("Vaciar sin copia","Empty without backup")}
+              </Btn>
+              <Btn color={C.danger} onClick={() => vaciarAlmacen(true)} disabled={vaciando}>
+                {vaciando ? <Loader size={14} className="spin"/> : <Download size={14}/>}
+                {L("Descargar copia y vaciar","Download backup & empty")}
+              </Btn>
             </div>
           </div>
         </div>

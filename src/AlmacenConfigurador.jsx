@@ -819,13 +819,18 @@ export default function AlmacenConfigurador({ file, almacen, empresaId, onConfir
 
             {/* Footer */}
             <div style={{ padding:"12px 20px", borderTop:`1px solid ${C.line}`, flexShrink:0,
-              display:"flex", justifyContent:"flex-end", gap:10 }}>
-              <Btn outline onClick={onCancel}>Cancelar</Btn>
-              {puedeConfirmar && (
-                <Btn onClick={() => setPaso("seleccion")} color={C.ok}>
-                  <Check size={14}/> Revisar y confirmar
-                </Btn>
+              display:"flex", alignItems:"center", justifyContent:"flex-end", gap:10 }}>
+              {!puedeConfirmar && (
+                <span style={{ marginRight:"auto", display:"flex", alignItems:"center", gap:6,
+                  fontSize:12, color:C.sub }}>
+                  <AlertTriangle size={13} color={C.warn}/>
+                  Marca al menos una hoja como «Lista de materiales» y asígnale la columna <b style={{ color:C.ink }}>Nombre</b> para continuar.
+                </span>
               )}
+              <Btn outline onClick={onCancel}>Cancelar</Btn>
+              <Btn onClick={() => puedeConfirmar && setPaso("seleccion")} color={C.ok} disabled={!puedeConfirmar}>
+                <Check size={14}/> Revisar y confirmar
+              </Btn>
             </div>
           </div>
         )}
