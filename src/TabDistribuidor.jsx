@@ -390,7 +390,7 @@ function CorrelacionClic({ materiales, proveedores, itemsByProv, cor, onGuardarM
 // ══════════════════════════════════════════════════════════════════
 function WizardImportCatalogo({ proveedores, provIdInicial, onGuardarCatalogo, onGuardarPlantilla, onCerrar }) {
   const [paso, setPaso] = useState(0);
-  const [provId, setProvId] = useState(provIdInicial || proveedores[0]?.id || "");
+  const [provId, setProvId] = useState(Number(provIdInicial || proveedores[0]?.id || 0) || "");
   const [hojas, setHojas] = useState([]);
   const [hojaIdx, setHojaIdx] = useState(0);
   const [datos, setDatos] = useState([]);
@@ -403,12 +403,12 @@ function WizardImportCatalogo({ proveedores, provIdInicial, onGuardarCatalogo, o
 
   // Pre-carga la plantilla guardada del proveedor (mapeo reusable).
   useEffect(() => {
-    const pl = proveedores.find(p => String(p.id) === String(provId))?.plantilla;
+    const pl = proveedores.find(p => Number(p.id) === Number(provId))?.plantilla;
     if (pl?.colMap) { setColMap(pl.colMap); if (pl.headerRow != null) setHeaderRow(pl.headerRow); }
     else { setColMap({}); }
   }, [provId, proveedores]);
 
-  const prov = proveedores.find(p=>p.id===provId);
+  const prov = proveedores.find(p=>Number(p.id)===Number(provId));
 
   function leerArchivo(file) {
     const reader = new FileReader();
@@ -1027,9 +1027,9 @@ export default function TabDistribuidor({ empresa, materiales = [], modo, pedido
 
   // ── Import del catálogo del proveedor (reemplaza el anterior) ──
   async function onGuardarCatalogo(proveedorId, items) {
-    if (!esSupabase) return;
-    const guardados = await reemplazarItemsProveedor(proveedorId, items, cid);
-    setItemsByProv(m => ({ ...m, [proveedorId]: guardados }));
+    if (!esSupabase) throw new Error("No hay sesión activa. Recarga la página e inicia sesión.");
+    const guardados = await reemplazarItemsProveedor(Number(proveedorId), items, cid);
+    setItemsByProv(m => ({ ...m, [Number(proveedorId)]: guardados }));
   }
   async function onGuardarPlantilla(proveedorId, plantilla) {
     if (!esSupabase) return;
