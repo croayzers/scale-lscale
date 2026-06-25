@@ -108,6 +108,7 @@ export function calcularMargenPedido(analisis, pvpPedido = null) {
 
 // Construye las líneas de subalquiler a guardar en la BD desde el análisis
 export function construirLineasSubalquiler(analisis, opcionLogistica = 'mixto') {
+  if (opcionLogistica === 'solo_almacen') return [];
   return analisis
     .filter(item => item.faltante > 0 || opcionLogistica === 'subalquiler_integro')
     .map(item => {

@@ -739,6 +739,40 @@ table{width:100%;border-collapse:collapse;font-size:12.5px}th{background:#f3f4f6
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   EXPORTAR POR PROVEEDOR — genera un archivo por cada proveedor asignado
+   ═══════════════════════════════════════════════════════════════════════════ */
+function exportarPorProveedores(pedido, provs, corr, formato) {
+  const grupos = {};
+  for (const linea of (pedido.lineas || [])) {
+    if (!linea.proveedor_id) continue;
+    (grupos[String(linea.proveedor_id)] ||= []).push(linea);
+  }
+  const provIds = Object.keys(grupos);
+  if (!provIds.length) return;
+  for (const provId of provIds) {
+    const proveedor = provs.find(p => String(p.id) === String(provId));
+    if (!proveedor) continue;
+    const cols = columnasExportProveedor(rolesDeProveedor(proveedor));
+    const lineasExp = grupos[provId].map(linea => {
+      const cd = linea.material_id ? corr[linea.material_id]?.[provId] : null;
+      return {
+        nombreProveedor: cd?.nombre || linea.nombre,
+        nombreBase: linea.nombre,
+        cantidad: linea.cantidad || 0,
+        unidad: linea.unidad || "ud",
+        categoria: linea.categoria || "",
+        referencia: cd?.referencia || "",
+        coste: cd?.coste != null ? Number(cd.coste).toFixed(2) : "",
+        descuento: cd?.descuento != null ? `${cd.descuento}%` : "",
+        key: `${linea.nombre}_${provId}`,
+      };
+    });
+    if (formato === "pdf") exportarCompraProveedorPDF(proveedor, lineasExp, cols);
+    else exportarCompraProveedorExcel(proveedor, lineasExp, cols);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
    MODAL CONFIGURADOR DE EXPORTACIÓN
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - ExportConfigurador
@@ -1382,17 +1416,34 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
           </div>
         )}
         {/* Exportar */}
-        <div style={{ display:"flex", gap:6 }}>
-          <Btn outline onClick={() => setExportModal("pdf")} style={{ padding:"6px 14px", fontSize:13, gap:5 }}>
-            <FileDown size={13} color="#ef4444"/>PDF
-          </Btn>
-          <Btn outline onClick={() => setExportModal("excel")} style={{ padding:"6px 14px", fontSize:13, gap:5 }}>
-            <FileSpreadsheet size={13} color="#16a34a"/>Excel
-          </Btn>
-          <Btn outline onClick={() => onEtiquetas?.(p)} style={{ padding:"6px 14px", fontSize:13, gap:5 }}>
-            <Tag size={13} color={C.brand}/>{L("Etiquetas","Labels")}
-          </Btn>
-        </div>
+        {(() => {
+          const tieneProvs = (p.lineas || []).some(l => l.proveedor_id);
+          return (
+            <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+              <Btn outline onClick={() => setExportModal("pdf")} style={{ padding:"6px 14px", fontSize:13, gap:5 }}>
+                <FileDown size={13} color="#ef4444"/>PDF
+              </Btn>
+              <Btn outline onClick={() => setExportModal("excel")} style={{ padding:"6px 14px", fontSize:13, gap:5 }}>
+                <FileSpreadsheet size={13} color="#16a34a"/>Excel
+              </Btn>
+              {tieneProvs && (
+                <>
+                  <Btn outline onClick={() => exportarPorProveedores(p, provs, corr, "pdf")}
+                    style={{ padding:"6px 14px", fontSize:13, gap:5, borderColor:"#ef4444", color:"#ef4444" }}>
+                    <FileDown size={13} color="#ef4444"/>PDF prov.
+                  </Btn>
+                  <Btn outline onClick={() => exportarPorProveedores(p, provs, corr, "excel")}
+                    style={{ padding:"6px 14px", fontSize:13, gap:5, borderColor:"#16a34a", color:"#16a34a" }}>
+                    <FileSpreadsheet size={13} color="#16a34a"/>Excel prov.
+                  </Btn>
+                </>
+              )}
+              <Btn outline onClick={() => onEtiquetas?.(p)} style={{ padding:"6px 14px", fontSize:13, gap:5 }}>
+                <Tag size={13} color={C.brand}/>{L("Etiquetas","Labels")}
+              </Btn>
+            </div>
+          );
+        })()}
 
         {!editando && (
           <Btn outline onClick={() => setEditando(true)} style={{ padding:"6px 14px", fontSize:13 }}>
@@ -1717,7 +1768,16 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                         {item.categoria || ""}
                       </div>
                       <div style={{ padding:"9px 8px" }}>
-                        <div style={{ fontSize:13.5, color:C.ink }}>{item.nombre}</div>
+                        <div style={{ display:"flex", alignItems:"baseline", gap:8, flexWrap:"wrap" }}>
+                          <div style={{ fontSize:13.5, color:C.ink }}>{item.nombre}</div>
+                          {/* Nombre del material según el proveedor elegido */}
+                          {provLinea && item.material_id && corr[item.material_id]?.[provLinea]?.nombre && (
+                            <div style={{ fontSize:12, color:C.brand, fontWeight:600 }}>
+                              → {corr[item.material_id][provLinea].nombre}
+                              <span style={{ fontSize:10.5, color:C.sub, fontWeight:400, marginLeft:4 }}>(nombre prov.)</span>
+                            </div>
+                          )}
+                        </div>
                         {/* Proveedor de la línea: solo cambia el COSTE. "Almacén" = coste de almacén. */}
                         {provs.length > 0 && item.material_id && (
                           <select value={provLinea}
@@ -1729,8 +1789,13 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                               color: provLinea ? C.brand : C.sub, cursor:"pointer", maxWidth:170 }}>
                             <option value="">{L("Almacén","Warehouse")}</option>
                             {provs.map(pr => {
-                              const tieneCoste = corr[item.material_id]?.[pr.id]?.coste != null;
-                              return <option key={pr.id} value={String(pr.id)}>{pr.nombre}{tieneCoste ? "" : " ·sin coste"}</option>;
+                              const cd = corr[item.material_id]?.[pr.id];
+                              const nombreItem = cd?.nombre;
+                              const tieneCoste = cd?.coste != null;
+                              const label = nombreItem && nombreItem !== item.nombre
+                                ? `${pr.nombre} · ${nombreItem}${tieneCoste ? "" : " ·sin coste"}`
+                                : `${pr.nombre}${tieneCoste ? "" : " ·sin coste"}`;
+                              return <option key={pr.id} value={String(pr.id)}>{label}</option>;
                             })}
                           </select>
                         )}

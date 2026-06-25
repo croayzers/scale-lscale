@@ -323,8 +323,10 @@ function CorrelacionClic({ materiales, proveedores, itemsByProv, cor, onGuardarM
               {proveedores.map(p => {
                 const items = itemsByProv[p.id] || [];
                 const q = norm(buscarItem[p.id]||"");
-                const vis = q ? items.filter(it => norm(it.nombre).includes(q) || norm(it.referencia||"").includes(q)) : items;
                 const sel = pending[p.id];
+                const vis = (q ? items.filter(it => norm(it.nombre).includes(q) || norm(it.referencia||"").includes(q)) : items)
+                  .slice()
+                  .sort((a, b) => (b.id === sel ? 1 : 0) - (a.id === sel ? 1 : 0));
                 return (
                   <div key={p.id} style={{ width:312, minWidth:312, display:"flex", flexDirection:"column", maxHeight:"100%", border:`1px solid ${C.line}`, borderRadius:12, overflow:"hidden", background:C.surface }}>
                     <div style={{ padding:"9px 12px", background:p.color||C.brand, color:"#fff", fontSize:13, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center" }}>

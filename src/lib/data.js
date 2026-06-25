@@ -313,6 +313,13 @@ export async function borrarMaterial(id) {
   if (error) throw error;
 }
 
+// Borra varios materiales en una sola petición (para vaciar almacén).
+export async function borrarMaterialesLote(ids) {
+  if (!ids?.length) return;
+  const { error } = await lsc().from("materiales").delete().in("id", ids);
+  if (error) throw error;
+}
+
 // Marca una IA "sin tokens" en companies.flags.ai.estado (para el panel admin).
 // Best-effort: si RLS bloquea la escritura, se ignora.
 export async function marcarIASinTokens(companyId, provider) {

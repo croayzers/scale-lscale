@@ -7,7 +7,7 @@ import {
   Plus, Pencil, Trash2, X, Check, Loader, AlertTriangle, Combine, ImageIcon, SlidersHorizontal, ClipboardCheck, ShoppingCart, Cloud,
 } from "lucide-react";
 import { C, Badge, Btn, ModalField, Help } from "./lib/ui.jsx";
-import { crearMaterial, actualizarMaterial, borrarMaterial, subirImagenMaterial, borrarImagenMaterial } from "./lib/data.js";
+import { crearMaterial, actualizarMaterial, borrarMaterial, borrarMaterialesLote, subirImagenMaterial, borrarImagenMaterial } from "./lib/data.js";
 import { sb } from "./lib/supabase.js";
 import AlmacenConfigurador from "./AlmacenConfigurador.jsx";
 import { OrigenDatosPanel } from "@scale/shared/connectors";
@@ -227,6 +227,7 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
   const [delConf, setDelConf]       = useState(null);
   const [vaciarConf, setVaciarConf] = useState(false);
   const [vaciando,   setVaciando]   = useState(false);
+  const [vaciarProgreso, setVaciarProgreso] = useState(0);
   const [almacenSel, setAlmacenSel] = useState(() => almacenes?.[0]?.id ?? 1);
   const [showUbicaciones, setShowUbicaciones] = useState(false);
   const [importFile, setImportFile] = useState(null);
@@ -363,9 +364,18 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
     if (vaciando) return;
     if (conCopia) exportarCopiaAlmacen();
     setVaciando(true);
+    setVaciarProgreso(0);
     const ids = materialesAlmacen.map(m => m.id);
+    const LOTE = 50;
     try {
-      if (modo !== "demo") { for (const id of ids) await borrarMaterial(id); }
+      if (modo !== "demo") {
+        for (let i = 0; i < ids.length; i += LOTE) {
+          await borrarMaterialesLote(ids.slice(i, i + LOTE));
+          setVaciarProgreso(Math.min(100, Math.round(((i + LOTE) / ids.length) * 100)));
+        }
+      } else {
+        setVaciarProgreso(100);
+      }
       setMateriales(prev => prev.filter(m => !ids.includes(m.id)));
       setVaciarConf(false);
     } catch (e) {
@@ -373,6 +383,7 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
       alert(L("Error al vaciar el almacén: ", "Error emptying warehouse: ") + (e?.message || e));
     }
     setVaciando(false);
+    setVaciarProgreso(0);
   };
 
   // ── Unificar duplicados del almacén actual ──────────────────────────────────
@@ -1000,17 +1011,29 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
             <p style={{ color:C.ink, fontSize:13.5, marginBottom:20, fontWeight:600 }}>
               {L("¿Quieres descargar antes una copia de seguridad en Excel?", "Download an Excel backup first?")}
             </p>
-            <div style={{ display:"flex", gap:10, justifyContent:"flex-end", flexWrap:"wrap" }}>
-              <Btn outline onClick={() => setVaciarConf(false)} disabled={vaciando}>{L("Cancelar","Cancel")}</Btn>
-              <Btn outline onClick={() => vaciarAlmacen(false)} disabled={vaciando}
-                style={{ borderColor:C.danger, color:C.danger }}>
-                {L("Vaciar sin copia","Empty without backup")}
-              </Btn>
-              <Btn color={C.danger} onClick={() => vaciarAlmacen(true)} disabled={vaciando}>
-                {vaciando ? <Loader size={14} className="spin"/> : <Download size={14}/>}
-                {L("Descargar copia y vaciar","Download backup & empty")}
-              </Btn>
-            </div>
+            {vaciando ? (
+              <div>
+                <div style={{ display:"flex", justifyContent:"space-between", fontSize:13, color:C.sub, marginBottom:6 }}>
+                  <span>{L("Eliminando materiales…","Deleting materials…")}</span>
+                  <span style={{ fontWeight:600, color:C.ink }}>{vaciarProgreso}%</span>
+                </div>
+                <div style={{ background:C.border, borderRadius:99, overflow:"hidden", height:10 }}>
+                  <div style={{ height:"100%", width:`${vaciarProgreso}%`, background:C.danger, borderRadius:99, transition:"width .25s ease" }}/>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display:"flex", gap:10, justifyContent:"flex-end", flexWrap:"wrap" }}>
+                <Btn outline onClick={() => setVaciarConf(false)}>{L("Cancelar","Cancel")}</Btn>
+                <Btn outline onClick={() => vaciarAlmacen(false)}
+                  style={{ borderColor:C.danger, color:C.danger }}>
+                  {L("Vaciar sin copia","Empty without backup")}
+                </Btn>
+                <Btn color={C.danger} onClick={() => vaciarAlmacen(true)}>
+                  <Download size={14}/>
+                  {L("Descargar copia y vaciar","Download backup & empty")}
+                </Btn>
+              </div>
+            )}
           </div>
         </div>
       )}
