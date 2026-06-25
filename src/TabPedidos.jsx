@@ -13,12 +13,12 @@ import * as XLSX from "xlsx";
 import {
   Upload, Loader, X, Check, AlertTriangle, Plus, Trash2,
   Warehouse, ArrowLeft, FileSpreadsheet, Pencil, ClipboardList,
-  ChevronRight, ArrowRight, Download, FileDown, Save, Bell, BellOff, Tag, Star, Search,
+  ChevronRight, ArrowRight, Download, FileDown, Save, Bell, BellOff, Tag, Search,
 } from "lucide-react";
 import { useL } from "./lib/i18n.js";
 import { parsearExcelPedido } from "./lib/parseExcelPedido.js";
 import ExcelConfigurador from "./ExcelConfigurador.jsx";
-import { guardarPedido, borrarPedido, cargarMiembrosEmpresa, enviarNotificacionPedido, recargarMateriales, guardarPrefs, cargarProveedores, cargarCorrelacionesDeMateriales, cargarProveedorPrincipal, sincronizarReservasPedido, guardarSubalquilerPedido } from "./lib/data.js";
+import { guardarPedido, borrarPedido, cargarMiembrosEmpresa, enviarNotificacionPedido, recargarMateriales, guardarPrefs, sincronizarReservasPedido, guardarSubalquilerPedido } from "./lib/data.js";
 import PantallaEventoLogistica from "./PantallaEventoLogistica.jsx";
 import { fmtFecha, siguienteCodigo } from "./lib/fechas.js";
 import { conflictosPedido, calcularConflictosStock } from "./lib/stockConflictos.js";
@@ -741,36 +741,6 @@ table{width:100%;border-collapse:collapse;font-size:12.5px}th{background:#f3f4f6
 /* ═══════════════════════════════════════════════════════════════════════════
    EXPORTAR POR PROVEEDOR — genera un archivo por cada proveedor asignado
    ═══════════════════════════════════════════════════════════════════════════ */
-function exportarPorProveedores(pedido, provs, corr, formato) {
-  const grupos = {};
-  for (const linea of (pedido.lineas || [])) {
-    if (!linea.proveedor_id) continue;
-    (grupos[String(linea.proveedor_id)] ||= []).push(linea);
-  }
-  const provIds = Object.keys(grupos);
-  if (!provIds.length) return;
-  for (const provId of provIds) {
-    const proveedor = provs.find(p => String(p.id) === String(provId));
-    if (!proveedor) continue;
-    const cols = columnasExportProveedor(rolesDeProveedor(proveedor));
-    const lineasExp = grupos[provId].map(linea => {
-      const cd = linea.material_id ? corr[linea.material_id]?.[provId] : null;
-      return {
-        nombreProveedor: cd?.nombre || linea.nombre,
-        nombreBase: linea.nombre,
-        cantidad: linea.cantidad || 0,
-        unidad: linea.unidad || "ud",
-        categoria: linea.categoria || "",
-        referencia: cd?.referencia || "",
-        coste: cd?.coste != null ? Number(cd.coste).toFixed(2) : "",
-        descuento: cd?.descuento != null ? `${cd.descuento}%` : "",
-        key: `${linea.nombre}_${provId}`,
-      };
-    });
-    if (formato === "pdf") exportarCompraProveedorPDF(proveedor, lineasExp, cols);
-    else exportarCompraProveedorExcel(proveedor, lineasExp, cols);
-  }
-}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    MODAL CONFIGURADOR DE EXPORTACIÓN
@@ -1140,14 +1110,6 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
   const [stockOk,          setStockOk]          = useState(false);
   const [errorComprobar,   setErrorComprobar]   = useState(null);
   const [checkTick,        setCheckTick]        = useState(0);
-  // ── Proveedores (Supabase): COSTE por línea ──
-  // El coste de cada línea es el del proveedor elegido para ESA línea
-  // (linea.proveedor_id) o, si no hay, el coste de almacén del material. El
-  // proveedor elegido se persiste en la propia línea (proveedor_id + coste).
-  const [provs,        setProvs]        = useState([]);
-  const [corr,         setCorr]         = useState({}); // corr[material_id][proveedor_id] = {nombre_proveedor,...}
-  const [principalId,  setPrincipalId]  = useState(null); // proveedor principal global (solo para marcar ⭐ en el menú)
-  const [menuLinea,    setMenuLinea]    = useState(null); // { idx, x, y } menú contextual abierto
   const [pantallaEvento, setPantallaEvento] = useState(false);
 
   useEffect(() => {
@@ -1163,55 +1125,6 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
     return () => clearTimeout(t);
   }, [DRAFT_KEY, p]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Carga proveedores + correlaciones de los materiales de ESTE pedido (selectiva).
-  useEffect(() => {
-    const esSb = empresaId && empresaId !== "demo" && empresaId !== "local";
-    if (!esSb) { setProvs([]); setCorr({}); setPrincipalId(null); return; }
-    let vivo = true;
-    (async () => {
-      try {
-        const ps = await cargarProveedores(empresaId);
-        if (!vivo) return;
-        setProvs(ps);
-        cargarProveedorPrincipal(empresaId).then(ppal => { if (vivo) setPrincipalId(ppal); }).catch(() => {});
-        const matIds = [...new Set((pedido.lineas || []).map(l => l.material_id).filter(Boolean))];
-        const cs = await cargarCorrelacionesDeMateriales(matIds);
-        if (!vivo) return;
-        const mapa = {};
-        cs.forEach(c => { (mapa[c.material_id] ||= {})[c.proveedor_id] = c; });
-        setCorr(mapa);
-      } catch (e) { console.warn("[Pedido/proveedores]", e?.message); }
-    })();
-    return () => { vivo = false; };
-  }, [empresaId, pedido]);
-
-  // Cambia el proveedor de UNA línea. Solo afecta al COSTE de esa línea, no a la
-  // estructura del pedido. provId === "" → sin proveedor (cae al coste de almacén).
-  const cambiarProveedorLinea = (idx, provId) => {
-    setP(prev => {
-      const lineas = [...(prev.lineas || [])];
-      const linea = { ...lineas[idx] };
-      if (provId) {
-        const datos = linea.material_id ? corr[linea.material_id]?.[provId] : null;
-        linea.proveedor_id = Number(provId);
-        // Sellamos el coste (del proveedor si lo tiene; si no, queda null y la
-        // vista mostrará el coste de almacén vía costeDeLinea).
-        linea.coste = datos?.coste ?? null;
-      } else {
-        delete linea.proveedor_id;
-        delete linea.coste;
-      }
-      lineas[idx] = linea;
-      const actualizado = { ...prev, lineas };
-      // Persistir en silencio: cambiar el proveedor/coste de una línea no es una
-      // reserva nueva, así que no debe disparar la notificación de stock.
-      Promise.resolve(onSave?.(actualizado, { silent: true }))
-        .catch(e => console.warn("[Pedido/coste]", e?.message));
-      return actualizado;
-    });
-    setMenuLinea(null);
-  };
-
   // Coste de almacén del material (precio_coste), por material_id.
   const costeAlmacen = useMemo(() => {
     const m = {};
@@ -1219,13 +1132,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
     return m;
   }, [materiales]);
 
-  // Coste efectivo de una línea: si el material está en el proveedor elegido para
-  // esa línea, su coste; si no, el coste de almacén del material. Devuelve
-  // { coste, origen: "proveedor"|"almacen"|null }.
   const costeDeLinea = (item) => {
-    const provId = item.proveedor_id != null ? String(item.proveedor_id) : null;
-    const cProv = provId && item.material_id ? corr[item.material_id]?.[provId]?.coste : null;
-    if (cProv != null) return { coste: Number(cProv), origen: "proveedor" };
     const cAlm = item.material_id != null ? costeAlmacen[item.material_id] : null;
     if (cAlm != null) return { coste: cAlm, origen: "almacen" };
     return { coste: null, origen: null };
@@ -1353,14 +1260,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
       unidad: addLinea.unidad || "ud",
     };
     if (addLinea.almacen_id != null) nueva.almacen_id = addLinea.almacen_id;
-    // Si se eligió un material del almacén, enlazamos por material_id para poder
-    // correlacionar coste/proveedor; y si se eligió proveedor, sellamos su coste.
     if (addLinea.material_id != null) nueva.material_id = addLinea.material_id;
-    if (addLinea.proveedor_id != null && addLinea.material_id != null) {
-      nueva.proveedor_id = Number(addLinea.proveedor_id);
-      const datos = corr[addLinea.material_id]?.[addLinea.proveedor_id];
-      nueva.coste = datos?.coste ?? null;
-    }
     setP(prev => {
       const actualizado = { ...prev, lineas: [...(prev.lineas || []), nueva] };
       Promise.resolve(onSave?.(actualizado, { silent: true }))
@@ -1416,34 +1316,17 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
           </div>
         )}
         {/* Exportar */}
-        {(() => {
-          const tieneProvs = (p.lineas || []).some(l => l.proveedor_id);
-          return (
-            <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
-              <Btn outline onClick={() => setExportModal("pdf")} style={{ padding:"6px 14px", fontSize:13, gap:5 }}>
-                <FileDown size={13} color="#ef4444"/>PDF
-              </Btn>
-              <Btn outline onClick={() => setExportModal("excel")} style={{ padding:"6px 14px", fontSize:13, gap:5 }}>
-                <FileSpreadsheet size={13} color="#16a34a"/>Excel
-              </Btn>
-              {tieneProvs && (
-                <>
-                  <Btn outline onClick={() => exportarPorProveedores(p, provs, corr, "pdf")}
-                    style={{ padding:"6px 14px", fontSize:13, gap:5, borderColor:"#ef4444", color:"#ef4444" }}>
-                    <FileDown size={13} color="#ef4444"/>PDF prov.
-                  </Btn>
-                  <Btn outline onClick={() => exportarPorProveedores(p, provs, corr, "excel")}
-                    style={{ padding:"6px 14px", fontSize:13, gap:5, borderColor:"#16a34a", color:"#16a34a" }}>
-                    <FileSpreadsheet size={13} color="#16a34a"/>Excel prov.
-                  </Btn>
-                </>
-              )}
-              <Btn outline onClick={() => onEtiquetas?.(p)} style={{ padding:"6px 14px", fontSize:13, gap:5 }}>
-                <Tag size={13} color={C.brand}/>{L("Etiquetas","Labels")}
-              </Btn>
-            </div>
-          );
-        })()}
+        <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+          <Btn outline onClick={() => setExportModal("pdf")} style={{ padding:"6px 14px", fontSize:13, gap:5 }}>
+            <FileDown size={13} color="#ef4444"/>PDF
+          </Btn>
+          <Btn outline onClick={() => setExportModal("excel")} style={{ padding:"6px 14px", fontSize:13, gap:5 }}>
+            <FileSpreadsheet size={13} color="#16a34a"/>Excel
+          </Btn>
+          <Btn outline onClick={() => onEtiquetas?.(p)} style={{ padding:"6px 14px", fontSize:13, gap:5 }}>
+            <Tag size={13} color={C.brand}/>{L("Etiquetas","Labels")}
+          </Btn>
+        </div>
 
         {!editando && (
           <Btn outline onClick={() => setEditando(true)} style={{ padding:"6px 14px", fontSize:13 }}>
@@ -1460,7 +1343,15 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
             </Btn>
           </>
         )}
-        {p.tipo_pedido === "evento" && p.fecha_evento_inicio && p.fecha_evento_fin && (p.lineas || []).length > 0 && (
+        {p.tipo_origen === "proveedor" && onAgregarCesta && (p.lineas || []).length > 0 && (
+          <Btn onClick={() => onAgregarCesta((p.lineas || []).map(l => ({
+            nombre: l.nombre, cantidad: l.cantidad, faltante: l.cantidad,
+            material_id: l.material_id ?? null, almacen_id: l.almacen_id ?? null,
+          })))} style={{ padding:"6px 14px", fontSize:13, gap:5, background:"#8b5cf6", color:"#fff" }}>
+            🛒 {L("Enviar todo a la cesta","Send all to cart")}
+          </Btn>
+        )}
+        {p.tipo_pedido === "evento" && p.fecha_evento_inicio && p.fecha_evento_fin && (p.lineas || []).length > 0 && p.tipo_origen !== "proveedor" && (
           <Btn outline onClick={() => setPantallaEvento(true)} style={{ padding:"6px 14px", fontSize:13, gap:5 }}>
             {L("Verificar Disponibilidad","Check Availability")}
           </Btn>
@@ -1475,8 +1366,8 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
         </Btn>
       </div>
 
-      {/* Banner de conflicto de stock — checkTick fuerza re-evaluación tras Comprobar */}
-      {!bannerDismissed && !stockOk && materiales && pedidos && (() => {
+      {/* Banner de conflicto de stock — solo para pedidos de almacén */}
+      {!bannerDismissed && !stockOk && materiales && pedidos && p.tipo_origen !== "proveedor" && (() => {
         void checkTick; // eslint-disable-line
         const conflictos = conflictosPedido(p.id, pedidos, materiales);
         if (!conflictos.length) return null;
@@ -1658,6 +1549,11 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                   {L("EVENTO","EVENT")}: {fmtFecha(p.fecha_evento_inicio, formatoFecha)}{p.fecha_evento_fin && p.fecha_evento_fin !== p.fecha_evento_inicio ? ` → ${fmtFecha(p.fecha_evento_fin, formatoFecha)}` : ""}
                 </span>
               )}
+              {p.tipo_origen === "proveedor" && (
+                <span style={{ background:"#f3e8ff", color:"#7c3aed", borderRadius:999, padding:"2px 10px", fontSize:11.5, fontWeight:700 }}>
+                  🚚 {L("PEDIDO PROVEEDOR","SUPPLIER ORDER")}
+                </span>
+              )}
               <span>🏭 <strong style={{ color:C.ink }}>{almNombre}</strong></span>
               {p.vehiculo_id && vehiculosEmpresa?.length > 0 && (() => {
                 const v = vehiculosEmpresa.find(v => String(v.id) === String(p.vehiculo_id));
@@ -1741,12 +1637,8 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
 
                 {cat.items.map((item, i) => {
                   const globalIdx = (p.lineas || []).indexOf(item);
-                  // Proveedor de esta línea (si se eligió uno). Solo afecta al coste.
-                  const provLinea = item.proveedor_id != null ? String(item.proveedor_id) : "";
-                  // Coste efectivo: proveedor de la línea o, si no, coste de almacén.
                   const { coste: costeLinea, origen: costeOrigen } = costeDeLinea(item);
                   const indicadores = indicadoresLinea(item);
-                  // Separar roles en "descripcion" (bajo el nombre) y "columna" (columna propia)
                   const rolesDesc = (rolesImport || []).filter(r => r.tipo === "descripcion" && item[r.key]);
                   const rolesCols = (rolesImport || []).filter(r => r.tipo === "columna" && item[r.key]);
                   return (
@@ -1756,11 +1648,6 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                       padding:"0 20px", borderBottom:`1px solid ${C.line}`, alignItems:"start",
                       background: item._editado_por ? "rgba(251,146,60,.10)" : "",
                       transition:"background .1s" }}
-                      onContextMenu={e => {
-                        if (!item.material_id || provs.length === 0) return;
-                        e.preventDefault();
-                        setMenuLinea({ idx: globalIdx, x: e.clientX, y: e.clientY });
-                      }}
                       onMouseEnter={e => e.currentTarget.style.background = item._editado_por ? "rgba(251,146,60,.18)" : C.s2}
                       onMouseLeave={e => e.currentTarget.style.background = item._editado_por ? "rgba(251,146,60,.10)" : ""}>
                       <div style={{ padding:"9px 8px", fontSize:12, color:C.sub,
@@ -1768,37 +1655,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                         {item.categoria || ""}
                       </div>
                       <div style={{ padding:"9px 8px" }}>
-                        <div style={{ display:"flex", alignItems:"baseline", gap:8, flexWrap:"wrap" }}>
-                          <div style={{ fontSize:13.5, color:C.ink }}>{item.nombre}</div>
-                          {/* Nombre del material según el proveedor elegido */}
-                          {provLinea && item.material_id && corr[item.material_id]?.[provLinea]?.nombre && (
-                            <div style={{ fontSize:12, color:C.brand, fontWeight:600 }}>
-                              → {corr[item.material_id][provLinea].nombre}
-                              <span style={{ fontSize:10.5, color:C.sub, fontWeight:400, marginLeft:4 }}>(nombre prov.)</span>
-                            </div>
-                          )}
-                        </div>
-                        {/* Proveedor de la línea: solo cambia el COSTE. "Almacén" = coste de almacén. */}
-                        {provs.length > 0 && item.material_id && (
-                          <select value={provLinea}
-                            onChange={e => cambiarProveedorLinea(globalIdx, e.target.value)}
-                            title={L("Proveedor de esta línea (cambia el coste; clic derecho también)","Supplier for this line (changes cost; right-click too)")}
-                            style={{ marginTop:4, padding:"2px 6px", fontSize:11, fontFamily:"inherit",
-                              border:`1px solid ${provLinea?C.brand:C.line}`, borderRadius:6,
-                              background: provLinea ? "var(--brand-soft)" : C.s2,
-                              color: provLinea ? C.brand : C.sub, cursor:"pointer", maxWidth:170 }}>
-                            <option value="">{L("Almacén","Warehouse")}</option>
-                            {provs.map(pr => {
-                              const cd = corr[item.material_id]?.[pr.id];
-                              const nombreItem = cd?.nombre;
-                              const tieneCoste = cd?.coste != null;
-                              const label = nombreItem && nombreItem !== item.nombre
-                                ? `${pr.nombre} · ${nombreItem}${tieneCoste ? "" : " ·sin coste"}`
-                                : `${pr.nombre}${tieneCoste ? "" : " ·sin coste"}`;
-                              return <option key={pr.id} value={String(pr.id)}>{label}</option>;
-                            })}
-                          </select>
-                        )}
+                        <div style={{ fontSize:13.5, color:C.ink }}>{item.nombre}</div>
                         {item._editado_por && (
                           <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:3 }}>
                             <span style={{ fontSize:10.5, fontWeight:700, color:"#ea580c",
@@ -1838,15 +1695,10 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                         </div>
                       ))}
                       <div style={{ padding:"9px 8px", textAlign:"right", whiteSpace:"nowrap" }}
-                        title={costeOrigen === "proveedor" ? L("Coste del proveedor de esta línea","Cost from this line's supplier")
-                          : costeOrigen === "almacen" ? L("Coste de almacén del material","Material's warehouse cost")
-                          : L("Sin coste (ni proveedor ni almacén)","No cost (neither supplier nor warehouse)")}>
+                        title={costeOrigen === "almacen" ? L("Coste de almacén","Warehouse cost") : ""}>
                         <span style={{ fontSize:12.5, fontWeight:600, color: costeLinea != null ? "#b45309" : C.dim }}>
                           {costeLinea != null ? `${Number(costeLinea).toFixed(2)} €` : "—"}
                         </span>
-                        {costeOrigen === "almacen" && (
-                          <div style={{ fontSize:9.5, color:C.dim, letterSpacing:.3 }}>{L("almacén","warehouse")}</div>
-                        )}
                       </div>
                       <div style={{ padding:"9px 8px", fontSize:13.5, fontWeight:700, textAlign:"right",
                         color: item._editado_por ? "#ea580c" : C.ink }}>{item.cantidad}</div>
@@ -1970,75 +1822,6 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
         </div>
       </div>
 
-      {/* Menú contextual (clic derecho sobre una línea): elegir proveedor → coste */}
-      {menuLinea && (() => {
-        const item = (p.lineas || [])[menuLinea.idx];
-        if (!item) return null;
-        const provActual = item.proveedor_id != null ? String(item.proveedor_id) : "";
-        const cAlm = item.material_id != null ? costeAlmacen[item.material_id] : null;
-        // Proveedores correlacionados con ESTE material (los que tienen coste/nombre).
-        const correladosIds = item.material_id ? Object.keys(corr[item.material_id] || {}) : [];
-        const opciones = provs.filter(pr => correladosIds.includes(String(pr.id)));
-        return (
-          <>
-            <div style={{ position:"fixed", inset:0, zIndex:600 }} onClick={() => setMenuLinea(null)} onContextMenu={e => { e.preventDefault(); setMenuLinea(null); }}/>
-            <div style={{ position:"fixed", left:Math.min(menuLinea.x, window.innerWidth - 270), top:Math.min(menuLinea.y, window.innerHeight - 320),
-              zIndex:601, background:C.surface, border:`1px solid ${C.strong}`, borderRadius:12,
-              boxShadow:"var(--shadow-lg)", width:260, overflow:"hidden", fontFamily:"inherit" }}>
-              <div style={{ padding:"10px 14px", borderBottom:`1px solid ${C.line}`, background:C.s2 }}>
-                <div style={{ fontSize:12.5, fontWeight:700, color:C.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{item.nombre}</div>
-                <div style={{ fontSize:11, color:C.sub, marginTop:2 }}>{L("Elige el proveedor (cambia el coste)","Pick supplier (changes cost)")}</div>
-              </div>
-              <div style={{ maxHeight:260, overflowY:"auto" }}>
-                {/* Opción ALMACÉN: sin proveedor → usa el coste de almacén del material. */}
-                <button onClick={() => cambiarProveedorLinea(menuLinea.idx, "")}
-                  style={{ display:"flex", alignItems:"center", gap:8, width:"100%", textAlign:"left",
-                    padding:"9px 14px", background: provActual === "" ? C.brandSoft : "transparent", border:"none",
-                    cursor:"pointer", fontFamily:"inherit", borderBottom:`1px solid ${C.line}` }}
-                  onMouseEnter={e => { if(provActual !== "") e.currentTarget.style.background = C.s2; }}
-                  onMouseLeave={e => { if(provActual !== "") e.currentTarget.style.background = "transparent"; }}>
-                  <Warehouse size={13} color={C.sub} style={{ flexShrink:0 }}/>
-                  <span style={{ flex:1, fontSize:12.5, fontWeight: provActual===""?700:500, color:C.ink }}>{L("Almacén","Warehouse")}</span>
-                  <span style={{ fontSize:12, fontWeight:700, color: cAlm != null ? "#b45309" : C.dim, whiteSpace:"nowrap" }}>
-                    {cAlm != null ? `${cAlm.toFixed(2)} €` : "—"}
-                  </span>
-                  {provActual === "" && <Check size={13} color={C.brand}/>}
-                </button>
-                {opciones.length === 0 ? (
-                  <div style={{ padding:"14px", fontSize:12, color:C.sub, textAlign:"center" }}>
-                    {L("Este material no está correlacionado con ningún proveedor.","This material isn't correlated with any supplier.")}
-                  </div>
-                ) : opciones.map(pr => {
-                  const datos = corr[item.material_id]?.[pr.id];
-                  const esActual = String(pr.id) === String(provActual);
-                  const esPpal = principalId === pr.id;
-                  return (
-                    <button key={pr.id} onClick={() => cambiarProveedorLinea(menuLinea.idx, String(pr.id))}
-                      style={{ display:"flex", alignItems:"center", gap:8, width:"100%", textAlign:"left",
-                        padding:"9px 14px", background: esActual ? C.brandSoft : "transparent", border:"none",
-                        cursor:"pointer", fontFamily:"inherit", borderBottom:`1px solid ${C.line}` }}
-                      onMouseEnter={e => { if(!esActual) e.currentTarget.style.background = C.s2; }}
-                      onMouseLeave={e => { if(!esActual) e.currentTarget.style.background = "transparent"; }}>
-                      <span style={{ width:8, height:8, borderRadius:999, background:pr.color||C.brand, flexShrink:0 }}/>
-                      <span style={{ flex:1, minWidth:0 }}>
-                        <span style={{ fontSize:12.5, fontWeight: esActual?700:500, color:C.ink, display:"flex", alignItems:"center", gap:5 }}>
-                          {pr.nombre}
-                          {esPpal && <Star size={11} fill="#f59e0b" color="#f59e0b"/>}
-                        </span>
-                      </span>
-                      <span style={{ fontSize:12, fontWeight:700, color: datos?.coste != null ? "#b45309" : C.dim, whiteSpace:"nowrap" }}>
-                        {datos?.coste != null ? `${Number(datos.coste).toFixed(2)} €` : "—"}
-                      </span>
-                      {esActual && <Check size={13} color={C.brand}/>}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </>
-        );
-      })()}
-
       {/* Modal exportación */}
       {exportModal && (
         <ExportConfigurador
@@ -2097,33 +1880,6 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                 onChange={v => addLinea ? setAddLinea(p => ({ ...p, nombre:v })) : setEditLinea(p => ({ ...p, nombre:v }))}/>
               <Field label="CANTIDAD" type="number" value={(addLinea || editLinea)?.cantidad}
                 onChange={v => addLinea ? setAddLinea(p => ({ ...p, cantidad:v })) : setEditLinea(p => ({ ...p, cantidad:v }))}/>
-              {/* Proveedor (opcional): solo si el material está enlazado. Cambia el coste. */}
-              {addLinea?.material_id != null && provs.length > 0 && (() => {
-                const cAlm = costeAlmacen[addLinea.material_id];
-                const pid = addLinea.proveedor_id != null ? String(addLinea.proveedor_id) : "";
-                const cProv = pid ? corr[addLinea.material_id]?.[pid]?.coste : null;
-                const costePrev = cProv != null ? Number(cProv) : (cAlm != null ? cAlm : null);
-                return (
-                  <div>
-                    <label style={{ fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.5, display:"block", marginBottom:4 }}>
-                      {L("PROVEEDOR (coste)","SUPPLIER (cost)")}
-                    </label>
-                    <select value={pid}
-                      onChange={e => setAddLinea(p => ({ ...p, proveedor_id: e.target.value ? Number(e.target.value) : undefined }))}
-                      style={{ width:"100%", padding:"8px 10px", border:`1px solid ${C.strong}`, borderRadius:9,
-                        fontSize:13.5, fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none", cursor:"pointer" }}>
-                      <option value="">{L("Almacén","Warehouse")}{cAlm != null ? ` · ${cAlm.toFixed(2)} €` : ""}</option>
-                      {provs.map(pr => {
-                        const c = corr[addLinea.material_id]?.[pr.id]?.coste;
-                        return <option key={pr.id} value={String(pr.id)}>{pr.nombre}{c != null ? ` · ${Number(c).toFixed(2)} €` : " · sin coste"}</option>;
-                      })}
-                    </select>
-                    <div style={{ fontSize:11.5, color:"#b45309", marginTop:4, fontWeight:600 }}>
-                      {L("Coste","Cost")}: {costePrev != null ? `${costePrev.toFixed(2)} €` : "—"}
-                    </div>
-                  </div>
-                );
-              })()}
             </div>
             <div style={{ display:"flex", gap:10, justifyContent:"flex-end", marginTop:18 }}>
               <Btn outline onClick={() => { setAddLinea(null); setEditLinea(null); }}>{L("Cancelar","Cancel")}</Btn>
@@ -2144,8 +1900,8 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
           pedido={p}
           materiales={materiales || []}
           reservas={reservas}
-          proveedores={provs}
-          correlaciones={Object.values(corr).flatMap(m => Object.values(m))}
+          proveedores={[]}
+          correlaciones={[]}
           proveedor_items={[]}
           onGuardarSubalquiler={async (lineas) => {
             const esDemo = !empresaId || empresaId === "demo";
@@ -2352,10 +2108,14 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
   const [saving,       setSaving]        = useState(false);
   const [errMsg,       setErrMsg]        = useState(null);
   const [pedidoSel,    setPedidoSel]     = useState(null);
-  // "nuevo" | "adjuntar" | null (sin decidir aún)
+  // "nuevo" | "nuevo_tipo" | "adjuntar" | null (sin decidir aún)
   const [modoImport,   setModoImport]   = useState(null);
   // id del pedido al que adjuntar (si modoImport === "adjuntar")
   const [adjuntarA,    setAdjuntarA]    = useState(null);
+  // almacen | proveedor — elegido al crear pedido nuevo (manual o via import)
+  const [tipoOrigenImport,     setTipoOrigenImport]     = useState(null);
+  // modal de elección antes de crear pedido vacío manual
+  const [nuevoPedidoTipoModal, setNuevoPedidoTipoModal] = useState(false);
   // { file, almacen } — cuando está abierto el ExcelConfigurador
   const [configurador, setConfigurador] = useState(null);
   // { pedido } — modal de notificaciones post-confirmación
@@ -2506,6 +2266,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
       almacen_nombre: parsed.almacen.nombre,
       estado:         "reservado",
       fecha_pedido:   new Date().toISOString().slice(0, 10),
+      tipo_origen:    tipoOrigenImport || "almacen",
       vehiculo_id:    vehiculoDefault ? String(vehiculoDefault.id) : null,
       lineas:         nuevasLineas,
       creado_por_id:     sesion?.user?.id ?? null,
@@ -2588,13 +2349,14 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
   };
 
   /* ── Crear pedido vacío (a mano) y abrirlo para añadir artículos ─────── */
-  const crearPedidoVacio = async () => {
+  const crearPedidoConTipo = async (tipoOrigen) => {
     const base = {
       codigo: siguienteCodigo(pedidos),
       nombre: "",
       fecha_pedido: new Date().toISOString().slice(0, 10),
       estado: "reservado",
       almacen_id: almacenes?.[0]?.id ?? undefined,
+      tipo_origen: tipoOrigen || "almacen",
       lineas: [],
       _tipo: "pedido",
     };
@@ -2608,6 +2370,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
     setPedidos(prev => [nuevo, ...prev]);
     setPedidoSel(nuevo);
   };
+  const crearPedidoVacio = () => setNuevoPedidoTipoModal(true);
 
   /* ── Agrupar materiales para el wizard ──────────────────────────────── */
   const grouped = useMemo(() => {
@@ -2901,7 +2664,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
                 <p style={{ fontSize:14, color:C.sub, marginBottom:6 }}>
                   {L("¿Qué quieres hacer con estos materiales?","What do you want to do with these materials?")}
                 </p>
-                <button onClick={() => setModoImport("nuevo")}
+                <button onClick={() => { setTipoOrigenImport(null); setModoImport("nuevo_tipo"); }}
                   style={{ padding:"16px 20px", borderRadius:12, border:`1.5px solid ${C.brand}`,
                     background:C.brandSoft, color:C.brand, cursor:"pointer", fontFamily:"inherit",
                     fontSize:14, fontWeight:600, textAlign:"left", display:"flex", alignItems:"center", gap:12 }}>
@@ -2927,6 +2690,38 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
                     </div>
                   </button>
                 )}
+              </div>
+            ) : modoImport === "nuevo_tipo" ? (
+              <div style={{ flex:1, display:"flex", flexDirection:"column", justifyContent:"center", padding:"28px 32px", gap:16 }}>
+                <p style={{ fontSize:14, color:C.sub, marginBottom:6 }}>
+                  {L("¿De dónde viene el material de este pedido?","Where does this order's material come from?")}
+                </p>
+                <button onClick={() => { setTipoOrigenImport("almacen"); setModoImport("nuevo"); }}
+                  style={{ padding:"16px 20px", borderRadius:12, border:`1.5px solid ${C.brand}`,
+                    background: tipoOrigenImport === "almacen" ? C.brandSoft : "transparent",
+                    color:C.brand, cursor:"pointer", fontFamily:"inherit",
+                    fontSize:14, fontWeight:600, textAlign:"left", display:"flex", alignItems:"center", gap:12 }}>
+                  <Warehouse size={18}/>
+                  <div>
+                    <div>{L("Del almacén propio","From own warehouse")}</div>
+                    <div style={{ fontSize:12, fontWeight:400, color:C.sub, marginTop:2 }}>
+                      {L("El stock se comprueba y reserva en el almacén.","Stock is checked and reserved in the warehouse.")}
+                    </div>
+                  </div>
+                </button>
+                <button onClick={() => { setTipoOrigenImport("proveedor"); setModoImport("nuevo"); }}
+                  style={{ padding:"16px 20px", borderRadius:12, border:`1.5px solid ${C.strong}`,
+                    background: tipoOrigenImport === "proveedor" ? "#f3e8ff" : C.s2,
+                    color: "#7c3aed", cursor:"pointer", fontFamily:"inherit",
+                    fontSize:14, fontWeight:600, textAlign:"left", display:"flex", alignItems:"center", gap:12 }}>
+                  <ArrowRight size={18}/>
+                  <div>
+                    <div>{L("De proveedor externo","From external supplier")}</div>
+                    <div style={{ fontSize:12, fontWeight:400, color:C.sub, marginTop:2 }}>
+                      {L("Todo va a la cesta de compra. No se toca el almacén.","Everything goes to the cart. Warehouse stock is not affected.")}
+                    </div>
+                  </div>
+                </button>
               </div>
             ) : modoImport === "adjuntar" && !adjuntarA ? (
               // Paso 0b: seleccionar pedido
@@ -3052,6 +2847,55 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
           companyId={notifModal.companyId}
           onClose={() => setNotifModal(null)}
         />
+      )}
+
+      {/* Modal: elegir origen al crear pedido vacío manual */}
+      {nuevoPedidoTipoModal && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)", zIndex:500,
+          display:"grid", placeItems:"center", padding:16 }}
+          onClick={() => setNuevoPedidoTipoModal(false)}>
+          <div style={{ background:C.surface, borderRadius:16, padding:"28px 28px 22px",
+            maxWidth:420, width:"100%", boxShadow:"0 20px 60px #0004",
+            display:"flex", flexDirection:"column", gap:14 }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ fontWeight:700, fontSize:16, color:C.ink }}>
+              {L("¿De dónde viene el material?","Where does the material come from?")}
+            </div>
+            <div style={{ fontSize:13, color:C.sub }}>
+              {L("Elige el origen del pedido que vas a crear.","Choose the source for the new order.")}
+            </div>
+            <button onClick={() => { setNuevoPedidoTipoModal(false); crearPedidoConTipo("almacen"); }}
+              style={{ padding:"14px 18px", borderRadius:12, border:`1.5px solid ${C.brand}`,
+                background:C.brandSoft, color:C.brand, cursor:"pointer", fontFamily:"inherit",
+                fontSize:14, fontWeight:600, textAlign:"left", display:"flex", alignItems:"center", gap:12 }}>
+              <Warehouse size={18}/>
+              <div>
+                <div>{L("Almacén propio","Own warehouse")}</div>
+                <div style={{ fontSize:12, fontWeight:400, color:C.sub, marginTop:2 }}>
+                  {L("Verifica y reserva stock del almacén.","Checks and reserves warehouse stock.")}
+                </div>
+              </div>
+            </button>
+            <button onClick={() => { setNuevoPedidoTipoModal(false); crearPedidoConTipo("proveedor"); }}
+              style={{ padding:"14px 18px", borderRadius:12, border:`1.5px solid ${C.strong}`,
+                background:C.s2, color:"#7c3aed", cursor:"pointer", fontFamily:"inherit",
+                fontSize:14, fontWeight:600, textAlign:"left", display:"flex", alignItems:"center", gap:12 }}>
+              <ArrowRight size={18}/>
+              <div>
+                <div>{L("Proveedor externo","External supplier")}</div>
+                <div style={{ fontSize:12, fontWeight:400, color:C.sub, marginTop:2 }}>
+                  {L("Todo va a la cesta. Sin impacto en el almacén.","Everything to the cart. No warehouse impact.")}
+                </div>
+              </div>
+            </button>
+            <button onClick={() => setNuevoPedidoTipoModal(false)}
+              style={{ alignSelf:"flex-end", padding:"7px 16px", borderRadius:8,
+                border:`1px solid ${C.strong}`, background:"transparent", color:C.sub,
+                fontSize:13, cursor:"pointer", fontFamily:"inherit", marginTop:4 }}>
+              {L("Cancelar","Cancel")}
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
