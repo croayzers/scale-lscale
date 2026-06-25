@@ -1,6 +1,6 @@
 // Pantalla dividida de logística de eventos.
 // Se muestra dentro del detalle de un pedido cuando tipo_pedido === 'evento'.
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { analizarDisponibilidadEvento, calcularMargenPedido, construirLineasSubalquiler } from './lib/stockEventos.js';
 
 const fmt = (n, dec = 2) => n != null ? Number(n).toFixed(dec) : '—';
@@ -42,7 +42,8 @@ export default function PantallaEventoLogistica({
   onGuardarSubalquiler,
   onCerrar,
 }) {
-  const analisis = analizarDisponibilidadEvento({
+  // Análisis base: consulta stock del almacén para cada línea.
+  const analisis = useMemo(() => analizarDisponibilidadEvento({
     lineas:      pedido.lineas || [],
     materiales,
     reservas,
@@ -52,22 +53,32 @@ export default function PantallaEventoLogistica({
     fechaInicio: pedido.fecha_evento_inicio,
     fechaFin:    pedido.fecha_evento_fin,
     pedidoId:    pedido.id,
-  });
+  }), [pedido, materiales, reservas, proveedores, correlaciones, proveedor_items]);
 
-  const hayFaltante = analisis.some(i => i.faltante > 0);
-  const [opcion, setOpcion] = useState(hayFaltante ? 'mixto' : 'solo_almacen');
+  const hayFaltanteBase = analisis.some(i => i.faltante > 0);
+  const [opcion, setOpcion] = useState(hayFaltanteBase ? 'mixto' : 'solo_almacen');
   const [enviando, setEnviando] = useState(false);
 
-  const { costeTotal, margenPct } = calcularMargenPedido(analisis, pedido.pvp_total ?? null);
+  const esSoloProveedor = opcion === 'subalquiler_integro';
+
+  // Análisis efectivo: cuando la línea tiene proveedor asignado O el modo es Solo Proveedor,
+  // no se usa stock del almacén — todo se trata como faltante (a pedir al proveedor).
+  const analisisEfectivo = useMemo(() => analisis.map(item => {
+    const cantidad = Number(item.linea.cantidad) || 0;
+    const esProveedorForzado = esSoloProveedor || Boolean(item.linea.proveedor_id);
+    if (!esProveedorForzado) return item;
+    return { ...item, disponible: 0, faltante: cantidad };
+  }), [analisis, esSoloProveedor]);
+
+  const hayFaltante = analisisEfectivo.some(i => i.faltante > 0);
+  const { costeTotal, margenPct } = calcularMargenPedido(analisisEfectivo, pedido.pvp_total ?? null);
 
   async function handleEmitir() {
     setEnviando(true);
-    const lineas = construirLineasSubalquiler(analisis, opcion);
+    const lineas = construirLineasSubalquiler(analisisEfectivo, opcion);
     await onGuardarSubalquiler?.(lineas);
     setEnviando(false);
   }
-
-  const esSoloProveedor = opcion === 'subalquiler_integro';
 
   return (
     <div style={{ position:'fixed', inset:0, zIndex:500, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,.5)' }}>
@@ -147,7 +158,7 @@ export default function PantallaEventoLogistica({
                 </tr>
               </thead>
               <tbody>
-                {analisis.map((item, i) => {
+                {analisisEfectivo.map((item, i) => {
                   const bloqueProp = item.bloques.find(b => b.tipo === 'propio');
                   const bloqueSub  = item.bloques.find(b => b.tipo === 'subalquiler');
                   const costeItem  = item.bloques.reduce((s, b) => s + (b.coste_total ?? 0), 0);

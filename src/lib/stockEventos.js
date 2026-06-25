@@ -123,7 +123,7 @@ export function construirLineasSubalquiler(analisis, opcionLogistica = 'mixto') 
         cantidad:        Number(item.linea.cantidad) || 0,
         cantidad_propia: cantPropia,
         cantidad_sub:    cantSub,
-        proveedor_id:    bloqueSub?.proveedor_id ?? null,
+        proveedor_id:    bloqueSub?.proveedor_id ?? item.linea.proveedor_id ?? null,
         coste_sub:       bloqueSub?.coste_unitario ?? null,
         coste_total_sub: bloqueSub?.coste_total    ?? null,
         opcion_logistica: opcionLogistica,
