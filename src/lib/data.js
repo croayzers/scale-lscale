@@ -666,7 +666,8 @@ export async function cargarItemsDeProveedor(proveedorId) {
 // Reemplaza el catálogo del proveedor por el del Excel recién importado
 // (borra el anterior y vuelve a insertar; un proveedor = un catálogo vigente).
 export async function reemplazarItemsProveedor(proveedorId, items, companyId) {
-  await lsc().from("proveedor_items").delete().eq("proveedor_id", proveedorId);
+  const { error: delErr } = await lsc().from("proveedor_items").delete().eq("proveedor_id", proveedorId);
+  if (delErr) throw delErr;
   const num = (v) => (v === 0 || v) ? (Number(String(v).replace(",", ".")) || null) : null;
   const rows = (items || []).filter(i => (i.nombre || "").trim()).map(i => ({
     company_id: companyId, proveedor_id: proveedorId,

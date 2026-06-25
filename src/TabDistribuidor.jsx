@@ -326,7 +326,7 @@ function CorrelacionClic({ materiales, proveedores, itemsByProv, cor, onGuardarM
                 const vis = q ? items.filter(it => norm(it.nombre).includes(q) || norm(it.referencia||"").includes(q)) : items;
                 const sel = pending[p.id];
                 return (
-                  <div key={p.id} style={{ width:240, minWidth:240, display:"flex", flexDirection:"column", maxHeight:"100%", border:`1px solid ${C.line}`, borderRadius:12, overflow:"hidden", background:C.surface }}>
+                  <div key={p.id} style={{ width:312, minWidth:312, display:"flex", flexDirection:"column", maxHeight:"100%", border:`1px solid ${C.line}`, borderRadius:12, overflow:"hidden", background:C.surface }}>
                     <div style={{ padding:"9px 12px", background:p.color||C.brand, color:"#fff", fontSize:13, fontWeight:700, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
                       <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.nombre}</span>
                       <span style={{ fontSize:11, opacity:.85 }}>{items.length}</span>
@@ -748,7 +748,7 @@ export default function TabDistribuidor({ empresa, materiales = [], modo }) {
       {wizardProv != null && proveedores.length>0 && (
         <WizardImportCatalogo proveedores={proveedores} provIdInicial={wizardProv}
           onGuardarCatalogo={onGuardarCatalogo} onGuardarPlantilla={onGuardarPlantilla}
-          onCerrar={()=>setWizardProv(null)}/>
+          onCerrar={()=>{ setWizardProv(null); recargar(); }}/>
       )}
     </div>
   );

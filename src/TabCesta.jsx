@@ -84,6 +84,8 @@ function ConstructorColumnas({ cols, onChange }) {
 export default function TabCesta({ cesta, setCesta, materiales, setMateriales, almacenes = [], modo, empresa, sesion, colsIniciales, onGuardarCols, onNotificarEvento, onIrProveedores, L }) {
   const [comprando, setComprando] = useState(false);
   const [comprado,  setComprado]  = useState(false);
+  const [modalCostes, setModalCostes]   = useState(false);  // pedir coste antes de comprar
+  const [costesManual, setCostesManual] = useState({});     // key(item) -> string
   const [cols,      setCols]      = useState(() => colsIniciales || cargarCols());
   const [mostrarConstructor, setMostrarConstructor] = useState(false);
   const [colapsados, setColapsados] = useState(() => new Set());
@@ -222,13 +224,33 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
       .sort((a, b) => (a.aid == null ? 1 : b.aid == null ? -1 : a.nombre.localeCompare(b.nombre)));
   })();
 
-  const comprar = async () => {
+  // Clave única por item para el mapa de costes manuales.
+  const keyItem = (item) => item.material_id != null ? `id_${item.material_id}` : `n_${item.nombre}`;
+
+  // Antes de comprar, detecta items sin precio y pide el coste si faltan.
+  const iniciarCompra = () => {
     if (!cesta.length) return;
     if (sinAlmacen.length) {
       setAvisoAlmacen(`Asigna almacén a ${sinAlmacen.length} material${sinAlmacen.length === 1 ? "" : "es"} antes de comprar.`);
       setTimeout(() => setAvisoAlmacen(null), 4000);
       return;
     }
+    const sinCoste = cesta.filter(item => {
+      const mat = buscarMaterial(item);
+      return !(Number(mat?.precio_coste) > 0);
+    });
+    if (sinCoste.length > 0) {
+      const init = {};
+      for (const item of sinCoste) init[keyItem(item)] = "";
+      setCostesManual(init);
+      setModalCostes(true);
+    } else {
+      comprar({});
+    }
+  };
+
+  const comprar = async (costesExtra = {}) => {
+    if (!cesta.length) return;
     setComprando(true);
     try {
       const updates = [];
@@ -256,6 +278,10 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
         const itemsCompra = cesta.map(item => {
           const mat = buscarMaterial(item);
           const aid = item.almacen_id ?? mat?.almacen_id ?? null;
+          const costeManual = costesExtra[keyItem(item)];
+          const precio_coste = costeManual !== undefined && costeManual !== ""
+            ? Number(costeManual)
+            : (mat?.precio_coste ?? null);
           return {
             nombre:       item.nombre,
             cantidad:     item.cantidad,
@@ -263,7 +289,7 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
             material_id:  mat?.id ?? item.material_id ?? null,
             almacen_id:   aid,
             almacen_nombre: nombreAlmacen(aid),
-            precio_coste: mat?.precio_coste ?? null,
+            precio_coste,
           };
         });
         await registrarCompra(itemsCompra, empresa?.id, userEmail, modo);
@@ -280,6 +306,7 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
       console.error("[TabCesta] comprar:", e);
     } finally {
       setComprando(false);
+      setModalCostes(false);
     }
   };
 
@@ -867,7 +894,7 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
             color:C.danger, fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
           <Trash2 size={13}/>Vaciar
         </button>
-        <button onClick={comprar} disabled={comprando || !cesta.length || sinAlmacen.length > 0}
+        <button onClick={iniciarCompra} disabled={comprando || !cesta.length || sinAlmacen.length > 0}
           title={sinAlmacen.length > 0 ? "Asigna almacén a todos los materiales" : ""}
           style={{ display:"flex", alignItems:"center", gap:7, padding:"9px 20px",
             borderRadius:999, border:"none", fontFamily:"inherit",
@@ -1030,6 +1057,62 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
       </div>
 
       {ModalAnyadirMaterial}
+
+      {/* Modal: pedir coste de items sin precio antes de comprar */}
+      {modalCostes && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.55)", zIndex:900,
+          display:"grid", placeItems:"center", padding:16 }} onClick={() => setModalCostes(false)}>
+          <div style={{ background:C.surface, borderRadius:16, width:"100%", maxWidth:440,
+            boxShadow:"0 20px 60px #0004" }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding:"14px 20px", borderBottom:`1px solid ${C.line}`,
+              display:"flex", alignItems:"center", gap:10 }}>
+              <Package size={17} color={C.brand}/>
+              <span style={{ fontWeight:700, fontSize:15, flex:1 }}>Coste de compra</span>
+              <button onClick={() => setModalCostes(false)}
+                style={{ background:"none", border:"none", cursor:"pointer", color:C.sub }}><X size={17}/></button>
+            </div>
+            <div style={{ padding:"16px 20px", display:"flex", flexDirection:"column", gap:12 }}>
+              <p style={{ fontSize:13, color:C.sub, margin:0 }}>
+                Indica el coste por unidad de los artículos sin precio asignado. Solo se usa para registrar esta compra.
+              </p>
+              {cesta.filter(item => !(Number(buscarMaterial(item)?.precio_coste) > 0)).map((item, idx) => (
+                <div key={idx} style={{ display:"flex", alignItems:"center", gap:12 }}>
+                  <div style={{ flex:1, fontSize:13.5, fontWeight:600, color:C.ink, minWidth:0,
+                    whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis" }}>
+                    {item.nombre}
+                    <span style={{ fontSize:11, color:C.dim, fontWeight:400, marginLeft:6 }}>× {item.cantidad}</span>
+                  </div>
+                  <div style={{ display:"flex", alignItems:"center", gap:4, flexShrink:0 }}>
+                    <input type="number" min={0} step={0.01} placeholder="0,00"
+                      value={costesManual[keyItem(item)] ?? ""}
+                      onChange={e => setCostesManual(prev => ({ ...prev, [keyItem(item)]: e.target.value }))}
+                      style={{ width:90, padding:"7px 10px", borderRadius:8,
+                        border:`1px solid ${C.strong}`, background:C.s2,
+                        color:C.ink, fontSize:14, fontFamily:"inherit", outline:"none",
+                        textAlign:"right" }}/>
+                    <span style={{ fontSize:13, color:C.sub }}>€/ud</span>
+                  </div>
+                </div>
+              ))}
+              <div style={{ display:"flex", gap:8, justifyContent:"flex-end", marginTop:4 }}>
+                <button onClick={() => setModalCostes(false)}
+                  style={{ padding:"8px 16px", borderRadius:8, border:`1px solid ${C.strong}`,
+                    background:"transparent", color:C.sub, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+                  Cancelar
+                </button>
+                <button onClick={() => comprar(costesManual)} disabled={comprando}
+                  style={{ padding:"8px 20px", borderRadius:8, border:"none",
+                    background:C.ok, color:"#fff", fontWeight:700, fontSize:13,
+                    cursor:"pointer", fontFamily:"inherit",
+                    display:"flex", alignItems:"center", gap:6 }}>
+                  {comprando ? <Loader size={13} className="spin"/> : <Package size={13}/>}
+                  Confirmar compra
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal vista previa del pedido al proveedor */}
       {showPreview && hayProveedor && (

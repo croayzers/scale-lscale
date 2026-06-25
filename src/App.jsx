@@ -140,7 +140,7 @@ function SinConfig({ empresa, onDone, L }) {
 export default function App() {
   const [lang,  setLang]  = useState(() => localStorage.getItem("scale.lang")  || "es");
   const [tema,  setTema]  = useState(() => localStorage.getItem("scale.theme") || "light");
-  const [tab,   setTab]   = useState("almacen");
+  const [tab,   setTab]   = useState(() => localStorage.getItem("lscale.tab") || "almacen");
   const [planningFecha, setPlanningFecha] = useState(null);
   const [etiquetaPedido, setEtiquetaPedido] = useState(null); // pedido preseleccionado al abrir Etiquetas desde un pedido
   const [carga, setCarga] = useState(true);
@@ -415,6 +415,8 @@ export default function App() {
     }
   }, [modo, empresa?.id]);
 
+
+  useEffect(() => { localStorage.setItem("lscale.tab", tab); }, [tab]);
 
   useEffect(() => { document.documentElement.setAttribute("data-theme", tema); }, [tema]);
 
