@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { Plus, Trash2, Search, Upload, X, Check, Building2, Edit2, Save, Package, ArrowRight, Loader, RefreshCw, Star } from "lucide-react";
+import { Plus, Trash2, Search, Upload, X, Check, Building2, Edit2, Save, Package, ArrowRight, Loader, RefreshCw, Star, Download, ShoppingBag } from "lucide-react";
 import * as XLSX from "xlsx";
 import { C, Btn, Help } from "./lib/ui.jsx";
 import {
@@ -610,9 +610,368 @@ function PasoColumnas({ hojas, hojaIdx, onHoja, headerRow, setHeaderRow, headers
 }
 
 // ══════════════════════════════════════════════════════════════════
+// FichaProveedor — ficha detallada de un proveedor con selector
+// ══════════════════════════════════════════════════════════════════
+function FichaProveedor({ proveedores, itemsByProv, cor, pedidos = [], onEditarProv, onImportar }) {
+  const [provSelId, setProvSelId] = useState(() => proveedores[0]?.id ?? "");
+  const [editando,  setEditando]  = useState(false);
+  const [editData,  setEditData]  = useState({});
+  const [saving,    setSaving]    = useState(false);
+  const [seccion,   setSeccion]   = useState("catalogo");
+  const [buscar,    setBuscar]    = useState("");
+
+  const prov  = proveedores.find(p => String(p.id) === String(provSelId));
+  const dp    = prov?.datos || {};
+  const items = prov ? (itemsByProv[prov.id] || []) : [];
+  const margen = dp.margen_subalquiler != null ? Number(dp.margen_subalquiler) : null;
+
+  const midsCorrelados = useMemo(() => prov
+    ? Object.keys(cor).filter(mid => cor[mid]?.[prov.id])
+    : [], [prov, cor]);
+
+  const pedidosRel = useMemo(() => {
+    if (!prov) return [];
+    return pedidos.filter(p =>
+      (p.lineas || []).some(l =>
+        String(l._proveedor_id) === String(prov.id) ||
+        (l.material_id && cor[l.material_id]?.[prov.id])
+      )
+    );
+  }, [prov, pedidos, cor]);
+
+  const itemsFiltrados = useMemo(() => {
+    const q = norm(buscar);
+    return q ? items.filter(it => norm(it.nombre).includes(q) || norm(it.referencia || "").includes(q)) : items;
+  }, [items, buscar]);
+
+  function descargarExcel() {
+    if (!prov || !items.length) return;
+    const filas = items.map(it => ({
+      Nombre: it.nombre || "",
+      "Categoría": it.categoria || "",
+      Referencia: it.referencia || "",
+      "Coste (€)": it.coste != null ? Number(it.coste) : "",
+      "Descuento %": it.descuento != null ? Number(it.descuento) : "",
+      ...(margen != null && it.coste != null ? { [`Precio +${margen}% (€)`]: (Number(it.coste) * (1 + margen / 100)).toFixed(2) } : {}),
+    }));
+    const ws = XLSX.utils.json_to_sheet(filas);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Catálogo");
+    XLSX.writeFile(wb, `catalogo_${(prov.nombre || "proveedor").replace(/\s+/g, "_")}.xlsx`);
+  }
+
+  function iniciarEdicion() {
+    setEditData({ nombre: prov.nombre, contacto: prov.contacto || "", datos: { ...dp } });
+    setEditando(true);
+  }
+
+  async function guardar() {
+    setSaving(true);
+    try { await onEditarProv(prov.id, editData); setEditando(false); }
+    catch (e) { alert("Error guardando: " + (e?.message || e)); }
+    finally { setSaving(false); }
+  }
+
+  if (proveedores.length === 0) {
+    return (
+      <div style={{ flex:1, display:"grid", placeItems:"center", color:C.sub }}>
+        <div style={{ textAlign:"center", maxWidth:340 }}>
+          <Building2 size={36} style={{ opacity:.3, marginBottom:12 }}/>
+          <p style={{ fontSize:14 }}>Sin proveedores. Crea uno primero en la pestaña <strong>Proveedores</strong>.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ flex:1, overflowY:"auto", padding:"20px 28px" }}>
+
+      {/* ── Selector de proveedor ── */}
+      <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:24, flexWrap:"wrap" }}>
+        <label style={{ fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.5, whiteSpace:"nowrap" }}>PROVEEDOR</label>
+        <select value={provSelId} onChange={e => { setProvSelId(e.target.value); setEditando(false); setBuscar(""); }}
+          style={{ flex:"1 1 220px", maxWidth:320, padding:"9px 12px", border:`1px solid ${C.strong}`, borderRadius:10, fontSize:15, fontFamily:"inherit", background:C.s2, color:C.ink, fontWeight:600, cursor:"pointer" }}>
+          {proveedores.map(p => (
+            <option key={p.id} value={p.id}>{p.nombre}</option>
+          ))}
+        </select>
+        {prov && !editando && (
+          <>
+            <button onClick={iniciarEdicion}
+              style={{ display:"flex", alignItems:"center", gap:5, padding:"8px 14px", borderRadius:9, border:`1px solid ${C.strong}`, background:"transparent", color:C.ink, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+              <Edit2 size={13}/> Editar datos
+            </button>
+            <button onClick={() => onImportar(prov.id)}
+              style={{ display:"flex", alignItems:"center", gap:5, padding:"8px 14px", borderRadius:9, border:`1px solid ${C.brand}`, background:C.brandSoft, color:C.brand, fontSize:13, fontWeight:600, cursor:"pointer", fontFamily:"inherit" }}>
+              <Upload size={13}/> {items.length ? "Reimportar" : "Importar"} catálogo
+            </button>
+          </>
+        )}
+      </div>
+
+      {prov && (
+        <div style={{ display:"grid", gridTemplateColumns:"280px 1fr", gap:20, alignItems:"start" }}>
+
+          {/* ── Columna izquierda: ficha ── */}
+          <div style={{ display:"flex", flexDirection:"column", gap:12 }}>
+
+            {/* Card info / edición */}
+            <div style={{ background:C.surface, border:`1px solid ${C.line}`, borderRadius:14, padding:"18px 20px", borderLeft:`4px solid ${prov.color || C.brand}` }}>
+              {editando ? (
+                <div style={{ display:"flex", flexDirection:"column", gap:10 }}>
+                  <div style={{ fontWeight:700, fontSize:13.5, color:C.ink, marginBottom:2 }}>Editar proveedor</div>
+                  <div>
+                    <label style={{ fontSize:10.5, color:C.dim, display:"block", marginBottom:3 }}>Nombre *</label>
+                    <input value={editData.nombre || ""} onChange={e => setEditData(d => ({ ...d, nombre:e.target.value }))}
+                      style={{ width:"100%", padding:"7px 9px", border:`1px solid ${C.strong}`, borderRadius:8, fontSize:13.5, fontFamily:"inherit", background:C.bg, color:C.ink, boxSizing:"border-box" }}/>
+                  </div>
+                  {/* Margen subalquiler */}
+                  <div>
+                    <label style={{ fontSize:10.5, color:C.dim, display:"block", marginBottom:3 }}>Margen de subalquiler (%)</label>
+                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                      <input type="number" min={0} max={999} step={0.5}
+                        value={editData.datos?.margen_subalquiler ?? ""}
+                        placeholder="0"
+                        onChange={e => setEditData(d => ({ ...d, datos:{ ...(d.datos||{}), margen_subalquiler: e.target.value === "" ? null : Number(e.target.value) } }))}
+                        style={{ width:72, padding:"7px 9px", border:`1px solid ${C.strong}`, borderRadius:8, fontSize:14, fontFamily:"inherit", background:C.bg, color:C.ink, textAlign:"right" }}/>
+                      <span style={{ fontSize:14, color:C.sub, fontWeight:600 }}>%</span>
+                    </div>
+                    <div style={{ fontSize:10.5, color:C.dim, marginTop:3 }}>
+                      Ej: coste 10€ + 20% → precio realquiler 12€
+                    </div>
+                  </div>
+                  {DATOS_PROV.map(({ key, label, ph }) => (
+                    <div key={key}>
+                      <label style={{ fontSize:10.5, color:C.dim, display:"block", marginBottom:3 }}>{label}</label>
+                      <input value={editData.datos?.[key] || ""}
+                        onChange={e => setEditData(d => ({ ...d, datos:{ ...(d.datos||{}), [key]: e.target.value } }))}
+                        placeholder={ph}
+                        style={{ width:"100%", padding:"7px 9px", border:`1px solid ${C.strong}`, borderRadius:8, fontSize:12.5, fontFamily:"inherit", background:C.bg, color:C.ink, boxSizing:"border-box" }}/>
+                    </div>
+                  ))}
+                  <div style={{ display:"flex", gap:8, marginTop:6, justifyContent:"flex-end" }}>
+                    <button onClick={() => setEditando(false)}
+                      style={{ padding:"6px 14px", borderRadius:8, border:`1px solid ${C.strong}`, background:"transparent", color:C.sub, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+                      Cancelar
+                    </button>
+                    <button onClick={guardar} disabled={saving || !editData.nombre?.trim()}
+                      style={{ display:"flex", alignItems:"center", gap:5, padding:"6px 14px", borderRadius:8, border:"none",
+                        background: saving ? "#93c5fd" : C.brand, color:"#fff", fontSize:13, fontWeight:700,
+                        cursor: saving ? "default" : "pointer", fontFamily:"inherit" }}>
+                      {saving ? <Loader size={13} className="spin"/> : <Save size={13}/>} Guardar
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize:17, fontWeight:800, color:C.ink, marginBottom:12 }}>{prov.nombre}</div>
+
+                  {/* Margen badge */}
+                  <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14, padding:"10px 14px", background:"#f0fdf4", borderRadius:10, border:"1px solid #bbf7d0" }}>
+                    <span style={{ fontSize:26, fontWeight:900, color:"#16a34a", minWidth:50 }}>
+                      {margen != null ? `${margen}%` : "—"}
+                    </span>
+                    <div>
+                      <div style={{ fontSize:10.5, fontWeight:700, color:"#16a34a", letterSpacing:.5, textTransform:"uppercase" }}>
+                        Margen subalquiler
+                      </div>
+                      {margen != null && items.length > 0 && items[0]?.coste != null && (
+                        <div style={{ fontSize:11, color:"#16a34a", marginTop:1, opacity:.8 }}>
+                          {Number(items[0].coste).toFixed(2)}€ → {(Number(items[0].coste) * (1 + margen / 100)).toFixed(2)}€
+                        </div>
+                      )}
+                      {margen == null && (
+                        <div style={{ fontSize:11, color:C.dim, marginTop:1 }}>Sin margen configurado</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Datos de contacto */}
+                  <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+                    {[
+                      { l:"Contacto",  v:prov.contacto },
+                      { l:"CIF",       v:dp.cif        },
+                      { l:"Teléfono",  v:dp.telefono   },
+                      { l:"Email",     v:dp.email      },
+                      { l:"Persona",   v:dp.persona    },
+                      { l:"Dirección", v:dp.direccion  },
+                      { l:"Web",       v:dp.web        },
+                    ].filter(f => f.v).map(f => (
+                      <div key={f.l} style={{ display:"flex", gap:8, fontSize:12.5 }}>
+                        <span style={{ color:C.sub, fontWeight:600, minWidth:68, flexShrink:0 }}>{f.l}</span>
+                        <span style={{ color:C.ink, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{f.v}</span>
+                      </div>
+                    ))}
+                    {!prov.contacto && !dp.cif && !dp.email && !dp.telefono && (
+                      <div style={{ fontSize:11.5, color:C.dim, fontStyle:"italic" }}>Sin datos de contacto.</div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Stats */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+              {[
+                { label:"Ítems catálogo",  val:items.length,            color:C.brand   },
+                { label:"Correlaciones",   val:midsCorrelados.length,   color:"#8b5cf6" },
+                { label:"Pedidos relac.",  val:pedidosRel.length,       color:"#f59e0b" },
+              ].map(s => (
+                <div key={s.label} style={{ background:C.surface, border:`1px solid ${C.line}`, borderRadius:10, padding:"10px 12px" }}>
+                  <div style={{ fontSize:20, fontWeight:800, color:s.color, lineHeight:1 }}>{s.val}</div>
+                  <div style={{ fontSize:10.5, color:C.sub, marginTop:3, fontWeight:600, textTransform:"uppercase", letterSpacing:.4 }}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Columna derecha: catálogo / historial ── */}
+          <div>
+            {/* Toggle catálogo / historial */}
+            <div style={{ display:"flex", gap:0, marginBottom:14, border:`1px solid ${C.line}`, borderRadius:10, overflow:"hidden", width:"fit-content" }}>
+              {[["catalogo", `Catálogo (${items.length})`], ["compras", `Historial (${pedidosRel.length})`]].map(([id, lbl]) => (
+                <button key={id} onClick={() => setSeccion(id)}
+                  style={{ padding:"8px 18px", border:"none", fontSize:13, fontWeight:seccion===id?700:400,
+                    cursor:"pointer", fontFamily:"inherit",
+                    background:seccion===id ? C.brand : C.s2,
+                    color:seccion===id ? "#fff" : C.sub }}>
+                  {lbl}
+                </button>
+              ))}
+            </div>
+
+            {/* ── Catálogo ── */}
+            {seccion === "catalogo" && (
+              <div>
+                <div style={{ display:"flex", gap:8, marginBottom:10, alignItems:"center" }}>
+                  <div style={{ position:"relative", flex:1 }}>
+                    <Search size={13} style={{ position:"absolute", left:9, top:"50%", transform:"translateY(-50%)", color:C.dim }}/>
+                    <input value={buscar} onChange={e => setBuscar(e.target.value)} placeholder="Buscar en catálogo…"
+                      style={{ width:"100%", padding:"7px 10px 7px 28px", border:`1px solid ${C.strong}`, borderRadius:8, fontSize:13, fontFamily:"inherit", background:C.bg, color:C.ink, boxSizing:"border-box" }}/>
+                  </div>
+                  <button onClick={descargarExcel} disabled={!items.length}
+                    style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 14px", borderRadius:8, border:"none",
+                      background: items.length ? "#16a34a" : C.s2, color: items.length ? "#fff" : C.dim,
+                      fontSize:13, fontWeight:600, cursor: items.length ? "pointer" : "not-allowed", fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                    <Download size={13}/> Descargar Excel
+                  </button>
+                </div>
+
+                {items.length === 0 ? (
+                  <div style={{ textAlign:"center", padding:"40px 20px", color:C.sub, border:`1px dashed ${C.line}`, borderRadius:12 }}>
+                    <Package size={28} style={{ opacity:.3, marginBottom:8 }}/>
+                    <p style={{ fontSize:13 }}>Sin catálogo importado todavía.</p>
+                    <p style={{ fontSize:12, marginTop:4, color:C.dim }}>Usa el botón "Importar catálogo" para cargar su Excel.</p>
+                  </div>
+                ) : (
+                  <div style={{ border:`1px solid ${C.line}`, borderRadius:12, overflow:"hidden" }}>
+                    <div style={{ maxHeight:460, overflowY:"auto" }}>
+                      <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12.5 }}>
+                        <thead style={{ position:"sticky", top:0, zIndex:1 }}>
+                          <tr style={{ background:C.s2, borderBottom:`1px solid ${C.line}` }}>
+                            {["Nombre","Categoría","Referencia","Coste",
+                              ...(margen != null ? [`Precio +${margen}%`] : []),
+                              "Dcto."].map((h, i) => (
+                              <th key={i} style={{ padding:"8px 10px", textAlign: i>=3?"right":"left",
+                                fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.4, textTransform:"uppercase", whiteSpace:"nowrap" }}>
+                                {h}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {itemsFiltrados.map((it, i) => (
+                            <tr key={it.id ?? i} style={{ borderBottom:`1px solid ${C.line}` }}
+                              onMouseEnter={e => e.currentTarget.style.background = C.s2}
+                              onMouseLeave={e => e.currentTarget.style.background = ""}>
+                              <td style={{ padding:"7px 10px", color:C.ink, fontWeight:500, maxWidth:200, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{it.nombre}</td>
+                              <td style={{ padding:"7px 10px", color:C.sub, maxWidth:110, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{it.categoria || "—"}</td>
+                              <td style={{ padding:"7px 10px", color:C.sub, fontFamily:"monospace", fontSize:11.5 }}>{it.referencia || "—"}</td>
+                              <td style={{ padding:"7px 10px", textAlign:"right", fontWeight:600, color:"#b45309", whiteSpace:"nowrap" }}>
+                                {it.coste != null ? `${Number(it.coste).toFixed(2)} €` : "—"}
+                              </td>
+                              {margen != null && (
+                                <td style={{ padding:"7px 10px", textAlign:"right", fontWeight:700, color:"#16a34a", whiteSpace:"nowrap" }}>
+                                  {it.coste != null ? `${(Number(it.coste) * (1 + margen / 100)).toFixed(2)} €` : "—"}
+                                </td>
+                              )}
+                              <td style={{ padding:"7px 10px", textAlign:"right", color:C.sub }}>
+                                {it.descuento != null ? `${it.descuento}%` : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                          {itemsFiltrados.length === 0 && (
+                            <tr><td colSpan={8} style={{ padding:"18px", textAlign:"center", color:C.dim, fontSize:12 }}>Sin resultados para "{buscar}"</td></tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div style={{ padding:"8px 12px", borderTop:`1px solid ${C.line}`, background:C.s2, fontSize:11.5, color:C.sub, display:"flex", justifyContent:"space-between" }}>
+                      <span>{itemsFiltrados.length} de {items.length} ítems</span>
+                      {buscar && <button onClick={() => setBuscar("")} style={{ background:"none", border:"none", cursor:"pointer", color:C.brand, fontSize:11.5, fontFamily:"inherit" }}>✕ Limpiar</button>}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Historial de compras / pedidos ── */}
+            {seccion === "compras" && (
+              <div>
+                {pedidosRel.length === 0 ? (
+                  <div style={{ textAlign:"center", padding:"40px 20px", color:C.sub, border:`1px dashed ${C.line}`, borderRadius:12 }}>
+                    <ShoppingBag size={28} style={{ opacity:.3, marginBottom:8 }}/>
+                    <p style={{ fontSize:13 }}>Sin pedidos relacionados con este proveedor.</p>
+                    <p style={{ fontSize:12, marginTop:4, color:C.dim }}>
+                      Aparecerán aquí los pedidos cuyas líneas incluyan materiales correlacionados con este proveedor o subalquilados a través de él.
+                    </p>
+                  </div>
+                ) : (
+                  <div style={{ border:`1px solid ${C.line}`, borderRadius:12, overflow:"hidden" }}>
+                    <table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}>
+                      <thead>
+                        <tr style={{ background:C.s2, borderBottom:`1px solid ${C.line}` }}>
+                          {["Código","Cliente / Nombre","Fecha entrega","Estado","Líneas"].map((h, i) => (
+                            <th key={i} style={{ padding:"8px 10px", textAlign:"left", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.4, textTransform:"uppercase" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pedidosRel.map(p => (
+                          <tr key={p.id} style={{ borderBottom:`1px solid ${C.line}` }}
+                            onMouseEnter={e => e.currentTarget.style.background = C.s2}
+                            onMouseLeave={e => e.currentTarget.style.background = ""}>
+                            <td style={{ padding:"8px 10px", fontWeight:700, color:C.brand }}>{p.codigo || `#${p.id}`}</td>
+                            <td style={{ padding:"8px 10px", color:C.ink, maxWidth:180, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.nombre || "—"}</td>
+                            <td style={{ padding:"8px 10px", color:C.sub, whiteSpace:"nowrap" }}>{p.fecha_entrega || p.fecha_pedido || "—"}</td>
+                            <td style={{ padding:"8px 10px" }}>
+                              <span style={{ fontSize:11, fontWeight:700, borderRadius:999, padding:"2px 8px",
+                                background: p.estado==="confirmado" ? "#dcfce7" : p.estado==="entregado" ? "#dbeafe" : C.s2,
+                                color: p.estado==="confirmado" ? "#16a34a" : p.estado==="entregado" ? "#2563eb" : C.sub,
+                                textTransform:"capitalize" }}>
+                                {p.estado || "—"}
+                              </span>
+                            </td>
+                            <td style={{ padding:"8px 10px", color:C.sub }}>{(p.lineas||[]).length}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════
 // TabDistribuidor (Proveedores) — export default
 // ══════════════════════════════════════════════════════════════════
-export default function TabDistribuidor({ empresa, materiales = [], modo }) {
+export default function TabDistribuidor({ empresa, materiales = [], modo, pedidos = [] }) {
   const cid = empresa?.id ?? empresa?.company_id ?? empresa?.companyId;
   const esSupabase = modo === "supabase" && !!cid && cid !== "demo" && cid !== "local";
 
@@ -708,6 +1067,7 @@ export default function TabDistribuidor({ empresa, materiales = [], modo }) {
   const SUB_TABS = [
     { id:"correlacion", label:"Correlación" },
     { id:"proveedores", label:`Proveedores (${proveedores.length})` },
+    { id:"ficha",       label:"Ficha" },
   ];
 
   if (!esSupabase) {
@@ -738,6 +1098,10 @@ export default function TabDistribuidor({ empresa, materiales = [], modo }) {
       ) : subTab==="correlacion" ? (
         <CorrelacionClic materiales={materiales} proveedores={proveedores} itemsByProv={itemsByProv} cor={cor}
           onGuardarMaterial={onGuardarMaterial} onAbrirProveedores={()=>setSubTab("proveedores")}/>
+      ) : subTab==="ficha" ? (
+        <FichaProveedor
+          proveedores={proveedores} itemsByProv={itemsByProv} cor={cor} pedidos={pedidos}
+          onEditarProv={onEditarProv} onImportar={(id)=>{ setWizardProv(id); setSubTab("proveedores"); }}/>
       ) : (
         <div style={{ flex:1, overflowY:"auto" }}>
           <PanelProveedores proveedores={proveedores} itemsByProv={itemsByProv}
