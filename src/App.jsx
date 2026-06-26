@@ -161,6 +161,7 @@ export default function App() {
   const [chatUnread,        setChatUnread]        = useState(0);
   const [highlightedPedido, setHighlightedPedido] = useState(null);
   const [cesta,        setCesta]        = useState([]);
+  const [cestaPedidoAbierto, setCestaPedidoAbierto] = useState(null); // pedido_codigo a abrir en cesta
   const cestaCargadaRef = useRef(false); // evita que el primer guardado pise la cesta cargada
   const [toasts,       setToasts]       = useState([]);
   const [silenciados,  setSilenciados]  = useState(() => {
@@ -637,6 +638,7 @@ export default function App() {
             onNotificarStock={notificarStock}
             onAgregarCesta={agregarACesta}
             cesta={cesta}
+            onIrCesta={(codigo) => { setCestaPedidoAbierto(codigo ?? null); setTab("cesta"); }}
             guardarPlantillaConf={(almId, pl) => guardarPlantillaConf("pedconf", almId, pl)}
             cargarPlantillasConf={(almId) => cargarPlantillasConf("pedconf", almId)}
             onRegistrarVisto={async (pid) => {
@@ -665,7 +667,7 @@ export default function App() {
           {tab === "etiquetas" && <TabEtiquetas pedidos={pedidos} plantillas={plantillasEtiquetas} onGuardarPlantillas={guardarPlantillasEtiquetas}
             pedidoInicial={etiquetaPedido}
             onVolver={() => { setEtiquetaPedido(null); setTab("pedido"); }} L={L}/>}
-          {tab === "cesta"     && <TabCesta cesta={cesta} setCesta={setCesta} materiales={materiales} setMateriales={setMateriales} almacenes={almacenes} modo={modo} empresa={empresa} sesion={sesion} colsIniciales={cestaCols} onGuardarCols={guardarCestaCols} onNotificarEvento={notificarEvento} onIrProveedores={() => setTab("distribuidor")} L={L}/>}
+          {tab === "cesta"     && <TabCesta cesta={cesta} setCesta={setCesta} materiales={materiales} setMateriales={setMateriales} almacenes={almacenes} modo={modo} empresa={empresa} sesion={sesion} colsIniciales={cestaCols} onGuardarCols={guardarCestaCols} onNotificarEvento={notificarEvento} onIrProveedores={() => setTab("distribuidor")} pedidoInicial={cestaPedidoAbierto} onCestaMontada={() => setCestaPedidoAbierto(null)} L={L}/>}
           {tab === "distribuidor" && <TabDistribuidor empresa={empresa} modo={modo} materiales={materiales} pedidos={pedidos}/>}
           {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={puedeAdmin} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} portalUrl={import.meta.env?.VITE_PORTAL_URL || "http://localhost:3000"} L={L}/>}
         </div>

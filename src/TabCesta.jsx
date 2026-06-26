@@ -81,7 +81,7 @@ function ConstructorColumnas({ cols, onChange }) {
 }
 
 /* ─── TabCesta ────────────────────────────────────────────────────────────── */
-export default function TabCesta({ cesta, setCesta, materiales, setMateriales, almacenes = [], modo, empresa, sesion, colsIniciales, onGuardarCols, onNotificarEvento, onIrProveedores, L }) {
+export default function TabCesta({ cesta, setCesta, materiales, setMateriales, almacenes = [], modo, empresa, sesion, colsIniciales, onGuardarCols, onNotificarEvento, onIrProveedores, pedidoInicial = null, onCestaMontada, L }) {
   const [comprando, setComprando] = useState(false);
   const [comprado,  setComprado]  = useState(false);
   const [modalCostes, setModalCostes]   = useState(false);  // pedir coste antes de comprar
@@ -92,6 +92,19 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
   const [avisoAlmacen, setAvisoAlmacen] = useState(null);
   const [vistaGrupo, setVistaGrupo] = useState("almacen"); // "almacen" | "pedido"
   const [modalSelPedido, setModalSelPedido] = useState(null); // null | "pdf" | "excel"
+
+  // Cuando se llega desde un pedido, cambiar a vista pedido y expandir ese grupo.
+  useEffect(() => {
+    if (!pedidoInicial) return;
+    setVistaGrupo("pedido");
+    // Asegurar que el grupo está expandido (no colapsado).
+    setColapsados(prev => {
+      const next = new Set(prev);
+      next.delete(String(pedidoInicial));
+      return next;
+    });
+    onCestaMontada?.();
+  }, [pedidoInicial]); // eslint-disable-line
 
   // ── Modal añadir material ──────────────────────────────────────────────────
   const [modalAnyadir, setModalAnyadir] = useState(false);   // paso 1: elegir flujo

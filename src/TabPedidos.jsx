@@ -13,7 +13,7 @@ import * as XLSX from "xlsx";
 import {
   Upload, Loader, X, Check, AlertTriangle, Plus, Trash2,
   Warehouse, ArrowLeft, FileSpreadsheet, Pencil, ClipboardList,
-  ChevronRight, ArrowRight, Download, FileDown, Save, Bell, BellOff, Tag, Search,
+  ChevronRight, ArrowRight, Download, FileDown, Save, Bell, BellOff, Tag, Search, ShoppingCart,
 } from "lucide-react";
 import { useL } from "./lib/i18n.js";
 import { parsearExcelPedido } from "./lib/parseExcelPedido.js";
@@ -1087,7 +1087,7 @@ function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato
    DETALLE / EDICIÓN DE PEDIDO
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - DetallePedido
-function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, onEtiquetas, onAgregarCesta, cesta = [], onComprobarStock, rolesImport, empresaId, modo, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, reservas = [], L }) {
+function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, onEtiquetas, onAgregarCesta, cesta = [], onIrCesta, onComprobarStock, rolesImport, empresaId, modo, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, reservas = [], L }) {
   const DRAFT_KEY = empresaId && pedido?.id ? `lscale.pedidoDraft.${empresaId}.${pedido.id}` : null;
 
   const [exportModal, setExportModal] = useState(null); // null | "pdf" | "excel"
@@ -1377,21 +1377,30 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
               </Btn>
             </div>
           ) : (
-            <Btn onClick={() => {
-              if (yaEnCesta) { setConfCesta(true); return; }
-              onAgregarCesta((p.lineas || []).map(l => ({
-                nombre: l.nombre, cantidad: l.cantidad, faltante: l.cantidad,
-                material_id: l.material_id ?? null, almacen_id: l.almacen_id ?? null,
-                pedido_codigo: p.codigo || p.id,
-              })));
-            }} style={{ padding:"6px 14px", fontSize:13, gap:5,
-              background: yaEnCesta ? "#6d28d9" : "#8b5cf6", color:"#fff",
-              display:"flex", alignItems:"center" }}>
-              {yaEnCesta ? <Check size={13}/> : "🛒"}
-              {yaEnCesta
-                ? L("Añadido a la cesta ✓","Added to cart ✓")
-                : L("Enviar todo a la cesta","Send all to cart")}
-            </Btn>
+            <>
+              <Btn onClick={() => {
+                if (yaEnCesta) { setConfCesta(true); return; }
+                onAgregarCesta((p.lineas || []).map(l => ({
+                  nombre: l.nombre, cantidad: l.cantidad, faltante: l.cantidad,
+                  material_id: l.material_id ?? null, almacen_id: l.almacen_id ?? null,
+                  pedido_codigo: p.codigo || p.id,
+                })));
+              }} style={{ padding:"6px 14px", fontSize:13, gap:5,
+                background: yaEnCesta ? "#6d28d9" : "#8b5cf6", color:"#fff",
+                display:"flex", alignItems:"center" }}>
+                {yaEnCesta ? <Check size={13}/> : "🛒"}
+                {yaEnCesta
+                  ? L("Añadido a la cesta ✓","Added to cart ✓")
+                  : L("Enviar todo a la cesta","Send all to cart")}
+              </Btn>
+              {yaEnCesta && onIrCesta && (
+                <Btn onClick={() => onIrCesta(p.codigo || p.id)}
+                  style={{ padding:"6px 12px", fontSize:13, background:"#6d28d9", color:"#fff", display:"flex", alignItems:"center", gap:5 }}
+                  title={L("Ver en la cesta","Go to cart")}>
+                  <ShoppingCart size={14}/>
+                </Btn>
+              )}
+            </>
           )
         )}
         {p.tipo_pedido === "evento" && p.fecha_evento_inicio && p.fecha_evento_fin && (p.lineas || []).length > 0 && p.tipo_origen !== "proveedor" && (
@@ -2169,7 +2178,7 @@ function ModalNotificaciones({ pedido, companyId, onClose }) {
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - TabPedidos [export default]
-export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, onEtiquetas, onNotificarStock, onAgregarCesta, cesta = [], guardarPlantillaConf, cargarPlantillasConf, highlightedPedidoId, highlightedCategoria, puedeEditar, onNotificarEvento, reservas = [] }) {
+export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, onEtiquetas, onNotificarStock, onAgregarCesta, cesta = [], onIrCesta, guardarPlantillaConf, cargarPlantillasConf, highlightedPedidoId, highlightedCategoria, puedeEditar, onNotificarEvento, reservas = [] }) {
   const L = useL();
   const fileRef = useRef(null);
 
@@ -2475,6 +2484,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         onEtiquetas={onEtiquetas}
         onAgregarCesta={onAgregarCesta}
         cesta={cesta}
+        onIrCesta={onIrCesta}
         onComprobarStock={async () => {
           if (modo === "supabase") {
             const mats = await recargarMateriales();
