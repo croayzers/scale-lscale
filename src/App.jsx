@@ -636,6 +636,7 @@ export default function App() {
             onEtiquetas={(p) => { setEtiquetaPedido(p?.id ?? null); setTab("etiquetas"); }}
             onNotificarStock={notificarStock}
             onAgregarCesta={agregarACesta}
+            cesta={cesta}
             guardarPlantillaConf={(almId, pl) => guardarPlantillaConf("pedconf", almId, pl)}
             cargarPlantillasConf={(almId) => cargarPlantillasConf("pedconf", almId)}
             onRegistrarVisto={async (pid) => {

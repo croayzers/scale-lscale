@@ -1,7 +1,7 @@
 // MARK: - TabCesta — Cesta de compra para reposición de almacén
 import React, { useState, useCallback, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
-import { ShoppingCart, Trash2, Plus, Minus, Download, Check, Loader, Package, ChevronDown, ChevronRight, AlertTriangle, FileText, Warehouse, Building2, X, Eye, PackagePlus, ArrowDownToLine, Search } from "lucide-react";
+import { ShoppingCart, Trash2, Plus, Minus, Download, Check, Loader, Package, ChevronDown, ChevronRight, AlertTriangle, FileText, Warehouse, Building2, X, Eye, PackagePlus, ArrowDownToLine, Search, Layers, ClipboardList } from "lucide-react";
 import { actualizarMaterial, cargarProveedores, cargarCorrelacionesDeMateriales } from "./lib/data.js";
 import { registrarCompra } from "./lib/dataRecuentos.js";
 
@@ -90,6 +90,8 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
   const [mostrarConstructor, setMostrarConstructor] = useState(false);
   const [colapsados, setColapsados] = useState(() => new Set());
   const [avisoAlmacen, setAvisoAlmacen] = useState(null);
+  const [vistaGrupo, setVistaGrupo] = useState("almacen"); // "almacen" | "pedido"
+  const [modalSelPedido, setModalSelPedido] = useState(null); // null | "pdf" | "excel"
 
   // ── Modal añadir material ──────────────────────────────────────────────────
   const [modalAnyadir, setModalAnyadir] = useState(false);   // paso 1: elegir flujo
@@ -167,13 +169,13 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
     return corrPorMat[item.material_id]?.[pid] || null;
   }, [provDeItem, corrPorMat]);
 
-  const toggleGrupo = (aid) => setColapsados(prev => {
+  const toggleGrupo = (key) => setColapsados(prev => {
     const next = new Set(prev);
-    const key = aid == null ? "__null__" : aid;
-    next.has(key) ? next.delete(key) : next.add(key);
+    const k = String(key == null ? "__null__" : key);
+    next.has(k) ? next.delete(k) : next.add(k);
     return next;
   });
-  const estaColapsado = (aid) => colapsados.has(aid == null ? "__null__" : aid);
+  const estaColapsado = (key) => colapsados.has(String(key == null ? "__null__" : key));
 
   // Sincronizar columnas cuando llegan desde Supabase (cambio de empresa/carga)
   React.useEffect(() => {
@@ -239,6 +241,23 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
       .map(([aid, items]) => ({ aid, nombre: aid == null ? "Sin almacén" : (nombreAlmacen(aid) || `Almacén ${aid}`), items }))
       .sort((a, b) => (a.aid == null ? 1 : b.aid == null ? -1 : a.nombre.localeCompare(b.nombre)));
   })();
+
+  // Agrupa la cesta por pedido_codigo. Grupo null = "Sin pedido".
+  const gruposPedido = (() => {
+    const map = new Map();
+    for (const item of cesta) {
+      const cod = item.pedido_codigo ?? null;
+      if (!map.has(cod)) map.set(cod, []);
+      map.get(cod).push(item);
+    }
+    return [...map.entries()]
+      .map(([cod, items]) => ({ cod, nombre: cod == null ? "Sin pedido" : `Pedido ${cod}`, items }))
+      .sort((a, b) => (a.cod == null ? 1 : b.cod == null ? -1 : String(a.cod).localeCompare(String(b.cod))));
+  })();
+
+  // Pedidos únicos con items en la cesta (para selector de export)
+  const pedidosEnCesta = gruposPedido.filter(g => g.cod != null);
+  const hayVariosPedidos = pedidosEnCesta.length > 1;
 
   // Clave única por item para el mapa de costes manuales.
   const keyItem = (item) => item.material_id != null ? `id_${item.material_id}` : `n_${item.nombre}`;
@@ -377,9 +396,13 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
   );
 
   // HTML profesional del pedido (una sección por proveedor efectivo).
-  // Cada sección lleva su propia cabecera de dos columnas: emisor (tu empresa) /
-  // destinatario (proveedor), y debajo la tabla de materiales.
-  const pedidoProveedorHTML = (paraImprimir = false) => {
+  // gpsParam: opcional; si no se pasa usa gruposProveedor (todos los items).
+  const pedidoProveedorHTMLDe = (gpsParam, paraImprimir = false) => {
+    const gps = gpsParam ?? gruposProveedor;
+    return pedidoProveedorHTML(paraImprimir, gps);
+  };
+  const pedidoProveedorHTML = (paraImprimir = false, gpsOverride = null) => {
+    const gpsUsar = gpsOverride ?? gruposProveedor;
     const fecha = new Date().toLocaleDateString("es-ES", { day:"2-digit", month:"long", year:"numeric" });
     const esc = s => String(s ?? "").replace(/[&<>]/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;" }[c]));
 
@@ -462,27 +485,73 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
 
     return `
       <div style="font-family:Arial,Helvetica,sans-serif;color:#1a1a1a;max-width:780px;margin:0 auto;padding:${paraImprimir ? "0" : "8px"}">
-        ${gruposProveedor.map(seccionProveedor).join('<div style="page-break-after:always"></div>')}
+        ${gpsUsar.map(seccionProveedor).join('<div style="page-break-after:always"></div>')}
       </div>`;
   };
 
-  const exportarPedidoProveedorPDF = () => {
+  // filtroPedido: null = todos | string/number = solo ese pedido_codigo
+  const cestaFiltrada = (filtroPedido) =>
+    filtroPedido == null ? cesta : cesta.filter(i => String(i.pedido_codigo ?? "") === String(filtroPedido));
+
+  // lineas y grupos de proveedor para un subconjunto de la cesta
+  const lineasProveedorDe = useCallback((itemsFiltro) => {
+    if (!hayProveedor) return [];
+    return itemsFiltro.map(item => {
+      const mat   = buscarMaterial(item) || {};
+      const pid   = provDeItem(item);
+      const mid   = resolveMatId(item);
+      const corr  = (pid && mid != null) ? (corrPorMat[String(mid)]?.[String(pid)] || null) : null;
+      const precio = precioEfectivo(corr);
+      const cant  = Number(item.cantidad) || 0;
+      return {
+        proveedorId: pid, nombreInterno: item.nombre,
+        nombreProveedor: corr?.nombre_proveedor || item.nombre,
+        referencia: corr?.referencia || mat.referencia || "",
+        unidad: mat.unidad || "ud", cantidad: cant,
+        precio, descuento: corr?.descuento || 0,
+        importe: precio != null ? precio * cant : null,
+        tieneCorr: !!corr,
+      };
+    });
+  }, [hayProveedor, provDeItem, resolveMatId, corrPorMat, materiales]); // eslint-disable-line
+
+  const gruposProveedorDe = (lineas) => {
+    const map = new Map();
+    for (const l of lineas) {
+      if (!map.has(l.proveedorId)) map.set(l.proveedorId, []);
+      map.get(l.proveedorId).push(l);
+    }
+    return [...map.entries()].map(([pid, ls]) => ({
+      proveedor: provObj(pid), lineas: ls,
+      total: ls.reduce((s, l) => s + (l.importe || 0), 0),
+    }));
+  };
+
+  const exportarPedidoProveedorPDF = (filtroPedido = null) => {
+    const items = cestaFiltrada(filtroPedido);
+    const lineas = lineasProveedorDe(items);
+    const gps = gruposProveedorDe(lineas);
+    const titulo = filtroPedido != null ? `Pedido ${filtroPedido} a proveedores` : "Pedido a proveedores";
+    const htmlBody = pedidoProveedorHTMLDe(gps, false);
     const win = window.open("", "_blank", "width=820,height=1000");
     win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/>
-      <title>Pedido a proveedores</title>
+      <title>${titulo}</title>
       <style>@page{size:A4;margin:16mm 14mm}@media print{button{display:none}}</style>
-      </head><body>${pedidoProveedorHTML(true)}
+      </head><body>${pedidoProveedorHTMLDe(gps, true)}
       <div style="text-align:center;margin-top:20px">
         <button onclick="window.print()" style="padding:9px 22px;background:${proveedorActivo?.color || "#f97316"};color:#fff;border:none;border-radius:8px;font-size:13px;cursor:pointer;font-family:Arial">Imprimir / Guardar PDF</button>
       </div></body></html>`);
     win.document.close();
   };
 
-  const exportarPedidoProveedorExcel = () => {
-    const hayPrecios = lineasPedidoProveedor.some(l => l.precio != null);
+  const exportarPedidoProveedorExcel = (filtroPedido = null) => {
+    const items = cestaFiltrada(filtroPedido);
+    const lineas = lineasProveedorDe(items);
+    const gps = gruposProveedorDe(lineas);
+    const hayPrecios = lineas.some(l => l.precio != null);
     const wb = XLSX.utils.book_new();
     const usados = new Set();
-    for (const g of gruposProveedor) {
+    for (const g of gps) {
       const d = g.proveedor?.datos || {};
       const rows = [
         ["PEDIDO", "", "", "", `Fecha: ${new Date().toLocaleDateString("es-ES")}`],
@@ -814,7 +883,25 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
         <span style={{ fontSize:12, background:C.brandSoft, color:C.brand,
           padding:"2px 8px", borderRadius:999, fontWeight:600 }}>
           {cesta.length} {cesta.length === 1 ? "artículo" : "artículos"} · {total} uds · {grupos.length} almacén{grupos.length === 1 ? "" : "es"}
+          {pedidosEnCesta.length > 0 && ` · ${pedidosEnCesta.length} pedido${pedidosEnCesta.length === 1 ? "" : "s"}`}
         </span>
+        {/* Toggle agrupación: por almacén o por pedido */}
+        {pedidosEnCesta.length > 0 && (
+          <div style={{ display:"flex", borderRadius:8, border:`1px solid ${C.strong}`, overflow:"hidden" }}>
+            {[
+              { val:"almacen", Icon:Warehouse, label:"Por almacén" },
+              { val:"pedido",  Icon:ClipboardList, label:"Por pedido" },
+            ].map(({ val, Icon, label }) => (
+              <button key={val} onClick={() => setVistaGrupo(val)}
+                style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 10px", border:"none",
+                  background: vistaGrupo === val ? C.brand : C.s2,
+                  color: vistaGrupo === val ? "#fff" : C.sub,
+                  fontWeight:600, fontSize:11.5, cursor:"pointer", fontFamily:"inherit" }}>
+                <Icon size={12}/>{label}
+              </button>
+            ))}
+          </div>
+        )}
         {sinAlmacen.length > 0 && (
           <span style={{ fontSize:12, background:C.warnSoft, color:C.warn,
             padding:"2px 8px", borderRadius:999, fontWeight:600, display:"flex", alignItems:"center", gap:4 }}>
@@ -851,13 +938,13 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
                 fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
               <Eye size={14}/>Vista previa pedido
             </button>
-            <button onClick={() => setShowPreview(true)}
+            <button onClick={() => hayVariosPedidos ? setModalSelPedido("pdf") : exportarPedidoProveedorPDF()}
               style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 12px", borderRadius:8,
                 border:`1px solid ${C.strong}`, background:C.s2, color:C.ink,
                 fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
               <FileText size={13} color="#dc2626"/>PDF
             </button>
-            <button onClick={() => setShowPreview(true)}
+            <button onClick={() => hayVariosPedidos ? setModalSelPedido("excel") : exportarPedidoProveedorExcel()}
               style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 12px", borderRadius:8,
                 border:`1px solid ${C.strong}`, background:C.s2, color:C.ink,
                 fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
@@ -916,27 +1003,50 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
         </div>
       )}
 
-      {/* Grupos por almacén (colapsables) */}
+      {/* Grupos: por almacén o por pedido (colapsables) */}
       <div style={{ flex:1, minHeight:0, overflowY:"auto", padding:20, display:"flex", flexDirection:"column", gap:14 }}>
-        {grupos.map(g => {
-          const colapsado = estaColapsado(g.aid);
+        {(vistaGrupo === "pedido" ? gruposPedido : grupos).map(g => {
+          const gKey  = vistaGrupo === "pedido" ? (g.cod ?? "__null__") : (g.aid ?? "__null__");
+          const colapsado = colapsados.has(String(gKey));
           const subUds = g.items.reduce((s, i) => s + i.cantidad, 0);
-          const sinAlm = g.aid == null;
+          const sinAlm = vistaGrupo === "almacen" && g.aid == null;
+          const sinPed = vistaGrupo === "pedido"  && g.cod == null;
+          const esAlerta = sinAlm || sinPed;
+          const toggleKey = vistaGrupo === "pedido" ? g.cod : g.aid;
           return (
-            <div key={g.aid == null ? "null" : g.aid}
-              style={{ border:`1px solid ${sinAlm ? C.warn : C.line}`, borderRadius:12, overflow:"hidden",
+            <div key={String(gKey)}
+              style={{ border:`1px solid ${esAlerta ? C.warn : C.line}`, borderRadius:12, overflow:"hidden",
                 background: C.surface, flexShrink:0 }}>
               {/* Cabecera de grupo */}
-              <button onClick={() => toggleGrupo(g.aid)}
+              <button onClick={() => toggleGrupo(toggleKey)}
                 style={{ width:"100%", display:"flex", alignItems:"center", gap:10, padding:"11px 14px",
-                  background: sinAlm ? C.warnSoft : C.s2, border:"none", cursor:"pointer",
+                  background: esAlerta ? C.warnSoft : C.s2, border:"none", cursor:"pointer",
                   fontFamily:"inherit", textAlign:"left" }}>
                 {colapsado ? <ChevronRight size={16} color={C.sub}/> : <ChevronDown size={16} color={C.sub}/>}
-                {sinAlm ? <AlertTriangle size={15} color={C.warn}/> : <Warehouse size={15} color={C.brand}/>}
-                <span style={{ fontWeight:700, fontSize:14, color: sinAlm ? C.warn : C.ink }}>{g.nombre}</span>
+                {sinAlm ? <AlertTriangle size={15} color={C.warn}/>
+                  : vistaGrupo === "pedido"
+                    ? <ClipboardList size={15} color={sinPed ? C.warn : C.brand}/>
+                    : <Warehouse size={15} color={C.brand}/>}
+                <span style={{ fontWeight:700, fontSize:14, color: esAlerta ? C.warn : C.ink }}>{g.nombre}</span>
                 <span style={{ fontSize:11.5, color:C.sub }}>
                   {g.items.length} {g.items.length === 1 ? "material" : "materiales"} · {subUds} uds
                 </span>
+                {vistaGrupo === "pedido" && hayProveedor && g.cod != null && (
+                  <div style={{ marginLeft:"auto", display:"flex", gap:6 }}>
+                    <button onClick={e => { e.stopPropagation(); exportarPedidoProveedorPDF(g.cod); }}
+                      style={{ display:"flex", alignItems:"center", gap:4, padding:"3px 10px",
+                        borderRadius:6, border:`1px solid ${C.strong}`, background:C.surface,
+                        color:"#dc2626", fontWeight:600, fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>
+                      <FileText size={11}/>PDF
+                    </button>
+                    <button onClick={e => { e.stopPropagation(); exportarPedidoProveedorExcel(g.cod); }}
+                      style={{ display:"flex", alignItems:"center", gap:4, padding:"3px 10px",
+                        borderRadius:6, border:`1px solid ${C.strong}`, background:C.surface,
+                        color:"#16a34a", fontWeight:600, fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>
+                      <Download size={11}/>Excel
+                    </button>
+                  </div>
+                )}
               </button>
 
               {/* Filas del grupo */}
@@ -1111,6 +1221,60 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
                   Confirmar compra
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal selector de pedido para export PDF/Excel */}
+      {modalSelPedido && hayVariosPedidos && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.55)", zIndex:900,
+          display:"grid", placeItems:"center", padding:16 }} onClick={() => setModalSelPedido(null)}>
+          <div style={{ background:C.surface, borderRadius:16, width:"100%", maxWidth:420,
+            boxShadow:"0 20px 60px #0004" }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding:"14px 20px", borderBottom:`1px solid ${C.line}`,
+              display:"flex", alignItems:"center", gap:10 }}>
+              {modalSelPedido === "pdf" ? <FileText size={17} color="#dc2626"/> : <Download size={17} color="#16a34a"/>}
+              <span style={{ fontWeight:700, fontSize:15, flex:1 }}>
+                {modalSelPedido === "pdf" ? "Exportar PDF" : "Exportar Excel"} — ¿qué pedido?
+              </span>
+              <button onClick={() => setModalSelPedido(null)}
+                style={{ background:"none", border:"none", cursor:"pointer", color:C.sub }}><X size={17}/></button>
+            </div>
+            <div style={{ padding:"16px 20px", display:"flex", flexDirection:"column", gap:8 }}>
+              <p style={{ fontSize:13, color:C.sub, margin:"0 0 4px" }}>
+                La cesta tiene materiales de varios pedidos. Elige qué incluir:
+              </p>
+              <button onClick={() => {
+                  modalSelPedido === "pdf" ? exportarPedidoProveedorPDF() : exportarPedidoProveedorExcel();
+                  setModalSelPedido(null);
+                }}
+                style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:10,
+                  border:`1.5px solid ${C.brand}`, background:C.brandSoft, cursor:"pointer",
+                  fontFamily:"inherit", textAlign:"left" }}>
+                <Layers size={15} color={C.brand}/>
+                <div>
+                  <div style={{ fontWeight:700, fontSize:13, color:C.brand }}>Todos los pedidos</div>
+                  <div style={{ fontSize:11.5, color:C.sub }}>Un documento con todos los materiales</div>
+                </div>
+              </button>
+              {pedidosEnCesta.map(gp => (
+                <button key={gp.cod} onClick={() => {
+                    modalSelPedido === "pdf" ? exportarPedidoProveedorPDF(gp.cod) : exportarPedidoProveedorExcel(gp.cod);
+                    setModalSelPedido(null);
+                  }}
+                  style={{ display:"flex", alignItems:"center", gap:10, padding:"10px 14px", borderRadius:10,
+                    border:`1px solid ${C.line}`, background:C.s2, cursor:"pointer",
+                    fontFamily:"inherit", textAlign:"left" }}>
+                  <ClipboardList size={15} color={C.sub}/>
+                  <div>
+                    <div style={{ fontWeight:700, fontSize:13, color:C.ink }}>{gp.nombre}</div>
+                    <div style={{ fontSize:11.5, color:C.sub }}>
+                      {gp.items.length} material{gp.items.length === 1 ? "" : "es"} · {gp.items.reduce((s, i) => s + i.cantidad, 0)} uds
+                    </div>
+                  </div>
+                </button>
+              ))}
             </div>
           </div>
         </div>

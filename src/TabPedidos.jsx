@@ -1087,7 +1087,7 @@ function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato
    DETALLE / EDICIÓN DE PEDIDO
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - DetallePedido
-function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, onEtiquetas, onAgregarCesta, onComprobarStock, rolesImport, empresaId, modo, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, reservas = [], L }) {
+function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, onEtiquetas, onAgregarCesta, cesta = [], onComprobarStock, rolesImport, empresaId, modo, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, reservas = [], L }) {
   const DRAFT_KEY = empresaId && pedido?.id ? `lscale.pedidoDraft.${empresaId}.${pedido.id}` : null;
 
   const [exportModal, setExportModal] = useState(null); // null | "pdf" | "excel"
@@ -1111,6 +1111,19 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
   const [errorComprobar,   setErrorComprobar]   = useState(null);
   const [checkTick,        setCheckTick]        = useState(0);
   const [pantallaEvento, setPantallaEvento] = useState(false);
+  const [confCesta, setConfCesta] = useState(false);       // confirmación re-añadir (botón proveedor)
+  const [confCestaBanner, setConfCestaBanner] = useState(false); // confirmación re-añadir (banner stock)
+
+  // ¿Los materiales de este pedido ya están en la cesta?
+  const yaEnCesta = useMemo(() => {
+    if (!cesta.length || !(pedido?.lineas?.length)) return false;
+    return (pedido.lineas || []).some(l =>
+      cesta.some(c =>
+        (l.material_id != null && c.material_id === l.material_id) ||
+        (c.nombre === l.nombre)
+      )
+    );
+  }, [cesta, pedido?.lineas]);
 
   useEffect(() => {
     setP({ ...pedido });
@@ -1344,12 +1357,42 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
           </>
         )}
         {p.tipo_origen === "proveedor" && onAgregarCesta && (p.lineas || []).length > 0 && (
-          <Btn onClick={() => onAgregarCesta((p.lineas || []).map(l => ({
-            nombre: l.nombre, cantidad: l.cantidad, faltante: l.cantidad,
-            material_id: l.material_id ?? null, almacen_id: l.almacen_id ?? null,
-          })))} style={{ padding:"6px 14px", fontSize:13, gap:5, background:"#8b5cf6", color:"#fff" }}>
-            🛒 {L("Enviar todo a la cesta","Send all to cart")}
-          </Btn>
+          confCesta ? (
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+              <span style={{ fontSize:12, color:"#7c3aed", fontWeight:600 }}>
+                {L("¿Añadir de nuevo?","Add again?")}
+              </span>
+              <Btn onClick={() => {
+                onAgregarCesta((p.lineas || []).map(l => ({
+                  nombre: l.nombre, cantidad: l.cantidad, faltante: l.cantidad,
+                  material_id: l.material_id ?? null, almacen_id: l.almacen_id ?? null,
+                  pedido_codigo: p.codigo || p.id,
+                })));
+                setConfCesta(false);
+              }} style={{ padding:"4px 10px", fontSize:12, gap:4, background:"#8b5cf6", color:"#fff" }}>
+                <Check size={11}/>{L("Sí, añadir","Yes, add")}
+              </Btn>
+              <Btn outline onClick={() => setConfCesta(false)} style={{ padding:"4px 10px", fontSize:12 }}>
+                {L("No","No")}
+              </Btn>
+            </div>
+          ) : (
+            <Btn onClick={() => {
+              if (yaEnCesta) { setConfCesta(true); return; }
+              onAgregarCesta((p.lineas || []).map(l => ({
+                nombre: l.nombre, cantidad: l.cantidad, faltante: l.cantidad,
+                material_id: l.material_id ?? null, almacen_id: l.almacen_id ?? null,
+                pedido_codigo: p.codigo || p.id,
+              })));
+            }} style={{ padding:"6px 14px", fontSize:13, gap:5,
+              background: yaEnCesta ? "#6d28d9" : "#8b5cf6", color:"#fff",
+              display:"flex", alignItems:"center" }}>
+              {yaEnCesta ? <Check size={13}/> : "🛒"}
+              {yaEnCesta
+                ? L("Añadido a la cesta ✓","Added to cart ✓")
+                : L("Enviar todo a la cesta","Send all to cart")}
+            </Btn>
+          )
         )}
         {p.tipo_pedido === "evento" && p.fecha_evento_inicio && p.fecha_evento_fin && (p.lineas || []).length > 0 && p.tipo_origen !== "proveedor" && (
           <Btn outline onClick={() => setPantallaEvento(true)} style={{ padding:"6px 14px", fontSize:13, gap:5 }}>
@@ -1388,34 +1431,63 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                 ))}
               </div>
               <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                {onAgregarCesta && (
-                  <button onClick={() => {
-                      const items = conflictos.map(c => {
-                        // Buscar el material exacto: por id, o por almacén + nombre
-                        const nom = (c.nombre || "").trim().toLowerCase();
-                        const mat = materiales?.find(m =>
-                          (c.material_id != null && m.id === c.material_id) ||
-                          ((m.almacen_id ?? null) === (c.almacen_id ?? null) &&
-                           (m.nombre || "").trim().toLowerCase() === nom)
-                        ) || materiales?.find(m => (m.nombre || "").trim().toLowerCase() === nom);
-                        return {
-                          nombre:      c.nombre,
-                          faltante:    c.faltante,
-                          cantidad:    c.faltante,
-                          material_id: mat?.id ?? c.material_id ?? null,
-                          almacen_id:  mat?.almacen_id ?? c.almacen_id ?? null,
-                          ubicacion:   mat?.ubicacion  ?? null,
-                        };
-                      });
-                      onAgregarCesta(items);
-                    }}
-                    style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 12px",
-                      borderRadius:999, border:"1.5px solid #dc2626", background:"transparent",
-                      color:"#dc2626", fontWeight:700, fontSize:12, cursor:"pointer",
-                      fontFamily:"inherit" }}>
-                    🛒 Agregar a la cesta
-                  </button>
-                )}
+                {onAgregarCesta && (() => {
+                  const conflictosEnCesta = conflictos.some(c =>
+                    cesta.some(ci =>
+                      (c.material_id != null && ci.material_id === c.material_id) ||
+                      ci.nombre === c.nombre
+                    )
+                  );
+                  const agregarConflictos = () => {
+                    const items = conflictos.map(c => {
+                      const nom = (c.nombre || "").trim().toLowerCase();
+                      const mat = materiales?.find(m =>
+                        (c.material_id != null && m.id === c.material_id) ||
+                        ((m.almacen_id ?? null) === (c.almacen_id ?? null) &&
+                         (m.nombre || "").trim().toLowerCase() === nom)
+                      ) || materiales?.find(m => (m.nombre || "").trim().toLowerCase() === nom);
+                      return {
+                        nombre:      c.nombre,
+                        faltante:    c.faltante,
+                        cantidad:    c.faltante,
+                        material_id: mat?.id ?? c.material_id ?? null,
+                        almacen_id:  mat?.almacen_id ?? c.almacen_id ?? null,
+                        ubicacion:   mat?.ubicacion  ?? null,
+                        pedido_codigo: p.codigo || p.id,
+                      };
+                    });
+                    onAgregarCesta(items);
+                  };
+                  if (confCestaBanner) return (
+                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                      <span style={{ fontSize:12, color:"#dc2626", fontWeight:600 }}>¿Añadir de nuevo?</span>
+                      <button onClick={() => { agregarConflictos(); setConfCestaBanner(false); }}
+                        style={{ display:"flex", alignItems:"center", gap:4, padding:"3px 10px",
+                          borderRadius:999, border:"1.5px solid #dc2626", background:"#dc2626",
+                          color:"#fff", fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
+                        <Check size={11}/>Sí
+                      </button>
+                      <button onClick={() => setConfCestaBanner(false)}
+                        style={{ padding:"3px 10px", borderRadius:999, border:"1.5px solid #dc2626",
+                          background:"transparent", color:"#dc2626", fontWeight:700, fontSize:12,
+                          cursor:"pointer", fontFamily:"inherit" }}>No</button>
+                    </div>
+                  );
+                  return (
+                    <button onClick={() => {
+                        if (conflictosEnCesta) { setConfCestaBanner(true); return; }
+                        agregarConflictos();
+                      }}
+                      style={{ display:"flex", alignItems:"center", gap:5, padding:"5px 12px",
+                        borderRadius:999, border:`1.5px solid #dc2626`,
+                        background: conflictosEnCesta ? "#dc2626" : "transparent",
+                        color: conflictosEnCesta ? "#fff" : "#dc2626",
+                        fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit" }}>
+                      {conflictosEnCesta ? <Check size={11}/> : "🛒"}
+                      {conflictosEnCesta ? "Añadido ✓" : "Agregar a la cesta"}
+                    </button>
+                  );
+                })()}
                 <button
                   disabled={comprobando}
                   onClick={async () => {
@@ -2097,7 +2169,7 @@ function ModalNotificaciones({ pedido, companyId, onClose }) {
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - TabPedidos [export default]
-export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, onEtiquetas, onNotificarStock, onAgregarCesta, guardarPlantillaConf, cargarPlantillasConf, highlightedPedidoId, highlightedCategoria, puedeEditar, onNotificarEvento, reservas = [] }) {
+export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, onEtiquetas, onNotificarStock, onAgregarCesta, cesta = [], guardarPlantillaConf, cargarPlantillasConf, highlightedPedidoId, highlightedCategoria, puedeEditar, onNotificarEvento, reservas = [] }) {
   const L = useL();
   const fileRef = useRef(null);
 
@@ -2402,6 +2474,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
         onPlanning={onPlanning}
         onEtiquetas={onEtiquetas}
         onAgregarCesta={onAgregarCesta}
+        cesta={cesta}
         onComprobarStock={async () => {
           if (modo === "supabase") {
             const mats = await recargarMateriales();
