@@ -7,7 +7,7 @@ import {
   Plus, Pencil, Trash2, X, Check, Loader, AlertTriangle, Combine, ImageIcon, SlidersHorizontal, ClipboardCheck, ShoppingCart, Cloud,
 } from "lucide-react";
 import { C, Badge, Btn, ModalField, Help } from "./lib/ui.jsx";
-import { crearMaterial, actualizarMaterial, borrarMaterial, borrarMaterialesLote, subirImagenMaterial, borrarImagenMaterial } from "./lib/data.js";
+import { crearMaterial, crearMaterialesLote, actualizarMaterial, borrarMaterial, borrarMaterialesLote, subirImagenMaterial, borrarImagenMaterial } from "./lib/data.js";
 import { sb } from "./lib/supabase.js";
 import AlmacenConfigurador from "./AlmacenConfigurador.jsx";
 import { OrigenDatosPanel } from "@scale/shared/connectors";
@@ -470,9 +470,12 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
       setMateriales(prev => [...prev, ...nuevos.map(m => ({ ...m, id: Date.now() + Math.random(), emp: empresa?.id }))]);
     } else {
       try {
-        const saved = await Promise.all(nuevos.map(m => crearMaterial(m, empresa.id)));
+        const saved = await crearMaterialesLote(nuevos, empresa.id);
         setMateriales(prev => [...prev, ...saved]);
-      } catch (e) { console.error(e); }
+      } catch (e) {
+        console.error(e);
+        alert(`Error importando materiales: ${e?.message || e}`);
+      }
     }
   };
 

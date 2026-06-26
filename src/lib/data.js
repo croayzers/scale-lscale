@@ -327,6 +327,21 @@ export async function borrarMaterial(id) {
   if (error) throw error;
 }
 
+// Inserta materiales en lotes de 200 para no saturar la conexión.
+// Devuelve todos los registros creados.
+export async function crearMaterialesLote(items, companyId) {
+  if (!items?.length) return [];
+  const BATCH = 200;
+  const saved = [];
+  for (let i = 0; i < items.length; i += BATCH) {
+    const rows = items.slice(i, i + BATCH).map(m => materialToRow(m, companyId));
+    const { data, error } = await lsc().from("materiales").insert(rows).select();
+    if (error) throw error;
+    saved.push(...(data || []).map(mapMaterial));
+  }
+  return saved;
+}
+
 // Borra varios materiales en una sola petición (para vaciar almacén).
 export async function borrarMaterialesLote(ids) {
   if (!ids?.length) return;
