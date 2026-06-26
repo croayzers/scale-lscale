@@ -175,12 +175,17 @@ export default function App() {
     // y el material existe en un único almacén, lo autoasigna. Si no se puede
     // determinar, queda null y TabCesta lo pedirá con un selector inline.
     const resolverAlmacen = (item) => {
-      if (item.almacen_id != null) return item;
+      if (item.almacen_id != null && item.material_id != null) return item;
       const nom = (item.nombre || "").trim().toLowerCase();
       const candidatos = materiales.filter(m =>
         (item.material_id != null && m.id === item.material_id) ||
         (m.nombre || "").trim().toLowerCase() === nom
       );
+      if (item.almacen_id != null) {
+        // almacen_id ya conocido — enriquecer material_id si falta
+        const mat = candidatos.find(m => m.almacen_id === item.almacen_id) || candidatos[0];
+        return { ...item, material_id: item.material_id ?? mat?.id ?? null };
+      }
       const almacenesUnicos = [...new Set(candidatos.map(m => m.almacen_id).filter(a => a != null))];
       if (almacenesUnicos.length === 1) {
         const mat = candidatos.find(m => m.almacen_id === almacenesUnicos[0]);

@@ -119,26 +119,42 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
         setProveedores(provs);
         // Proveedor por defecto = el primero (solo si aún no hay uno elegido).
         setProvDefecto(prev => prev || (provs[0] ? String(provs[0].id) : ""));
-        const ids = [...new Set(cesta.map(i => i.material_id).filter(Boolean))];
+        const ids = [...new Set(cesta.map(i => resolveMatId(i)).filter(Boolean))];
         const corr = await cargarCorrelacionesDeMateriales(ids);
         if (!vivo) return;
         const map = {};
         for (const c of corr) {
-          if (!map[c.material_id]) map[c.material_id] = {};
-          map[c.material_id][c.proveedor_id] = c;
+          const mid = String(c.material_id);
+          const pid = String(c.proveedor_id);
+          if (!map[mid]) map[mid] = {};
+          map[mid][pid] = c;
         }
         setCorrPorMat(map);
       } catch (e) { console.warn("[TabCesta] cargar proveedores/correlaciones:", e?.message); }
     })();
     return () => { vivo = false; };
-  // recargamos al cambiar los material_id de la cesta (no en cada cambio de cantidad)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [modo, empresa?.id, cesta.map(i => i.material_id).join(",")]);
+  }, [modo, empresa?.id, cesta.map(i => i.material_id).join(","), resolveMatId]);
+
+  // Resuelve el material_id efectivo: del item si existe, o por nombre+almacén en el catálogo.
+  // Necesario para items añadidos desde pedidos sin material_id enlazado.
+  const resolveMatId = useCallback((item) => {
+    if (item.material_id != null) return item.material_id;
+    const nom = (item.nombre || "").trim().toLowerCase();
+    return (
+      materiales.find(m =>
+        (m.almacen_id ?? null) === (item.almacen_id ?? null) &&
+        (m.nombre || "").trim().toLowerCase() === nom
+      )?.id ??
+      materiales.find(m => (m.nombre || "").trim().toLowerCase() === nom)?.id ??
+      null
+    );
+  }, [materiales]);
 
   // Proveedor efectivo de un item: su override, o el por defecto.
   const provDeItem = useCallback((item) =>
-    provPorMat[item.material_id] ?? provDefecto,
-  [provPorMat, provDefecto]);
+    provPorMat[resolveMatId(item)] ?? provDefecto,
+  [provPorMat, provDefecto, resolveMatId]);
 
   const provObj = id => proveedores.find(p => String(p.id) === String(id)) || null;
   const proveedorActivo = provObj(provDefecto);
@@ -322,7 +338,8 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
     return cesta.map(item => {
       const mat   = buscarMaterial(item) || {};
       const pid   = provDeItem(item);
-      const corr  = (pid && item.material_id != null) ? (corrPorMat[item.material_id]?.[pid] || null) : null;
+      const mid   = resolveMatId(item);
+      const corr  = (pid && mid != null) ? (corrPorMat[String(mid)]?.[String(pid)] || null) : null;
       const precio = precioEfectivo(corr);
       const cant  = Number(item.cantidad) || 0;
       return {
@@ -338,7 +355,7 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
         tieneCorr: !!corr,
       };
     });
-  }, [cesta, hayProveedor, provDeItem, corrPorMat, materiales]);
+  }, [cesta, hayProveedor, provDeItem, resolveMatId, corrPorMat, materiales]);
 
   // Agrupa las líneas por proveedor efectivo (para el documento: una sección por proveedor).
   const gruposProveedor = useMemo(() => {
@@ -947,16 +964,17 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
 
                           {/* Proveedor por línea: selector (override) + nombre/ref/precio de ese proveedor */}
                           {hayProveedor && (() => {
+                            const mid  = resolveMatId(item);
                             const pid  = provDeItem(item);
                             const prov = provObj(pid);
-                            const corr = (pid && item.material_id != null) ? (corrPorMat[item.material_id]?.[pid] || null) : null;
+                            const corr = (pid && mid != null) ? (corrPorMat[String(mid)]?.[String(pid)] || null) : null;
                             const precio = precioEfectivo(corr);
                             return (
                               <td style={{ padding:"10px 12px", minWidth:230 }}>
                                 {/* Mini-selector de proveedor para este material */}
                                 <select value={pid || ""}
-                                  onChange={e => setProvPorMat(prev => ({ ...prev, [item.material_id]: e.target.value || "" }))}
-                                  disabled={item.material_id == null}
+                                  onChange={e => { if (mid != null) setProvPorMat(prev => ({ ...prev, [String(mid)]: e.target.value || "" })); }}
+                                  disabled={mid == null}
                                   style={{ marginBottom:4, padding:"3px 8px", borderRadius:999, fontSize:11,
                                     fontFamily:"inherit", cursor:"pointer", outline:"none",
                                     border:`1.5px solid ${prov ? (prov.color || C.brand) + "88" : C.line}`,
