@@ -925,7 +925,7 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
           return (
             <div key={g.aid == null ? "null" : g.aid}
               style={{ border:`1px solid ${sinAlm ? C.warn : C.line}`, borderRadius:12, overflow:"hidden",
-                background: C.surface }}>
+                background: C.surface, flexShrink:0 }}>
               {/* Cabecera de grupo */}
               <button onClick={() => toggleGrupo(g.aid)}
                 style={{ width:"100%", display:"flex", alignItems:"center", gap:10, padding:"11px 14px",
