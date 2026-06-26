@@ -108,6 +108,21 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
   const [corrPorMat,  setCorrPorMat]  = useState({});      // material_id -> { [proveedor_id]: correlacion }
   const [showPreview, setShowPreview] = useState(false);
 
+  // Resuelve el material_id efectivo: del item si existe, o por nombre+almacén en el catálogo.
+  // Necesario para items añadidos desde pedidos sin material_id enlazado.
+  const resolveMatId = useCallback((item) => {
+    if (item.material_id != null) return item.material_id;
+    const nom = (item.nombre || "").trim().toLowerCase();
+    return (
+      materiales.find(m =>
+        (m.almacen_id ?? null) === (item.almacen_id ?? null) &&
+        (m.nombre || "").trim().toLowerCase() === nom
+      )?.id ??
+      materiales.find(m => (m.nombre || "").trim().toLowerCase() === nom)?.id ??
+      null
+    );
+  }, [materiales]);
+
   // Carga proveedores + correlaciones de los materiales de la cesta (carga selectiva).
   useEffect(() => {
     let vivo = true;
@@ -135,21 +150,6 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
     return () => { vivo = false; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modo, empresa?.id, cesta.map(i => i.material_id).join(","), resolveMatId]);
-
-  // Resuelve el material_id efectivo: del item si existe, o por nombre+almacén en el catálogo.
-  // Necesario para items añadidos desde pedidos sin material_id enlazado.
-  const resolveMatId = useCallback((item) => {
-    if (item.material_id != null) return item.material_id;
-    const nom = (item.nombre || "").trim().toLowerCase();
-    return (
-      materiales.find(m =>
-        (m.almacen_id ?? null) === (item.almacen_id ?? null) &&
-        (m.nombre || "").trim().toLowerCase() === nom
-      )?.id ??
-      materiales.find(m => (m.nombre || "").trim().toLowerCase() === nom)?.id ??
-      null
-    );
-  }, [materiales]);
 
   // Proveedor efectivo de un item: su override, o el por defecto.
   const provDeItem = useCallback((item) =>
