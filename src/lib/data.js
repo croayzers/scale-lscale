@@ -10,6 +10,19 @@
 // MARK: - Notificaciones (cargarMiembrosEmpresa, enviarNotificacionPedido)
 import { sb, lsc, supabaseConfigurado } from "./supabase.js";
 
+// Pagina en bloques de 1000 para superar el límite por defecto de PostgREST.
+async function fetchAll(builderFn, pageSize = 1000) {
+  let from = 0, all = [];
+  while (true) {
+    const { data, error } = await builderFn().range(from, from + pageSize - 1);
+    if (error) throw error;
+    all = all.concat(data || []);
+    if (!data || data.length < pageSize) break;
+    from += pageSize;
+  }
+  return all;
+}
+
 // MARK: - Mappers (mapEmpresa, mapMaterial, materialToRow, mapPedido, pedidoToRow, mapExpedicion)
 // ── Mappers ────────────────────────────────────────────────────────────────
 
@@ -245,8 +258,9 @@ export async function cargarDatos() {
       nivelApp = (memb?.app_permisos?.["lscale"]) ?? null;
     }
 
-    const { data: mats, error: eMats } = await lsc().from("materiales").select("*");
-    const materiales = (mats || []).map(mapMaterial);
+    const mats = await fetchAll(() => lsc().from("materiales").select("*"));
+    const materiales = mats.map(mapMaterial);
+    const eMats = null;
 
     const { data: peds, error: ePeds } = await lsc().from("pedidos").select("*");
     const pedidos = (peds || []).map(mapPedido);
@@ -334,9 +348,8 @@ export async function marcarIASinTokens(companyId, provider) {
 }
 
 export async function recargarMateriales() {
-  const { data, error } = await lsc().from("materiales").select("*");
-  if (error) throw error;
-  return (data || []).map(mapMaterial);
+  const data = await fetchAll(() => lsc().from("materiales").select("*"));
+  return data.map(mapMaterial);
 }
 
 export async function subirImagenMaterial(file, companyId) {
