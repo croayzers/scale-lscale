@@ -327,19 +327,51 @@ export async function borrarMaterial(id) {
   if (error) throw error;
 }
 
-// Inserta materiales en lotes de 200 para no saturar la conexión.
-// Devuelve todos los registros creados.
-export async function crearMaterialesLote(items, companyId) {
-  if (!items?.length) return [];
+// Upsert de materiales desde Excel: actualiza los existentes, inserta los nuevos, nunca duplica.
+// Matching: referencia (si existe) → nombre + almacen_id.
+// Devuelve { saved: mapMaterial[], inserted: number, updated: number }.
+export async function upsertMaterialesLote(items, companyId) {
+  if (!items?.length) return { saved: [], inserted: 0, updated: 0 };
   const BATCH = 200;
+
+  // Cargar existentes (solo los campos de identificación).
+  const existing = await fetchAll(() =>
+    lsc().from("materiales").select("id,referencia,nombre,almacen_id").eq("company_id", companyId)
+  );
+
+  const norm = s => (s || "").trim().toLowerCase();
+  const byRef    = new Map(); // referencia → id
+  const byNomAlm = new Map(); // "nombre|||almacen_id" → id
+  for (const m of existing) {
+    if (m.referencia?.trim()) byRef.set(norm(m.referencia), m.id);
+    byNomAlm.set(`${norm(m.nombre)}|||${m.almacen_id}`, m.id);
+  }
+
+  const toInsert = [], toUpdate = [];
+  for (const m of items) {
+    const row = materialToRow(m, companyId);
+    const ref    = norm(m.referencia);
+    const nomKey = `${norm(m.nombre)}|||${row.almacen_id}`;
+    const existId = (ref && byRef.get(ref)) || byNomAlm.get(nomKey);
+    if (existId) toUpdate.push({ id: existId, ...row });
+    else         toInsert.push(row);
+  }
+
   const saved = [];
-  for (let i = 0; i < items.length; i += BATCH) {
-    const rows = items.slice(i, i + BATCH).map(m => materialToRow(m, companyId));
-    const { data, error } = await lsc().from("materiales").insert(rows).select();
+
+  for (let i = 0; i < toInsert.length; i += BATCH) {
+    const { data, error } = await lsc().from("materiales").insert(toInsert.slice(i, i + BATCH)).select();
     if (error) throw error;
     saved.push(...(data || []).map(mapMaterial));
   }
-  return saved;
+
+  for (let i = 0; i < toUpdate.length; i += BATCH) {
+    const { data, error } = await lsc().from("materiales").upsert(toUpdate.slice(i, i + BATCH), { onConflict: "id" }).select();
+    if (error) throw error;
+    saved.push(...(data || []).map(mapMaterial));
+  }
+
+  return { saved, inserted: toInsert.length, updated: toUpdate.length };
 }
 
 // Borra varios materiales en una sola petición (para vaciar almacén).

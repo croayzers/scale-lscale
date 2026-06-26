@@ -7,7 +7,7 @@ import {
   Plus, Pencil, Trash2, X, Check, Loader, AlertTriangle, Combine, ImageIcon, SlidersHorizontal, ClipboardCheck, ShoppingCart, Cloud,
 } from "lucide-react";
 import { C, Badge, Btn, ModalField, Help } from "./lib/ui.jsx";
-import { crearMaterial, crearMaterialesLote, actualizarMaterial, borrarMaterial, borrarMaterialesLote, subirImagenMaterial, borrarImagenMaterial } from "./lib/data.js";
+import { crearMaterial, upsertMaterialesLote, actualizarMaterial, borrarMaterial, borrarMaterialesLote, subirImagenMaterial, borrarImagenMaterial } from "./lib/data.js";
 import { sb } from "./lib/supabase.js";
 import AlmacenConfigurador from "./AlmacenConfigurador.jsx";
 import { OrigenDatosPanel } from "@scale/shared/connectors";
@@ -470,8 +470,15 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
       setMateriales(prev => [...prev, ...nuevos.map(m => ({ ...m, id: Date.now() + Math.random(), emp: empresa?.id }))]);
     } else {
       try {
-        const saved = await crearMaterialesLote(nuevos, empresa.id);
-        setMateriales(prev => [...prev, ...saved]);
+        const { saved, inserted, updated } = await upsertMaterialesLote(nuevos, empresa.id);
+        const updatedById = Object.fromEntries(saved.filter(m => m.id).map(m => [m.id, m]));
+        setMateriales(prev => {
+          const merged = prev.map(m => updatedById[m.id] || m);
+          const existingIds = new Set(merged.map(m => m.id));
+          const newOnes = saved.filter(m => !existingIds.has(m.id));
+          return [...merged, ...newOnes];
+        });
+        alert(`Importación completada: ${inserted} nuevos, ${updated} actualizados.`);
       } catch (e) {
         console.error(e);
         alert(`Error importando materiales: ${e?.message || e}`);
