@@ -787,7 +787,7 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
   }
 
   return (
-    <div style={{ display:"flex", flexDirection:"column", height:"100%", background:C.bg, overflow:"hidden" }}>
+    <div style={{ display:"flex", flexDirection:"column", flex:1, minHeight:0, background:C.bg }}>
 
       {/* Header */}
       <div style={{ padding:"14px 20px", background:C.surface, borderBottom:`1px solid ${C.line}`,
@@ -834,13 +834,13 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
                 fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
               <Eye size={14}/>Vista previa pedido
             </button>
-            <button onClick={exportarPedidoProveedorPDF}
+            <button onClick={() => setShowPreview(true)}
               style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 12px", borderRadius:8,
                 border:`1px solid ${C.strong}`, background:C.s2, color:C.ink,
                 fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
               <FileText size={13} color="#dc2626"/>PDF
             </button>
-            <button onClick={exportarPedidoProveedorExcel}
+            <button onClick={() => setShowPreview(true)}
               style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 12px", borderRadius:8,
                 border:`1px solid ${C.strong}`, background:C.s2, color:C.ink,
                 fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
@@ -850,22 +850,6 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
           </>
         )}
 
-        {/* Constructor de columnas (export de reposición de almacén) */}
-        <div style={{ position:"relative" }}>
-          <button onClick={() => setMostrarConstructor(v => !v)}
-            style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 12px",
-              borderRadius:8, border:`1px solid ${C.strong}`, background:C.s2,
-              color:C.ink, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-            <Download size={13}/>Configurar Excel
-          </button>
-          {mostrarConstructor && (
-            <div style={{ position:"absolute", top:"100%", left:0, marginTop:6,
-              background:C.surface, border:`1px solid ${C.line}`, borderRadius:10,
-              boxShadow:"0 4px 20px #0003", padding:14, minWidth:200, zIndex:50 }}>
-              <ConstructorColumnas cols={cols} onChange={persistirCols}/>
-            </div>
-          )}
-        </div>
         <button onClick={exportarExcel}
           style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 12px",
             borderRadius:8, border:`1px solid ${C.strong}`, background:C.s2, color:C.ink,
@@ -916,7 +900,7 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
       )}
 
       {/* Grupos por almacén (colapsables) */}
-      <div style={{ flex:1, overflowY:"auto", padding:20, display:"flex", flexDirection:"column", gap:14 }}>
+      <div style={{ flex:1, minHeight:0, overflowY:"auto", padding:20, display:"flex", flexDirection:"column", gap:14 }}>
         {grupos.map(g => {
           const colapsado = estaColapsado(g.aid);
           const subUds = g.items.reduce((s, i) => s + i.cantidad, 0);
@@ -1130,6 +1114,12 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
                   ? `Pedido a ${gruposProveedor.length} proveedores`
                   : `Pedido a ${proveedorActivo?.nombre || gruposProveedor[0]?.proveedor?.nombre || "proveedor"}`}
               </div>
+              <button onClick={exportarPedidoProveedorExcel}
+                style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 14px", borderRadius:8,
+                  border:`1px solid ${C.strong}`, background:C.s2, color:C.ink,
+                  fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+                <Download size={13} color="#16a34a"/>Excel
+              </button>
               <button onClick={exportarPedidoProveedorPDF}
                 style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 14px", borderRadius:8,
                   border:"none", background: proveedorActivo?.color || C.brand, color:"#fff",
