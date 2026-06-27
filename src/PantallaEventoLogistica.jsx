@@ -40,8 +40,8 @@ export default function PantallaEventoLogistica({
   }
 
   return (
-    <div style={{ position:'fixed', inset:0, zIndex:500, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,.5)' }}>
-      <div style={{ background:'var(--surface)', borderRadius:16, boxShadow:'var(--shadow-lg)', width:'100%', maxWidth:820, margin:'0 16px', maxHeight:'90vh', overflowY:'auto' }}>
+    <div style={{ position:'fixed', inset:0, zIndex:500, overflowY:'auto', display:'flex', alignItems:'flex-start', justifyContent:'center', background:'rgba(0,0,0,.5)', padding:'24px 0' }}>
+      <div style={{ background:'var(--surface)', borderRadius:16, boxShadow:'var(--shadow-lg)', width:'100%', maxWidth:820, margin:'auto 16px', maxHeight:'none', display:'flex', flexDirection:'column' }}>
 
         {/* Header */}
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'16px 20px', borderBottom:'1px solid var(--border)' }}>
