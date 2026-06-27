@@ -16,7 +16,7 @@ import {
 import { C, Badge, Btn } from "./lib/ui.jsx";
 import { empresaTieneFinanzas } from "./lib/gestion.js";
 import { cargarCompras } from "./lib/dataRecuentos.js";
-import { cargarProveedores } from "./lib/data.js";
+import { cargarProveedores, cargarCargosMerma, cargarDeudasProveedor, cargarRetornos } from "./lib/data.js";
 import { toolSpecs, crearDispatcher } from "./lib/actions.js";
 import TabAlmacen from "./TabAlmacen.jsx";
 import TabPedidos from "./TabPedidos.jsx";
@@ -169,6 +169,9 @@ export default function App() {
   // Datos para la capa de IA (consulta de compras): se cargan perezosamente.
   const [comprasIA,         setComprasIA]         = useState([]);
   const [proveedoresIA,     setProveedoresIA]     = useState([]);
+  const [cargosIA,          setCargosIA]          = useState([]);
+  const [deudasIA,          setDeudasIA]          = useState([]);
+  const [retornosIA,        setRetornosIA]        = useState([]);
   const [miembros,          setMiembros]          = useState([]);
   const [chatUnread,        setChatUnread]        = useState(0);
   const [highlightedPedido, setHighlightedPedido] = useState(null);
@@ -359,20 +362,44 @@ export default function App() {
     let vivo = true;
     (async () => {
       try {
-        const [cs, ps] = await Promise.all([
+        const sb = modo === "supabase";
+        const [cs, ps, cg, dd] = await Promise.all([
           cargarCompras(empresa.id, modo).catch(() => []),
-          modo === "supabase" ? cargarProveedores(empresa.id).catch(() => []) : Promise.resolve([]),
+          sb ? cargarProveedores(empresa.id).catch(() => []) : Promise.resolve([]),
+          sb ? cargarCargosMerma(empresa.id).catch(() => []) : Promise.resolve([]),
+          sb ? cargarDeudasProveedor(empresa.id).catch(() => []) : Promise.resolve([]),
         ]);
-        if (vivo) { setComprasIA(cs || []); setProveedoresIA(ps || []); }
+        if (vivo) {
+          setComprasIA(cs || []); setProveedoresIA(ps || []);
+          setCargosIA(cg || []); setDeudasIA(dd || []);
+        }
       } catch {}
     })();
     return () => { vivo = false; };
   }, [empresa?.id, modo]);
 
+  // Retornos para la IA: la tabla es por pedido, así que cargamos los de los
+  // pedidos actualmente en memoria (cap a 30 pedidos para no saturar egress).
+  useEffect(() => {
+    if (!empresa?.id || modo !== "supabase" || !pedidos.length) { setRetornosIA([]); return; }
+    let vivo = true;
+    (async () => {
+      try {
+        const ids = pedidos.slice(0, 30).map(p => p.id);
+        const lotes = await Promise.all(ids.map(id => cargarRetornos(id).catch(() => [])));
+        if (vivo) setRetornosIA(lotes.flat());
+      } catch {}
+    })();
+    return () => { vivo = false; };
+  }, [empresa?.id, modo, pedidos]);
+
   // Dispatcher de tools para el asistente (memoizado sobre los datos cargados).
   const iaOnTool = useMemo(
-    () => crearDispatcher({ compras: comprasIA, almacenes, proveedores: proveedoresIA }),
-    [comprasIA, almacenes, proveedoresIA]
+    () => crearDispatcher({
+      compras: comprasIA, almacenes, proveedores: proveedoresIA,
+      materiales, pedidos, cargos: cargosIA, deudas: deudasIA, retornos: retornosIA,
+    }),
+    [comprasIA, almacenes, proveedoresIA, materiales, pedidos, cargosIA, deudasIA, retornosIA]
   );
 
   useEffect(() => {
@@ -739,13 +766,14 @@ export default function App() {
                 && !((empresa?.flags?.ai?.usuariosOff?.[sesion?.user?.id] || []).includes("*")),
               provider: empresa.aiProvider, keys: empresa.aiKeys || {}, orden: empresa?.flags?.ai?.orden,
               onFallback: ({ desde }) => { if (desde) marcarIASinTokens(empresa?.id, desde); },
-              system: "Eres el asistente de L-Scale, app de logística de eventos (almacén, pedidos, expediciones, planning de vehículos). Conoces la actividad reciente del equipo. Puedes consultar el HISTORIAL DE COMPRAS con las herramientas disponibles: usa consultar_compras para buscar líneas (por material, fechas, almacén o proveedor) y sumatorio_compras para agregados por material y mes. Cuando el usuario pregunte por compras, materiales comprados, gasto en aprovisionamiento o totales por periodo, llama a la herramienta y resume el resultado con cifras concretas. Responde en español, breve y claro.",
+              system: "Eres el asistente de L-Scale, app de logística de eventos (almacén, pedidos, expediciones, planning de vehículos, finanzas). Conoces la actividad reciente del equipo y puedes CONSULTAR datos reales con las herramientas disponibles; úsalas siempre que la pregunta requiera datos concretos y resume el resultado con cifras: COMPRAS — consultar_compras (líneas por material/fechas/almacén/proveedor) y sumatorio_compras (agregados por material y mes). ALMACÉN/STOCK — consultar_stock (stock actual vs mínimo, por material/categoría/almacén) y material_bajo_minimo (qué reponer). PEDIDOS — consultar_pedidos (por estado/fechas/cliente) y conflictos_stock (pedidos sin stock suficiente). FINANZAS — consultar_cargos_merma (cargos al cliente por roturas/pérdidas) y consultar_deudas_proveedor (lo que debemos a proveedores). PROVEEDORES — consultar_proveedores. RETORNOS — consultar_retornos (material devuelto: Apto/Cuarentena/Roto/Perdido). Responde en español, breve y claro.",
               tools: toolSpecs(),
               onTool: iaOnTool,
               prompts: [
-                "¿Cuántas Copa de Vino hemos comprado en los últimos 120 días?",
+                "¿Qué materiales están bajo mínimo?",
+                "¿Qué pedidos tienen conflicto de stock?",
+                "¿Cuánto debemos a proveedores?",
                 "Hazme un resumen de las compras de este mes",
-                "¿Qué le hemos comprado a cada proveedor?",
               ],
             }}
           />
