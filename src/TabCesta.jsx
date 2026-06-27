@@ -1,7 +1,7 @@
 // MARK: - TabCesta — Cesta de compra para reposición de almacén
 import React, { useState, useCallback, useEffect, useMemo } from "react";
 import * as XLSX from "xlsx";
-import { ShoppingCart, Trash2, Plus, Minus, Download, Check, Loader, Package, ChevronDown, ChevronRight, AlertTriangle, FileText, Warehouse, Building2, X, Eye, PackagePlus, ArrowDownToLine, Search, Layers, ClipboardList } from "lucide-react";
+import { ShoppingCart, Trash2, Plus, Minus, Download, Check, Loader, Package, ChevronDown, ChevronRight, AlertTriangle, FileText, Warehouse, Building2, X, Eye, PackagePlus, ArrowDownToLine, Search, Layers, ClipboardList, History } from "lucide-react";
 import { actualizarMaterial, cargarProveedores, cargarCorrelacionesDeMateriales } from "./lib/data.js";
 import { registrarCompra } from "./lib/dataRecuentos.js";
 
@@ -81,7 +81,7 @@ function ConstructorColumnas({ cols, onChange }) {
 }
 
 /* ─── TabCesta ────────────────────────────────────────────────────────────── */
-export default function TabCesta({ cesta, setCesta, materiales, setMateriales, almacenes = [], modo, empresa, sesion, colsIniciales, onGuardarCols, onNotificarEvento, onIrProveedores, pedidoInicial = null, onCestaMontada, L }) {
+export default function TabCesta({ cesta, setCesta, materiales, setMateriales, almacenes = [], modo, empresa, sesion, colsIniciales, onGuardarCols, onNotificarEvento, onIrProveedores, onIrHistorial, pedidoInicial = null, onCestaMontada, L }) {
   const [comprando, setComprando] = useState(false);
   const [comprado,  setComprado]  = useState(false);
   const [modalCostes, setModalCostes]   = useState(false);  // pedir coste antes de comprar
@@ -988,6 +988,15 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
         </button>
 
         <div style={{ flex:1 }}/>
+
+        {onIrHistorial && (
+          <button onClick={onIrHistorial} title={L("Ver el historial de todas las compras realizadas","See the history of all purchases")}
+            style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 14px",
+              borderRadius:8, border:`1px solid ${C.strong}`, background:C.s2, color:C.ink,
+              fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+            <History size={14} color={C.brand}/>{L("Historial","History")}
+          </button>
+        )}
 
         <button onClick={() => setCesta([])}
           style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 14px",

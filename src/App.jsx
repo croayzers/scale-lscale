@@ -26,9 +26,10 @@ import TabEtiquetas from "./TabEtiquetas.jsx";
 import TabCesta from "./TabCesta.jsx";
 import TabDistribuidor from "./TabDistribuidor.jsx";
 import TabFinanzas from "./TabFinanzas.jsx";
+import TabHistorialCompras from "./TabHistorialCompras.jsx";
 import { ChatBase, BellButton, PresenceAvatars, leerCmdDeUrl, crearNotificacion as crearNotifEvento, serializarToken } from "@scale/shared/chat";
 import { cargarApps, crearResolveAppUrl } from "@scale/shared/registry";
-import { Package, Shield, ClipboardCheck, Truck, Tag, ShoppingCart, Euro } from "lucide-react";
+import { Package, Shield, ClipboardCheck, Truck, Tag, ShoppingCart, Euro, History } from "lucide-react";
 import AppLauncher from "./AppLauncher.jsx";
 import { ToastContainer, PanelAlertasStock, crearNotificacion } from "./StockNotificaciones.jsx";
 
@@ -59,6 +60,7 @@ const NAV = [
     items: [
       { id: "distribuidor", label: "Proveedores", Icon: Building2      },
       { id: "almacen",      label: "Almacén",      Icon: Warehouse      },
+      { id: "compras",      label: "Compras",      Icon: History        },
       // Inventario ya no va en la barra: es un botón dentro del header de Almacén.
     ],
   },
@@ -680,11 +682,12 @@ export default function App() {
             onNotificarEvento={notificarEvento}
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} L={L}/>}
           {tab === "finanzas" && <TabFinanzas empresa={empresa} modo={modo} materiales={materiales} L={L}/>}
+          {tab === "compras"  && <TabHistorialCompras empresa={empresa} modo={modo} almacenes={almacenes} materiales={materiales} L={L}/>}
           {tab === "flota"     && <TabFlota pedidos={pedidos} vehiculosEmpresa={vehiculosEmpresa} empresa={empresa} formatoFecha={formatoFecha} L={L}/>}
           {tab === "etiquetas" && <TabEtiquetas pedidos={pedidos} plantillas={plantillasEtiquetas} onGuardarPlantillas={guardarPlantillasEtiquetas}
             pedidoInicial={etiquetaPedido}
             onVolver={() => { setEtiquetaPedido(null); setTab("pedido"); }} L={L}/>}
-          {tab === "cesta"     && <TabCesta cesta={cesta} setCesta={setCesta} materiales={materiales} setMateriales={setMateriales} almacenes={almacenes} modo={modo} empresa={empresa} sesion={sesion} colsIniciales={cestaCols} onGuardarCols={guardarCestaCols} onNotificarEvento={notificarEvento} onIrProveedores={() => setTab("distribuidor")} pedidoInicial={cestaPedidoAbierto} onCestaMontada={() => setCestaPedidoAbierto(null)} L={L}/>}
+          {tab === "cesta"     && <TabCesta cesta={cesta} setCesta={setCesta} materiales={materiales} setMateriales={setMateriales} almacenes={almacenes} modo={modo} empresa={empresa} sesion={sesion} colsIniciales={cestaCols} onGuardarCols={guardarCestaCols} onNotificarEvento={notificarEvento} onIrProveedores={() => setTab("distribuidor")} onIrHistorial={() => setTab("compras")} pedidoInicial={cestaPedidoAbierto} onCestaMontada={() => setCestaPedidoAbierto(null)} L={L}/>}
           {tab === "distribuidor" && <TabDistribuidor empresa={empresa} modo={modo} materiales={materiales} pedidos={pedidos}/>}
           {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} gestion={gestion} guardarGestion={guardarGestion} materiales={materiales} isAdmin={puedeAdmin} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} portalUrl={import.meta.env?.VITE_PORTAL_URL || "http://localhost:3000"} L={L}/>}
         </div>
