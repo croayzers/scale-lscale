@@ -60,6 +60,7 @@ function mapCompraLinea(r) {
     cantidad:     Number(r.cantidad) || 0,
     unidad:       r.unidad || "ud",
     almacen_id:   r.almacen_id ?? null,
+    proveedor_id: r.proveedor_id ?? null,
     precio_coste: r.precio_coste != null ? Number(r.precio_coste) : null,
   };
 }
@@ -359,6 +360,7 @@ export async function registrarCompra(items, companyId, userEmail, modo) {
       material_id: it.material_id ?? null,
       nombre: it.nombre, cantidad: it.cantidad, unidad: it.unidad || "ud",
       almacen_id: it.almacen_id ?? null,
+      proveedor_id: it.proveedor_id ?? null,
       precio_coste: it.precio_coste ?? null,
     }));
     COMPRAS_DEMO.push({ id: nextId, company_id: companyId,
@@ -381,6 +383,7 @@ export async function registrarCompra(items, companyId, userEmail, modo) {
     cantidad:     Number(it.cantidad) || 0,
     unidad:       it.unidad || "ud",
     almacen_id:   it.almacen_id ?? null,
+    proveedor_id: it.proveedor_id ?? null,
     precio_coste: it.precio_coste != null ? Number(it.precio_coste) : null,
   }));
   if (lineasRows.length) {
