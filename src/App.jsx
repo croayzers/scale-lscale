@@ -14,6 +14,7 @@ import {
   cargarDatos, crearConfigInicial, cargarPrefs, guardarPrefs, guardarPedido, guardarTramos, registrarVistoPor, cargarMiembros, marcarIASinTokens,
 } from "./lib/data.js";
 import { C, Badge, Btn } from "./lib/ui.jsx";
+import { empresaTieneFinanzas } from "./lib/gestion.js";
 import TabAlmacen from "./TabAlmacen.jsx";
 import TabPedidos from "./TabPedidos.jsx";
 import TabPlanning from "./TabPlanning.jsx";
@@ -159,6 +160,7 @@ export default function App() {
   const [myRol,             setMyRol]             = useState("owner");
   const [nivelApp,          setNivelApp]          = useState(null); // ver | editar | admin | null (sin restricción)
   const [formatoFecha,      setFormatoFecha]      = useState("DD/MM/YYYY");
+  const [gestion,           setGestion]           = useState({ nivel: "operativo", categorias: {} });
   const [miembros,          setMiembros]          = useState([]);
   const [chatUnread,        setChatUnread]        = useState(0);
   const [highlightedPedido, setHighlightedPedido] = useState(null);
@@ -348,6 +350,7 @@ export default function App() {
     try { const v = JSON.parse(localStorage.getItem(`lscale.vehiculos.${empresa.id}`)); if (Array.isArray(v) && v.length) setVehiculosEmpresa(v); } catch {}
     try { const v = JSON.parse(localStorage.getItem(`lscale.roles.${empresa.id}`)); if (Array.isArray(v) && v.length) setRolesImport(v); } catch {}
     try { const v = localStorage.getItem(`lscale.formatoFecha.${empresa.id}`); if (v) setFormatoFecha(v); } catch {}
+    try { const v = JSON.parse(localStorage.getItem(`lscale.gestion.${empresa.id}`)); if (v && typeof v === "object") setGestion({ nivel: v.nivel || "operativo", categorias: v.categorias || {} }); } catch {}
   }, [empresa?.id, modo]);
 
   const guardarAlmacenes = async (list) => {
@@ -376,6 +379,15 @@ export default function App() {
     if (!empresa?.id) return;
     if (modo === "supabase") await guardarPrefs(empresa.id, { formatoFecha: fmt });
     else localStorage.setItem(`lscale.formatoFecha.${empresa.id}`, fmt);
+  };
+
+  // Estadios de gestión: patch parcial sobre { nivel, categorias }.
+  const guardarGestion = async (patch) => {
+    const next = { nivel: gestion.nivel, categorias: gestion.categorias, ...patch };
+    setGestion(next);
+    if (!empresa?.id) return;
+    if (modo === "supabase") await guardarPrefs(empresa.id, { gestion: next });
+    else localStorage.setItem(`lscale.gestion.${empresa.id}`, JSON.stringify(next));
   };
 
   // Plantillas de configurador de importación — se guardan en Supabase o localStorage
@@ -469,6 +481,8 @@ export default function App() {
       if (Array.isArray(res.prefs.vehiculos) && res.prefs.vehiculos.length) setVehiculosEmpresa(res.prefs.vehiculos);
       if (Array.isArray(res.prefs.roles)     && res.prefs.roles.length)     setRolesImport(res.prefs.roles);
       if (res.prefs.formatoFecha) setFormatoFecha(res.prefs.formatoFecha);
+      if (res.prefs.gestion && typeof res.prefs.gestion === "object")
+        setGestion({ nivel: res.prefs.gestion.nivel || "operativo", categorias: res.prefs.gestion.categorias || {} });
       // Plantillas de etiquetas (compartidas por la organización)
       if (Array.isArray(res.prefs.plantillas_etiquetas)) {
         setPlantillasEtiquetas(res.prefs.plantillas_etiquetas);
@@ -547,7 +561,7 @@ export default function App() {
           </div>
 
           <div style={{ display:"flex", gap:2, flex:1, overflowX:"auto" }}>
-            {TABS.map(({ id, label, Icon }) => (
+            {TABS.filter(({ id }) => id !== "finanzas" || empresaTieneFinanzas(gestion)).map(({ id, label, Icon }) => (
               <button key={id} onClick={() => setTab(id)}
                 style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 12px", borderRadius:8, border:"none",
                   fontWeight: tab === id ? 600 : 400, fontSize:13.5, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap",
@@ -627,12 +641,12 @@ export default function App() {
         {/* Contenido */}
         <div style={{ flex:1, overflow:"hidden", display:"flex", flexDirection:"column", minHeight:0 }}>
           {tab === "almacen"  && <TabAlmacen  materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} silenciados={silenciados}
-            puedeEditar={puedeEditar}
+            puedeEditar={puedeEditar} gestion={gestion}
             onInventario={() => setTab("inventario")}
             onAgregarCesta={agregarACesta}
             guardarPlantillaConf={(almId, pl) => guardarPlantillaConf("almconf", almId, pl)}
             cargarPlantillasConf={(almId) => cargarPlantillasConf("almconf", almId)} L={L}/>}
-          {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} rolesImport={rolesImport} formatoFecha={formatoFecha} sesion={sesion} highlightedPedidoId={highlightedPedido?.id ?? highlightedPedido}
+          {tab === "pedido"   && <TabPedidos  almacenes={almacenes} empresa={empresa} modo={modo} pedidos={pedidos} setPedidos={setPedidos} materiales={materiales} setMateriales={setMateriales} vehiculosEmpresa={vehiculosEmpresa} rolesImport={rolesImport} formatoFecha={formatoFecha} sesion={sesion} gestion={gestion} highlightedPedidoId={highlightedPedido?.id ?? highlightedPedido}
             highlightedCategoria={highlightedPedido?.categoria ?? null}
             puedeEditar={puedeEditar}
             onPlanning={(p) => { setPlanningFecha(p?.fecha_entrega || null); setTab("planning"); }}
@@ -661,7 +675,7 @@ export default function App() {
           {tab === "inventario" && <TabInventario materiales={materiales} setMateriales={setMateriales} empresa={empresa} modo={modo} almacenes={almacenes} sesion={sesion} pedidos={pedidos} puedeEditar={puedeEditar} onVolver={() => setTab("almacen")} L={L}/>}
           {tab === "retorno"  && <TabRetorno  pedidos={pedidos} setPedidos={setPedidos} vehiculosEmpresa={vehiculosEmpresa} formatoFecha={formatoFecha}
             materiales={materiales} setMateriales={setMateriales} modo={modo} empresa={empresa}
-            puedeEditar={puedeEditar}
+            puedeEditar={puedeEditar} gestion={gestion}
             onNotificarStock={notificarStock}
             onNotificarEvento={notificarEvento}
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} L={L}/>}
@@ -672,7 +686,7 @@ export default function App() {
             onVolver={() => { setEtiquetaPedido(null); setTab("pedido"); }} L={L}/>}
           {tab === "cesta"     && <TabCesta cesta={cesta} setCesta={setCesta} materiales={materiales} setMateriales={setMateriales} almacenes={almacenes} modo={modo} empresa={empresa} sesion={sesion} colsIniciales={cestaCols} onGuardarCols={guardarCestaCols} onNotificarEvento={notificarEvento} onIrProveedores={() => setTab("distribuidor")} pedidoInicial={cestaPedidoAbierto} onCestaMontada={() => setCestaPedidoAbierto(null)} L={L}/>}
           {tab === "distribuidor" && <TabDistribuidor empresa={empresa} modo={modo} materiales={materiales} pedidos={pedidos}/>}
-          {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} isAdmin={puedeAdmin} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} portalUrl={import.meta.env?.VITE_PORTAL_URL || "http://localhost:3000"} L={L}/>}
+          {tab === "config"   && <TabConfig   empresa={empresa} modo={modo} almacenes={almacenes} guardarAlmacenes={guardarAlmacenes} vehiculosEmpresa={vehiculosEmpresa} guardarVehiculos={guardarVehiculos} rolesImport={rolesImport} guardarRoles={guardarRoles} formatoFecha={formatoFecha} guardarFormatoFecha={guardarFormatoFecha} gestion={gestion} guardarGestion={guardarGestion} materiales={materiales} isAdmin={puedeAdmin} miembros={miembros} onEnviarMensaje={(user) => chatRef.current?.openConversation(user)} portalUrl={import.meta.env?.VITE_PORTAL_URL || "http://localhost:3000"} L={L}/>}
         </div>
 
         {/* Chat flotante cross-app (paquete @scale/shared) */}

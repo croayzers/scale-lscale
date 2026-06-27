@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from "react";
-import { Settings, Plus, Trash2, Check, Shield, MessageCircle, Globe, Phone, Mail, Building2, ExternalLink } from "lucide-react";
+import React, { useState, useEffect, useMemo } from "react";
+import { Settings, Plus, Trash2, Check, Shield, MessageCircle, Globe, Phone, Mail, Building2, ExternalLink, Layers } from "lucide-react";
 import { C, Badge, Btn } from "./lib/ui.jsx";
+import { NIVELES, rank, labelNivel } from "./lib/gestion.js";
 
 const COLORES_ROLES = ["#0891b2","#be185d","#65a30d","#7c3aed","#f59e0b","#ef4444","#10b981","#8b5cf6","#f97316","#06b6d4"];
 const AVATAR_COLORS = ["#6366f1","#0891b2","#be185d","#65a30d","#f59e0b","#ef4444","#10b981","#8b5cf6"];
@@ -12,7 +13,7 @@ function avatarColor(uid) {
   return AVATAR_COLORS[h % AVATAR_COLORS.length];
 }
 
-export default function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpresa, guardarVehiculos, rolesImport, guardarRoles, formatoFecha = "DD/MM/YYYY", guardarFormatoFecha, isAdmin = true, miembros = [], onEnviarMensaje, L, portalUrl }) {
+export default function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, vehiculosEmpresa, guardarVehiculos, rolesImport, guardarRoles, formatoFecha = "DD/MM/YYYY", guardarFormatoFecha, gestion = { nivel: "operativo", categorias: {} }, guardarGestion, materiales = [], isAdmin = true, miembros = [], onEnviarMensaje, L, portalUrl }) {
   const [alms, setAlms] = useState(almacenes);
   const [vehs, setVehs] = useState(vehiculosEmpresa || []);
   const [roles, setRoles] = useState(rolesImport || []);
@@ -27,6 +28,21 @@ export default function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, 
   useEffect(() => { setAlms(almacenes); }, [almacenes]);
   useEffect(() => { setVehs(vehiculosEmpresa || []); }, [vehiculosEmpresa]);
   useEffect(() => { setRoles(rolesImport || []); }, [rolesImport]);
+
+  // Categorías existentes (texto libre en materiales) para graduar el Estadio 2 por categoría.
+  const categoriasExistentes = useMemo(() => [...new Set(
+    (materiales || []).map(m => (m.categoria || "").trim()).filter(Boolean)
+  )].sort(), [materiales]);
+
+  // Descripción de cada nivel (qué activa). Una frase por nivel para que sea intuitivo.
+  const DESC_NIVEL = {
+    operativo: L("Solo gestión logística: stock, pedidos, reparto propio/alquiler y retornos. Sin datos financieros.",
+                 "Logistics only: stock, orders, own/rental split and returns. No financial data."),
+    basica:    L("Añade coste y margen en pedidos, y registro de roturas/pérdidas (cargos al cliente y deudas con proveedor).",
+                 "Adds cost and margin on orders, plus loss tracking (client charges and supplier debts)."),
+    avanzada:  L("Todo lo anterior más lotes (FIFO), precio medio, números de serie y amortización de activos.",
+                 "All of the above plus batches (FIFO), average cost, serial numbers and asset amortization."),
+  };
 
   const addRol = () => setRoles(p => [...p, {
     key: `col_custom_${Date.now()}`, label: "",
@@ -397,6 +413,100 @@ export default function TabConfig({ empresa, modo, almacenes, guardarAlmacenes, 
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Modo de gestión (dos estadios: operativo / financiero) */}
+      <div style={{ background:C.surface, border:`1px solid ${C.line}`, borderRadius:14, overflow:"hidden", marginBottom:20 }}>
+        <div style={{ padding:"14px 18px", borderBottom:`1px solid ${C.line}`, display:"flex", alignItems:"center", gap:8 }}>
+          <Layers size={15} color={C.brand}/>
+          <div>
+            <div style={{ fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, marginBottom:2 }}>{L("MODO DE GESTIÓN","MANAGEMENT MODE")}</div>
+            <div style={{ fontSize:12.5, color:C.sub }}>
+              {L("Elige cuánta gestión financiera necesitas. Empieza simple; puedes activar más cuando quieras.","Choose how much financial management you need. Start simple; enable more whenever you want.")}
+            </div>
+          </div>
+        </div>
+        {!isAdmin && (
+          <div style={{ padding:"8px 16px", background:"var(--warn-soft)", borderBottom:`1px solid ${C.line}`, fontSize:12.5, color:"var(--warn)" }}>
+            🔒 {L("Solo lectura — sin permisos de edición.","Read-only — no edit permissions.")}
+          </div>
+        )}
+
+        {/* Nivel global: 3 tarjetas */}
+        <div style={{ padding:"16px 18px", display:"flex", flexDirection:"column", gap:10 }}>
+          <div style={{ fontSize:11, fontWeight:700, color:C.dim, letterSpacing:.5 }}>{L("NIVEL GENERAL","GENERAL LEVEL")}</div>
+          {NIVELES.map(n => {
+            const activo = (gestion.nivel || "operativo") === n;
+            return (
+              <button key={n} disabled={!isAdmin} onClick={() => isAdmin && guardarGestion?.({ nivel: n })}
+                style={{ textAlign:"left", padding:"12px 14px", borderRadius:10,
+                  border:`2px solid ${activo ? C.brand : C.line}`,
+                  background: activo ? C.brandSoft : C.s2,
+                  cursor: isAdmin ? "pointer" : "not-allowed", fontFamily:"inherit", display:"flex", gap:12, alignItems:"flex-start" }}>
+                <div style={{ width:18, height:18, borderRadius:999, flexShrink:0, marginTop:1,
+                  border:`2px solid ${activo ? C.brand : C.strong}`, background: activo ? C.brand : "transparent",
+                  display:"grid", placeItems:"center" }}>
+                  {activo && <Check size={11} color="#fff"/>}
+                </div>
+                <div>
+                  <div style={{ fontSize:13.5, fontWeight:700, color: activo ? C.brand : C.ink }}>{labelNivel(n, L)}</div>
+                  <div style={{ fontSize:12, color:C.sub, marginTop:2 }}>{DESC_NIVEL[n]}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Override por categoría: solo si el global no es ya el máximo y hay categorías */}
+        {rank(gestion.nivel) < rank("avanzada") && categoriasExistentes.length > 0 && (
+          <div style={{ padding:"4px 18px 18px" }}>
+            <div style={{ fontSize:11, fontWeight:700, color:C.dim, letterSpacing:.5, marginBottom:4 }}>
+              {L("AJUSTE POR CATEGORÍA","PER-CATEGORY OVERRIDE")}
+            </div>
+            <div style={{ fontSize:12, color:C.sub, marginBottom:10 }}>
+              {L("¿Tienes material caro que sí necesita control financiero? Súbele el nivel solo a esa categoría (p. ej. equipos audiovisuales). El resto sigue simple.",
+                 "Got expensive gear that needs financial control? Raise the level for just that category (e.g. AV equipment). The rest stays simple.")}
+            </div>
+            <div style={{ border:`1px solid ${C.line}`, borderRadius:10, overflow:"hidden" }}>
+              {categoriasExistentes.map((cat, i) => {
+                const actual = gestion.categorias?.[cat] || gestion.nivel || "operativo";
+                return (
+                  <div key={cat} style={{ display:"flex", alignItems:"center", gap:10, padding:"8px 12px",
+                    borderTop: i > 0 ? `1px solid ${C.line}` : "none", flexWrap:"wrap" }}>
+                    <span style={{ flex:1, minWidth:120, fontSize:13, fontWeight:600, color:C.ink }}>{cat}</span>
+                    <div style={{ display:"flex", gap:4 }}>
+                      {NIVELES.map(n => {
+                        // La categoría solo puede SUBIR sobre el global (heredado = el global).
+                        const heredado = rank(n) < rank(gestion.nivel);
+                        const activo = actual === n;
+                        return (
+                          <button key={n} disabled={!isAdmin || heredado}
+                            title={heredado ? L("Heredado del nivel general","Inherited from general level") : ""}
+                            onClick={() => {
+                              if (!isAdmin || heredado) return;
+                              const cats = { ...(gestion.categorias || {}) };
+                              if (n === gestion.nivel) delete cats[cat];   // igual al global → sin override
+                              else cats[cat] = n;
+                              guardarGestion?.({ categorias: cats });
+                            }}
+                            style={{ padding:"4px 10px", borderRadius:999, fontFamily:"inherit", fontSize:11.5,
+                              fontWeight: activo ? 700 : 500,
+                              border:`1.5px solid ${activo ? C.brand : C.line}`,
+                              background: activo ? C.brandSoft : (heredado ? "transparent" : C.s2),
+                              color: heredado ? C.dim : (activo ? C.brand : C.sub),
+                              cursor: (!isAdmin || heredado) ? "not-allowed" : "pointer",
+                              opacity: heredado ? 0.5 : 1 }}>
+                            {labelNivel(n, L)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
     </div>

@@ -23,6 +23,7 @@ import PantallaEventoLogistica from "./PantallaEventoLogistica.jsx";
 import { fmtFecha, siguienteCodigo } from "./lib/fechas.js";
 import { conflictosPedido, calcularConflictosStock } from "./lib/stockConflictos.js";
 import { aplicarLineasSubalquilerAPedido } from "./lib/stockEventos.js";
+import { empresaTieneFinanzas } from "./lib/gestion.js";
 
 // MARK: - Constantes UI (C, CHIP_ESTADO, ESTADOS)
 /* ─── Paleta ──────────────────────────────────────────────────────────────── */
@@ -1087,7 +1088,9 @@ function ExportConfigurador({ pedido, almacenes, empresaId, rolesImport, formato
    DETALLE / EDICIÓN DE PEDIDO
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - DetallePedido
-function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, onEtiquetas, onAgregarCesta, cesta = [], onIrCesta, onComprobarStock, rolesImport, empresaId, modo, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, reservas = [], L }) {
+function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, onDelete, onCambiarVehiculo, onPlanning, onEtiquetas, onAgregarCesta, cesta = [], onIrCesta, onComprobarStock, rolesImport, empresaId, modo, formatoFecha = "DD/MM/YYYY", highlightedCategoria, sesion, materiales, pedidos, reservas = [], gestion = { nivel: "operativo", categorias: {} }, L }) {
+  // ¿Mostrar costes/márgenes? Solo si la empresa tiene finanzas (básica+) en algún nivel.
+  const verFinanzas = empresaTieneFinanzas(gestion);
   const DRAFT_KEY = empresaId && pedido?.id ? `lscale.pedidoDraft.${empresaId}.${pedido.id}` : null;
 
   const [exportModal, setExportModal] = useState(null); // null | "pdf" | "excel"
@@ -1718,11 +1721,11 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                   {r.label.toUpperCase()}
                 </div>
               ))}
-              <div style={{ padding:"9px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, textAlign:"right" }}>{L("COSTE","COST")}</div>
-              <div style={{ padding:"9px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, textAlign:"right" }}>{L("PVP","PVP")}</div>
-              <div style={{ padding:"9px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, textAlign:"right" }}>{L("MARGEN","MARGIN")}</div>
-              <div style={{ padding:"9px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, textAlign:"right" }}>{L("AMORT. PER.","AMORT. PD")}</div>
-              <div style={{ padding:"9px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, textAlign:"right" }}>{L("COSTE AMORT.","AMORT. COST")}</div>
+              <div style={{ padding:"9px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, textAlign:"right" }}>{verFinanzas ? L("COSTE","COST") : ""}</div>
+              <div style={{ padding:"9px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, textAlign:"right" }}>{verFinanzas ? L("PVP","PVP") : ""}</div>
+              <div style={{ padding:"9px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, textAlign:"right" }}>{verFinanzas ? L("MARGEN","MARGIN") : ""}</div>
+              <div style={{ padding:"9px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, textAlign:"right" }}>{verFinanzas ? L("AMORT. PER.","AMORT. PD") : ""}</div>
+              <div style={{ padding:"9px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, textAlign:"right" }}>{verFinanzas ? L("COSTE AMORT.","AMORT. COST") : ""}</div>
               <div style={{ padding:"9px 8px", fontSize:11, fontWeight:700, color:C.sub, letterSpacing:.6, textAlign:"right" }}>{L("CANT.","QTY")}</div>
               <div/>
             </div>
@@ -1845,8 +1848,8 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                       ))}
                       <div style={{ padding:"9px 8px", textAlign:"right", whiteSpace:"nowrap" }}
                         title={costeOrigen === "almacen" ? L("Coste de almacén","Warehouse cost") : ""}>
-                        <span style={{ fontSize:12.5, fontWeight:600, color: costeLinea != null ? "#b45309" : C.dim }}>
-                          {costeLinea != null ? `${Number(costeLinea).toFixed(2)} €` : "—"}
+                        <span style={{ fontSize:12.5, fontWeight:600, color: (verFinanzas && costeLinea != null) ? "#b45309" : C.dim }}>
+                          {verFinanzas ? (costeLinea != null ? `${Number(costeLinea).toFixed(2)} €` : "—") : ""}
                         </span>
                       </div>
                       <div style={{ padding:"9px 8px", fontSize:13.5, fontWeight:700, textAlign:"right",
@@ -1885,7 +1888,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                     {alm.nombre} — {alm.cats.reduce((s, c) => s + c.items.length, 0)} {L("líneas","lines")}
                   </div>
                   <div style={{ padding:"7px 8px", fontSize:12, fontWeight:800, textAlign:"right", color:"#b45309" }}>
-                    {costeAlm > 0 ? `${costeAlm.toFixed(2)} €` : ""}
+                    {verFinanzas && costeAlm > 0 ? `${costeAlm.toFixed(2)} €` : ""}
                   </div>
                   <div/>
                   <div/>
@@ -1925,6 +1928,8 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
 
           <div style={{ flex:1 }}/>
 
+          {/* Bloques financieros (coste, margen, precio venta) — solo con finanzas */}
+          {verFinanzas && (<>
           {/* Bloque coste */}
           <div style={{ padding:"10px 16px", borderLeft:`1px solid ${C.line}`, textAlign:"right", minWidth:130 }}>
             <div style={{ fontSize:10.5, fontWeight:600, color:C.sub, letterSpacing:.4, marginBottom:2 }}>COSTE</div>
@@ -1968,6 +1973,7 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
               </div>
             )}
           </div>
+          </>)}
         </div>
       </div>
 
@@ -2246,7 +2252,7 @@ function ModalNotificaciones({ pedido, companyId, onClose }) {
    COMPONENTE PRINCIPAL
    ═══════════════════════════════════════════════════════════════════════════ */
 // MARK: - TabPedidos [export default]
-export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, onRegistrarVisto, onPlanning, onEtiquetas, onNotificarStock, onAgregarCesta, cesta = [], onIrCesta, guardarPlantillaConf, cargarPlantillasConf, highlightedPedidoId, highlightedCategoria, puedeEditar, onNotificarEvento, reservas = [] }) {
+export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedidos, materiales, setMateriales, vehiculosEmpresa, setTramos, rolesImport = [], formatoFecha = "DD/MM/YYYY", sesion, gestion = { nivel: "operativo", categorias: {} }, onRegistrarVisto, onPlanning, onEtiquetas, onNotificarStock, onAgregarCesta, cesta = [], onIrCesta, guardarPlantillaConf, cargarPlantillasConf, highlightedPedidoId, highlightedCategoria, puedeEditar, onNotificarEvento, reservas = [] }) {
   const L = useL();
   const fileRef = useRef(null);
 
@@ -2543,6 +2549,7 @@ export default function TabPedidos({ almacenes, empresa, modo, pedidos, setPedid
       <DetallePedido
         pedido={pedidoSel}
         almacenes={almacenes}
+        gestion={gestion}
         vehiculosEmpresa={vehiculosEmpresa || []}
         onBack={() => setPedidoSel(null)}
         onSave={guardarPedidoEdit}

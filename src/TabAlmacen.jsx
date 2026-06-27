@@ -11,6 +11,7 @@ import { crearMaterial, upsertMaterialesLote, actualizarMaterial, borrarMaterial
 import { sb } from "./lib/supabase.js";
 import AlmacenConfigurador from "./AlmacenConfigurador.jsx";
 import PanelTrazabilidad from "./PanelTrazabilidad.jsx";
+import { nivelMaterial, caps } from "./lib/gestion.js";
 import { OrigenDatosPanel } from "@scale/shared/connectors";
 
 // Decodifica el base64 devuelto por /api/sharepoint/files/content a un File
@@ -219,7 +220,7 @@ function calcularIndicadoresMaterial(m) {
 }
 
 // MARK: - TabAlmacen
-export default function TabAlmacen({ materiales, setMateriales, empresa, modo, almacenes, silenciados, guardarPlantillaConf, cargarPlantillasConf, onInventario, onAgregarCesta, L }) {
+export default function TabAlmacen({ materiales, setMateriales, empresa, modo, almacenes, silenciados, guardarPlantillaConf, cargarPlantillasConf, onInventario, onAgregarCesta, gestion = { nivel: "operativo", categorias: {} }, L }) {
   const EMP_ID = `lscale.cols.${empresa?.id}`;
   const defCols = TODAS_COLS.filter((c) => c.def).map((c) => c.id);
   const [colsVis, setColsVis]       = useState(() => { try { return JSON.parse(localStorage.getItem(EMP_ID)) || defCols; } catch { return defCols; } });
@@ -832,7 +833,10 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
         })()}
       </div>
 
-      {editObj && (
+      {editObj && (() => {
+        // Capacidades financieras según el nivel efectivo de la categoría del material.
+        const capsMat = caps(nivelMaterial(gestion, editObj));
+        return (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)", display:"grid", placeItems:"center", zIndex:500, padding:16 }} onClick={() => setEditObj(null)}>
           <div style={{ background:C.surface, borderRadius:16, boxShadow:"var(--shadow-lg)", padding:24, width:"100%", maxWidth:580, maxHeight:"90vh", overflowY:"auto" }} onClick={(e) => e.stopPropagation()}>
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:18 }}>
@@ -860,7 +864,9 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
                 readOnly={Boolean(editObj.id && editObj.sku_interno)}
                 style={editObj.id && editObj.sku_interno ? { opacity:0.75 } : undefined}
                 placeholder={editObj.id ? "" : L("(automático si vacío)","(auto if empty)")}/>
-              {/* Tipo de trazabilidad: define cómo valora salidas la app (FIFO/PMP/Serie). */}
+              {/* Tipo de trazabilidad: define cómo valora salidas la app (FIFO/PMP/Serie).
+                  Solo en gestión avanzada — el resto trabaja con stock simple. */}
+              {capsMat.avanzado && (
               <div style={{ gridColumn:"1 / -1" }}>
                 <label style={{ fontSize:11.5, fontWeight:600, color:"var(--text-2)", letterSpacing:.5 }}>
                   {L("CONTROL DE STOCK","STOCK CONTROL")}
@@ -881,9 +887,15 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
                   ))}
                 </div>
               </div>
-              <ModalField label={L("Coste (€)","Cost (€)")}      value={editObj.precio_coste} onChange={(v) => setEditObj((p) => ({ ...p, precio_coste:v }))} type="number" placeholder="0.00"/>
-              <ModalField label={L("PVP (€)","Sale price (€)")} value={editObj.precio} onChange={(v) => setEditObj((p) => ({ ...p, precio:v }))} type="number" placeholder="0.00"/>
-              {(() => {
+              )}
+              {/* Coste y PVP: visibles desde contabilidad básica. */}
+              {capsMat.finanzas && (
+                <ModalField label={L("Coste (€)","Cost (€)")}      value={editObj.precio_coste} onChange={(v) => setEditObj((p) => ({ ...p, precio_coste:v }))} type="number" placeholder="0.00"/>
+              )}
+              {capsMat.finanzas && (
+                <ModalField label={L("PVP (€)","Sale price (€)")} value={editObj.precio} onChange={(v) => setEditObj((p) => ({ ...p, precio:v }))} type="number" placeholder="0.00"/>
+              )}
+              {capsMat.avanzado && (() => {
                 const { margen, periodo, costeAmort } = calcularIndicadoresMaterial(editObj);
                 return (
                   <>
@@ -893,7 +905,8 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
                   </>
                 );
               })()}
-              {/* Campos de inventario dinámico por fechas */}
+              {/* Campos de inventario dinámico por fechas — solo gestión avanzada */}
+              {capsMat.avanzado && (<>
               <div style={{ gridColumn:"1 / -1", borderTop:`1px solid var(--border)`, paddingTop:12, marginTop:4 }}>
                 <label style={{ fontSize:11.5, fontWeight:700, color:"var(--text-2)", letterSpacing:.5 }}>{L("INVENTARIO DINÁMICO / AMORTIZACIÓN","DYNAMIC INVENTORY / AMORTIZATION")}</label>
               </div>
@@ -951,6 +964,7 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
                   ))}
                 </div>
               </div>
+              </>)}
               {/* Imagen */}
               <div style={{ gridColumn:"1 / -1" }}>
                 <label style={{ fontSize:11.5, fontWeight:600, color:C.sub, letterSpacing:.5 }}>IMAGEN</label>
@@ -1022,8 +1036,8 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
                 <textarea value={editObj.notas || ""} onChange={(e) => setEditObj((p) => ({ ...p, notas:e.target.value }))}
                   rows={2} style={{ width:"100%", marginTop:6, padding:"9px 11px", border:`1px solid ${C.strong}`, borderRadius:10, fontSize:13.5, fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none", resize:"vertical" }}/>
               </div>
-              {/* Lotes (FIFO/PMP) o unidades serie — solo en material existente + Supabase */}
-              {editObj.id && modo === "supabase" && empresa?.id && (
+              {/* Lotes (FIFO/PMP) o unidades serie — solo material existente + Supabase + gestión avanzada */}
+              {editObj.id && modo === "supabase" && empresa?.id && capsMat.avanzado && (
                 <PanelTrazabilidad material={editObj} companyId={empresa.id} L={L}/>
               )}
             </div>
@@ -1036,7 +1050,8 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {delConf && (
         <div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,.45)", display:"grid", placeItems:"center", zIndex:500 }} onClick={() => setDelConf(null)}>

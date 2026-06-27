@@ -3,6 +3,7 @@ import { RotateCcw, ArrowRight, Check, Loader, X, Package } from "lucide-react";
 import { C, Btn } from "./lib/ui.jsx";
 import { actualizarMaterial, registrarRetorno } from "./lib/data.js";
 import { cantidadPropiaRetornable, cantidadSubalquilada, limitarRetornoAlmacen } from "./lib/retornos.js";
+import { nivelMaterial, caps } from "./lib/gestion.js";
 
 const CHIP_ESTADO = {
   reservado:  { bg:"#f1f5f9", ink:"#64748b" },
@@ -266,6 +267,7 @@ function RetornoModal({ pedido, materiales, onConfirm, onCancel, saving }) {
 /* ─── TabRetorno ──────────────────────────────────────────────────────────── */
 export default function TabRetorno({ pedidos = [], setPedidos, vehiculosEmpresa = [],
     materiales = [], setMateriales, modo = "demo", empresa,
+    gestion = { nivel: "operativo", categorias: {} },
     onSavePedido, onNotificarStock, onNotificarEvento, formatoFecha = "DD/MM/YYYY", L }) {
   const [filtro,       setFiltro]      = useState("activos");
   const [saving,       setSaving]      = useState(null);
@@ -319,6 +321,11 @@ export default function TabRetorno({ pedidos = [], setPedidos, vehiculosEmpresa 
         const esMerma = rec.estado === "Roto" || rec.estado === "Perdido";
         const cantRet = limitarRetornoAlmacen(l, cantidades[i]);
         if (!esMerma && cantRet === 0 && rec.estado === "Apto") continue;
+        // Estadio 2: solo se registra en BD (cargos/deudas) si el material tiene finanzas.
+        // En gestión operativa, la merma se guarda como estado en el pedido (jsonb) pero
+        // NO genera cargos/deudas — el estado ya queda en lineasConRetorno.
+        const matRet = (materiales || []).find(m => m.id === l.material_id);
+        if (!caps(nivelMaterial(gestion, matRet || { categoria: l.categoria })).finanzas) continue;
         const origenCoste = (l.proveedor_id || l._origen_logistico === "subalquiler" || l.tipo_origen === "subalquiler")
           ? "Alquiler_Proveedor" : "Almacen_Propio";
         try {
