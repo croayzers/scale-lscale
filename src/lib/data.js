@@ -69,6 +69,8 @@ function mapMaterial(r) {
     periodo_amortizacion_dias:     r.periodo_amortizacion_dias     ?? null,
     coste_amortizacion_diario:     r.coste_amortizacion_diario     ?? null,
     tipo_activo:                   r.tipo_activo                   || 'propio',
+    sku_interno:                   r.sku_interno                   ?? null,
+    tipo_trazabilidad:             r.tipo_trazabilidad             || 'Consumible_PMP',
   };
 }
 
@@ -96,6 +98,10 @@ function materialToRow(m, companyId) {
     pvp:                       m.pvp               != null ? Number(m.pvp)               : null,
     periodo_amortizacion_dias: m.periodo_amortizacion_dias != null ? Number(m.periodo_amortizacion_dias) : null,
     tipo_activo:               m.tipo_activo ?? 'propio',
+    // sku_interno NO se envía en UPDATE: es inmutable (lo congela un trigger en BD).
+    // En INSERT, si va vacío, el trigger fn_autoset_sku lo genera (LSC-<id>).
+    ...(m.sku_interno ? { sku_interno: m.sku_interno } : {}),
+    tipo_trazabilidad:         m.tipo_trazabilidad ?? 'Consumible_PMP',
   };
 }
 
@@ -311,7 +317,8 @@ export async function crearMaterial(m, companyId) {
 export async function actualizarMaterial(id, cambios) {
   const permitidas = ["referencia","nombre","descripcion","categoria","unidad","stock_actual",
     "stock_minimo","ubicacion","estado","proveedor","referencia_proveedor","precio_coste","notas","imagen_url","almacen_id",
-    "coste_adquisicion","margen","pvp","periodo_amortizacion_dias","tipo_activo"];
+    "coste_adquisicion","margen","pvp","periodo_amortizacion_dias","tipo_activo","tipo_trazabilidad"];
+    // Nota: "sku_interno" se omite deliberadamente — es inmutable (trigger en BD lo bloquea).
   const patch = {};
   for (const k of permitidas) if (k in cambios) patch[k] = cambios[k];
   if ("stock_actual" in patch) patch.stock_actual = Number(patch.stock_actual) || 0;
@@ -835,4 +842,227 @@ export async function guardarSubalquilerPedido(pedidoId, lineas, companyId) {
     estado:          l.estado ?? 'pendiente',
   }));
   await lsc().from('lineas_subalquiler').insert(rows);
+}
+
+// MARK: - ERP: líneas de pedido (tabla real), lotes/series, retornos, financiero
+/* ═══════════════════════════════════════════════════════════════════
+   LÍNEAS DE PEDIDO (migración 016) — tabla real lscale.lineas_pedido.
+   Convive con el jsonb pedidos.datos.lineas durante la transición:
+   - El motor fn_split_linea (RPC) decide propio vs alquiler por disponibilidad.
+   - La UI sigue leyendo pedido.lineas (jsonb) para presentar; estas funciones
+     materializan el split en la tabla para queries financieras y triggers.
+   ═══════════════════════════════════════════════════════════════════ */
+
+// Crea una línea aplicando el motor de Line Splitting (1 o 2 filas).
+// Devuelve las líneas creadas (propio + alquiler si hay faltante).
+export async function crearLineaPedido({ pedidoId, materialId, cantidad, nombre, categoria, unidad }) {
+  if (!supabaseConfigurado) return [];
+  const { data, error } = await lsc().rpc('fn_split_linea', {
+    p_pedido_id: pedidoId,
+    p_material_id: materialId,
+    p_cantidad: Number(cantidad) || 0,
+    p_nombre: nombre ?? null,
+    p_categoria: categoria ?? null,
+    p_unidad: unidad ?? 'ud',
+  });
+  if (error) { console.error('[L-Scale] fn_split_linea RPC error', error); throw error; }
+  return data || [];
+}
+
+export async function cargarLineasPedido(pedidoId) {
+  if (!supabaseConfigurado) return [];
+  const { data, error } = await lsc().from('lineas_pedido')
+    .select('*').eq('pedido_id', pedidoId).order('grupo_split').order('id');
+  if (error) { console.error('[L-Scale] cargarLineasPedido', error.message); return []; }
+  return data || [];
+}
+
+export async function borrarLineasPedido(pedidoId) {
+  if (!supabaseConfigurado) return;
+  const { error } = await lsc().from('lineas_pedido').delete().eq('pedido_id', pedidoId);
+  if (error) throw error;
+}
+
+// Asigna proveedor a una línea que quedó 'pendiente_proveedor' tras el split.
+export async function asignarProveedorLinea(lineaId, proveedorId, costeUnitario = null) {
+  if (!supabaseConfigurado) return;
+  const patch = {
+    proveedor_id: proveedorId,
+    estado_linea: 'planificada',
+    ...(costeUnitario != null ? { coste_unitario: Number(costeUnitario) } : {}),
+  };
+  const { error } = await lsc().from('lineas_pedido').update(patch).eq('id', lineaId);
+  if (error) throw error;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   LOTES (FIFO/PMP) y UNIDADES SERIE (trazabilidad — migración 016)
+   ═══════════════════════════════════════════════════════════════════ */
+
+export async function cargarLotes(materialId) {
+  if (!supabaseConfigurado) return [];
+  const { data, error } = await lsc().from('lotes')
+    .select('*').eq('material_id', materialId).order('fecha_entrada');
+  if (error) { console.error('[L-Scale] cargarLotes', error.message); return []; }
+  return data || [];
+}
+
+// Alta de un lote (entrada de stock). El trigger recalcula materiales.stock_actual.
+export async function crearLote(lote, companyId) {
+  if (!supabaseConfigurado) return null;
+  const cant = Number(lote.cantidad_inicial) || 0;
+  const row = {
+    company_id: companyId,
+    material_id: lote.material_id,
+    codigo_lote: lote.codigo_lote || null,
+    coste_unitario: Number(lote.coste_unitario) || 0,
+    cantidad_inicial: cant,
+    cantidad_restante: lote.cantidad_restante != null ? Number(lote.cantidad_restante) : cant,
+    proveedor_id: lote.proveedor_id ?? null,
+    factura_ref: lote.factura_ref || null,
+    ...(lote.fecha_entrada ? { fecha_entrada: lote.fecha_entrada } : {}),
+  };
+  const { data, error } = await lsc().from('lotes').insert(row).select().single();
+  if (error) throw error;
+  return data;
+}
+
+export async function cargarSeries(materialId) {
+  if (!supabaseConfigurado) return [];
+  const { data, error } = await lsc().from('unidades_serie')
+    .select('*').eq('material_id', materialId).order('numero_serie');
+  if (error) { console.error('[L-Scale] cargarSeries', error.message); return []; }
+  return data || [];
+}
+
+// Alta de unidades serializadas (una fila por número de serie).
+export async function crearSeries(materialId, numeros = [], companyId, costeAdquisicion = null) {
+  if (!supabaseConfigurado || !numeros.length) return [];
+  const rows = numeros.filter(n => String(n).trim()).map(n => ({
+    company_id: companyId,
+    material_id: materialId,
+    numero_serie: String(n).trim(),
+    estado: 'disponible',
+    coste_adquisicion: costeAdquisicion != null ? Number(costeAdquisicion) : null,
+  }));
+  const { data, error } = await lsc().from('unidades_serie').insert(rows).select();
+  if (error) throw error;
+  return data || [];
+}
+
+// Calcula el coste de una salida según el tipo de trazabilidad (FIFO/PMP/Serie).
+// Para serializado pasa el array de números de serie.
+export async function valorarSalida(materialId, cantidad, series = null) {
+  if (!supabaseConfigurado) return null;
+  const { data, error } = await lsc().rpc('fn_valorar_salida', {
+    p_material_id: materialId,
+    p_cantidad: Number(cantidad) || 0,
+    p_series: series,
+  });
+  if (error) { console.error('[L-Scale] fn_valorar_salida RPC error', error); throw error; }
+  return data;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   RETORNOS (tabla real) — al insertar Roto/Perdido, el trigger
+   fn_disparador_retorno genera cargos_merma / deudas_proveedor + evento.
+   ═══════════════════════════════════════════════════════════════════ */
+
+export async function cargarRetornos(pedidoId) {
+  if (!supabaseConfigurado) return [];
+  const { data, error } = await lsc().from('retornos')
+    .select('*').eq('pedido_id', pedidoId).order('created_at');
+  if (error) { console.error('[L-Scale] cargarRetornos', error.message); return []; }
+  return data || [];
+}
+
+// Registra el retorno de una línea. estadoRecepcion ∈ Apto|Cuarentena|Roto|Perdido.
+// responsableMerma ∈ Cliente|Proveedor|Almacen (null si Apto).
+export async function registrarRetorno(r, companyId) {
+  if (!supabaseConfigurado) return null;
+  const row = {
+    company_id: companyId,
+    pedido_id: r.pedido_id,
+    linea_pedido_id: r.linea_pedido_id ?? null,
+    material_id: r.material_id ?? null,
+    cantidad: Number(r.cantidad) || 0,
+    estado_recepcion: r.estado_recepcion || 'Apto',
+    responsable_merma: r.responsable_merma ?? null,
+    origen_coste: r.origen_coste ?? null,
+    proveedor_id: r.proveedor_id ?? null,
+    notas: r.notas ?? null,
+  };
+  const { data, error } = await lsc().from('retornos').insert(row).select().single();
+  if (error) throw error;
+  return data;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   FINANCIERO — cargos al cliente y deudas con proveedor (solo lectura
+   desde la UI; los escribe el trigger de retorno).
+   ═══════════════════════════════════════════════════════════════════ */
+
+export async function cargarCargosMerma(companyId, { pedidoId = null } = {}) {
+  if (!supabaseConfigurado) return [];
+  let q = lsc().from('cargos_merma').select('*').eq('company_id', companyId);
+  if (pedidoId != null) q = q.eq('pedido_id', pedidoId);
+  const { data, error } = await q.order('created_at', { ascending: false });
+  if (error) { console.error('[L-Scale] cargarCargosMerma', error.message); return []; }
+  return data || [];
+}
+
+export async function cargarDeudasProveedor(companyId, { proveedorId = null } = {}) {
+  if (!supabaseConfigurado) return [];
+  let q = lsc().from('deudas_proveedor').select('*').eq('company_id', companyId);
+  if (proveedorId != null) q = q.eq('proveedor_id', proveedorId);
+  const { data, error } = await q.order('created_at', { ascending: false });
+  if (error) { console.error('[L-Scale] cargarDeudasProveedor', error.message); return []; }
+  return data || [];
+}
+
+// Cambia el estado de un cargo (pendiente→facturado→cobrado) o deuda (→pagado).
+export async function actualizarEstadoCargo(id, estado) {
+  if (!supabaseConfigurado) return;
+  const { error } = await lsc().from('cargos_merma').update({ estado }).eq('id', id);
+  if (error) throw error;
+}
+export async function actualizarEstadoDeuda(id, estado) {
+  if (!supabaseConfigurado) return;
+  const { error } = await lsc().from('deudas_proveedor').update({ estado }).eq('id', id);
+  if (error) throw error;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   OUTBOX — drenaje de eventos_salientes hacia el Worker Scale_Notifications.
+   Postgres no hace HTTP saliente: la SPA (o un cron) drena la cola.
+   ═══════════════════════════════════════════════════════════════════ */
+
+export async function drenarEventosSalientes(companyId) {
+  if (!supabaseConfigurado || !companyId) return { enviados: 0 };
+  const WORKER_URL = import.meta.env?.VITE_NOTIFICATIONS_URL;
+  const WORKER_SECRET = import.meta.env?.VITE_NOTIFICATIONS_SECRET;
+  const { data, error } = await lsc().from('eventos_salientes')
+    .select('*').eq('company_id', companyId).eq('estado', 'pendiente').limit(50);
+  if (error || !(data || []).length) return { enviados: 0 };
+
+  let enviados = 0;
+  for (const ev of data) {
+    try {
+      if (WORKER_URL) {
+        await fetch(WORKER_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json',
+            ...(WORKER_SECRET ? { 'x-webhook-secret': WORKER_SECRET } : {}) },
+          body: JSON.stringify({ tipo: ev.tipo, app: 'lscale', datos: ev.payload }),
+        });
+      }
+      await lsc().from('eventos_salientes')
+        .update({ estado: 'enviado', sent_at: new Date().toISOString() }).eq('id', ev.id);
+      enviados++;
+    } catch (e) {
+      console.error('[L-Scale] drenarEventosSalientes', e?.message);
+      await lsc().from('eventos_salientes').update({ estado: 'error' }).eq('id', ev.id);
+    }
+  }
+  return { enviados };
 }

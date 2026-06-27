@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from "react";
 import { RotateCcw, ArrowRight, Check, Loader, X, Package } from "lucide-react";
 import { C, Btn } from "./lib/ui.jsx";
-import { actualizarMaterial } from "./lib/data.js";
+import { actualizarMaterial, registrarRetorno } from "./lib/data.js";
 import { cantidadPropiaRetornable, cantidadSubalquilada, limitarRetornoAlmacen } from "./lib/retornos.js";
 
 const CHIP_ESTADO = {
@@ -11,6 +11,15 @@ const CHIP_ESTADO = {
   finalizado: { bg:"#dbeafe", ink:"#2563eb" },
   cancelado:  { bg:"#fee2e2", ink:"#dc2626" },
 };
+
+// Estado de recepción de cada línea al volver (ERP — migración 016).
+const ESTADOS_RECEPCION = [
+  { id:"Apto",       label:"Apto",       bg:C.okSoft,   ink:C.ok,   merma:false },
+  { id:"Cuarentena", label:"Cuarentena", bg:"#fef9c3",  ink:"#ca8a04", merma:false },
+  { id:"Roto",       label:"Roto",       bg:C.warnSoft, ink:C.warn, merma:true },
+  { id:"Perdido",    label:"Perdido",    bg:"#fee2e2",  ink:"#dc2626", merma:true },
+];
+const RESPONSABLES = ["Cliente","Proveedor","Almacen"];
 
 /* ─── Modal de retorno ────────────────────────────────────────────────────── */
 function RetornoModal({ pedido, materiales, onConfirm, onCancel, saving }) {
@@ -22,6 +31,15 @@ function RetornoModal({ pedido, materiales, onConfirm, onCancel, saving }) {
     lineas.forEach((l, i) => { init[i] = String(cantidadPropiaRetornable(l)); });
     return init;
   });
+
+  // Estado de recepción + responsable de merma por línea (ERP).
+  const [recepcion, setRecepcion] = useState(() => {
+    const init = {};
+    lineas.forEach((_, i) => { init[i] = { estado: "Apto", responsable: null }; });
+    return init;
+  });
+  const setRec = (idx, patch) => setRecepcion(p => ({ ...p, [idx]: { ...p[idx], ...patch } }));
+  const esMerma = (idx) => ESTADOS_RECEPCION.find(e => e.id === (recepcion[idx]?.estado))?.merma;
 
   const categorias = useMemo(() => {
     const cats = {};
@@ -123,10 +141,15 @@ function RetornoModal({ pedido, materiales, onConfirm, onCancel, saving }) {
                   const sub = cantidadSubalquilada(linea);
                   const cur  = Number(val) || 0;
                   const diff = cur - propio;
+                  const rec = recepcion[idx] || { estado:"Apto", responsable:null };
+                  const merma = esMerma(idx);
                   return (
-                    <div key={idx} style={{ display:"grid", gridTemplateColumns:"1fr auto auto",
-                      gap:10, alignItems:"center", padding:"6px 8px", borderRadius:8,
-                      background: cur === 0 ? C.s2 : "transparent" }}>
+                    <div key={idx} style={{ display:"flex", flexDirection:"column", gap:6,
+                      padding:"6px 8px", borderRadius:8,
+                      background: cur === 0 ? C.s2 : "transparent",
+                      borderLeft: merma ? `3px solid ${C.warn}` : "3px solid transparent" }}>
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr auto auto",
+                      gap:10, alignItems:"center" }}>
                       <div style={{ minWidth:0 }}>
                         <div style={{ fontSize:13, fontWeight:600, color: cur === 0 ? C.dim : C.ink,
                           overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap",
@@ -184,6 +207,34 @@ function RetornoModal({ pedido, materiales, onConfirm, onCancel, saving }) {
                         )}
                       </div>
                     </div>
+                    {/* Renglón ERP: estado de recepción + responsable de merma */}
+                    <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                      <span style={{ fontSize:10, color:C.dim, marginRight:2 }}>Estado:</span>
+                      {ESTADOS_RECEPCION.map(es => (
+                        <button key={es.id} type="button"
+                          onClick={() => setRec(idx, { estado: es.id, responsable: es.merma ? (rec.responsable || "Cliente") : null })}
+                          style={{ padding:"2px 9px", borderRadius:999, cursor:"pointer", fontFamily:"inherit",
+                            fontSize:11, fontWeight: rec.estado === es.id ? 700 : 500,
+                            border:`1.5px solid ${rec.estado === es.id ? es.ink : C.line}`,
+                            background: rec.estado === es.id ? es.bg : C.s2,
+                            color: rec.estado === es.id ? es.ink : C.sub }}>
+                          {es.label}
+                        </button>
+                      ))}
+                      {merma && (
+                        <span style={{ display:"flex", alignItems:"center", gap:5, marginLeft:4 }}>
+                          <span style={{ fontSize:10, color:C.dim }}>Responsable:</span>
+                          <select value={rec.responsable || "Cliente"}
+                            onChange={e => setRec(idx, { responsable: e.target.value })}
+                            style={{ fontSize:11, padding:"2px 6px", borderRadius:7,
+                              border:`1.5px solid ${C.warn}`, background:C.warnSoft, color:C.warn,
+                              fontFamily:"inherit", fontWeight:600, cursor:"pointer" }}>
+                            {RESPONSABLES.map(r => <option key={r} value={r}>{r}</option>)}
+                          </select>
+                        </span>
+                      )}
+                    </div>
+                    </div>
                   );
                 })}
               </div>
@@ -202,7 +253,7 @@ function RetornoModal({ pedido, materiales, onConfirm, onCancel, saving }) {
           display:"flex", justifyContent:"flex-end", gap:10 }}>
           <Btn outline onClick={onCancel}>Cancelar</Btn>
           <Btn color={C.ok} disabled={saving}
-            onClick={() => onConfirm(cantidades)}>
+            onClick={() => onConfirm(cantidades, recepcion)}>
             {saving ? <Loader size={13} className="spin"/> : <RotateCcw size={13}/>}
             Confirmar retorno
           </Btn>
@@ -243,22 +294,55 @@ export default function TabRetorno({ pedidos = [], setPedidos, vehiculosEmpresa 
   };
 
   /* ── Confirmar retorno con cantidades ──────────────────────────────────── */
-  const confirmarRetorno = async (pedido, cantidades) => {
+  const confirmarRetorno = async (pedido, cantidades, recepcion = {}) => {
     setSaving(pedido.id);
     const hoy = new Date().toISOString().slice(0, 10);
     const lineas = pedido.lineas || [];
 
-    // Guardar cantidades de retorno en el pedido
+    // Guardar cantidades + estado de recepción de retorno en el pedido
     const lineasConRetorno = lineas.map((l, i) => ({
       ...l,
       _retorno: limitarRetornoAlmacen(l, cantidades[i]),
       _retorno_proveedor: cantidadSubalquilada(l),
+      _estado_recepcion: recepcion[i]?.estado || "Apto",
+      _responsable_merma: recepcion[i]?.responsable || null,
     }));
+
+    // Registrar retornos en la tabla real (ERP): cada línea Roto/Perdido dispara
+    // el trigger financiero (cargos_merma / deudas_proveedor + evento).
+    const companyId = empresa?.id ?? empresa?.company_id;
+    if (modo === "supabase" && companyId) {
+      for (let i = 0; i < lineas.length; i++) {
+        const l = lineas[i];
+        const rec = recepcion[i] || { estado: "Apto" };
+        // Solo materializamos retornos con estado relevante (merma) o cantidad propia retornada.
+        const esMerma = rec.estado === "Roto" || rec.estado === "Perdido";
+        const cantRet = limitarRetornoAlmacen(l, cantidades[i]);
+        if (!esMerma && cantRet === 0 && rec.estado === "Apto") continue;
+        const origenCoste = (l.proveedor_id || l._origen_logistico === "subalquiler" || l.tipo_origen === "subalquiler")
+          ? "Alquiler_Proveedor" : "Almacen_Propio";
+        try {
+          await registrarRetorno({
+            pedido_id: pedido.id,
+            linea_pedido_id: l.linea_pedido_id ?? null,
+            material_id: l.material_id ?? null,
+            cantidad: esMerma ? (Number(l.cantidad) || cantRet) : cantRet,
+            estado_recepcion: rec.estado,
+            responsable_merma: esMerma ? (rec.responsable || "Cliente") : null,
+            origen_coste: origenCoste,
+            proveedor_id: l.proveedor_id ?? null,
+          }, companyId);
+        } catch (e) { console.error("registrarRetorno:", e?.message); }
+      }
+    }
 
     // Actualizar stock de materiales
     const nuevosMateriales = [...materiales];
     for (let i = 0; i < lineas.length; i++) {
       const linea = lineas[i];
+      const estadoRec = recepcion[i]?.estado || "Apto";
+      // Roto/Perdido NO vuelve al stock (es merma). Cuarentena tampoco hasta revisar.
+      if (estadoRec !== "Apto") continue;
       const cantRet = limitarRetornoAlmacen(linea, cantidades[i]);
       if (cantRet === 0) continue;
 

@@ -35,6 +35,8 @@ const TODAS_COLS = [
   { id: "estado",       label: "ESTADO",        fija: false, def: true  },
   { id: "proveedor",             label: "PROVEEDOR",      fija: false, def: true  },
   { id: "referencia_proveedor", label: "REF. PROVEEDOR", fija: false, def: true  },
+  { id: "sku_interno",          label: "SKU",            fija: false, def: false, help: "Código interno único e inmutable del material." },
+  { id: "tipo_trazabilidad",    label: "CONTROL",        fija: false, def: false, help: "Cómo se valora la salida de stock: Consumible (precio medio), Por lotes (FIFO) o Serializado (nº de serie)." },
   { id: "precio_coste",         label: "COSTE",          fija: false, def: false, help: "Coste unitario de compra del material." },
   { id: "precio",               label: "PVP",            fija: false, def: false, help: "Precio de venta al público por unidad." },
   { id: "margen",               label: "MARGEN",         fija: false, def: false, help: "Margen sobre PVP = (PVP − coste) ÷ PVP. Se calcula a partir de Coste y PVP." },
@@ -296,7 +298,7 @@ export default function TabAlmacen({ materiales, setMateriales, empresa, modo, a
         || (m.referencia_proveedor||"").toLowerCase().includes(q);
   });
 
-  const blankMaterial = { referencia:"", nombre:"", descripcion:"", categoria:"", unidad:"ud", stock_actual:0, stock_minimo:0, ubicacion:"", estado:"activo", proveedor:"", referencia_proveedor:"", precio_coste:"", precio:"", notas:"", almacen_id: almacenSel, imagen_url: null, _imgFile: null, coste_adquisicion:"", margen:"", pvp:"", periodo_amortizacion_dias:"", tipo_activo:"propio" };
+  const blankMaterial = { referencia:"", nombre:"", descripcion:"", categoria:"", unidad:"ud", stock_actual:0, stock_minimo:0, ubicacion:"", estado:"activo", proveedor:"", referencia_proveedor:"", precio_coste:"", precio:"", notas:"", almacen_id: almacenSel, imagen_url: null, _imgFile: null, coste_adquisicion:"", margen:"", pvp:"", periodo_amortizacion_dias:"", tipo_activo:"propio", sku_interno:"", tipo_trazabilidad:"Consumible_PMP" };
 
   const guardarEdit = async () => {
     if (!editObj.nombre?.trim()) return;
@@ -568,6 +570,12 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
         const t = m.tipo_activo || "propio";
         const sub = t === "subalquilado";
         return <Badge color={sub ? "var(--warn-soft)" : "var(--brand-soft)"} ink={sub ? "var(--warn)" : "var(--brand)"}>{sub ? "Subalq." : "Propio"}</Badge>;
+      }
+      case "tipo_trazabilidad": {
+        const t = m.tipo_trazabilidad || "Consumible_PMP";
+        const map = { Consumible_PMP:["PMP","var(--brand-soft)","var(--brand)"], Lotes_FIFO:["FIFO","#fef9c3","#ca8a04"], Serializado:["Serie","#e0e7ff","#4f46e5"] };
+        const [lbl, bg, ink] = map[t] || map.Consumible_PMP;
+        return <Badge color={bg} ink={ink}>{lbl}</Badge>;
       }
       default: return <span style={{ overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{m[colId] || <span style={{ color:C.dim }}>—</span>}</span>;
     }
@@ -843,6 +851,35 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
                 onChange={(v) => setEditObj((p) => ({ ...p, proveedor:v }))} placeholder={L("Elegir o escribir…","Pick or type…")}/>
               <ModalField label={L("Ref. Proveedor","Supplier Ref.")} value={editObj.referencia_proveedor}
                 onChange={(v) => setEditObj((p) => ({ ...p, referencia_proveedor:v }))} placeholder="SKU, código proveedor…"/>
+              {/* SKU interno inmutable (ERP). Si el material ya existe no se puede editar. */}
+              <ModalField label={L("SKU Interno","Internal SKU")}
+                help={L("Código único e inmutable del material. Se autogenera si lo dejas vacío al crear; no se puede cambiar después.","Unique immutable item code. Auto-generated if left empty on creation; cannot be changed afterwards.")}
+                value={editObj.sku_interno || ""}
+                onChange={editObj.id ? undefined : (v) => setEditObj((p) => ({ ...p, sku_interno:v }))}
+                readOnly={Boolean(editObj.id && editObj.sku_interno)}
+                style={editObj.id && editObj.sku_interno ? { opacity:0.75 } : undefined}
+                placeholder={editObj.id ? "" : L("(automático si vacío)","(auto if empty)")}/>
+              {/* Tipo de trazabilidad: define cómo valora salidas la app (FIFO/PMP/Serie). */}
+              <div style={{ gridColumn:"1 / -1" }}>
+                <label style={{ fontSize:11.5, fontWeight:600, color:"var(--text-2)", letterSpacing:.5 }}>
+                  {L("CONTROL DE STOCK","STOCK CONTROL")}
+                </label>
+                <div style={{ display:"flex", gap:8, marginTop:6, flexWrap:"wrap" }}>
+                  {[["Consumible_PMP", L("Consumible (precio medio)","Consumable (avg cost)")],
+                    ["Lotes_FIFO",     L("Por lotes (FIFO)","By batches (FIFO)")],
+                    ["Serializado",    L("Serializado (nº serie)","Serialized (serial nº)")]].map(([val, lbl]) => (
+                    <button key={val} type="button"
+                      onClick={() => setEditObj((p) => ({ ...p, tipo_trazabilidad: val }))}
+                      style={{ padding:"5px 14px", borderRadius:999, fontFamily:"inherit", cursor:"pointer",
+                        border: `1.5px solid ${(editObj.tipo_trazabilidad||"Consumible_PMP") === val ? "var(--brand)" : "var(--border-strong)"}`,
+                        background: (editObj.tipo_trazabilidad||"Consumible_PMP") === val ? "var(--brand-soft)" : "transparent",
+                        color: (editObj.tipo_trazabilidad||"Consumible_PMP") === val ? "var(--brand)" : "var(--text-2)",
+                        fontWeight:600, fontSize:12.5 }}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <ModalField label={L("Coste (€)","Cost (€)")}      value={editObj.precio_coste} onChange={(v) => setEditObj((p) => ({ ...p, precio_coste:v }))} type="number" placeholder="0.00"/>
               <ModalField label={L("PVP (€)","Sale price (€)")} value={editObj.precio} onChange={(v) => setEditObj((p) => ({ ...p, precio:v }))} type="number" placeholder="0.00"/>
               {(() => {
