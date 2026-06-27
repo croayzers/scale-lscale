@@ -18,7 +18,7 @@ import {
 import { useL } from "./lib/i18n.js";
 import { parsearExcelPedido } from "./lib/parseExcelPedido.js";
 import ExcelConfigurador from "./ExcelConfigurador.jsx";
-import { guardarPedido, borrarPedido, cargarMiembrosEmpresa, enviarNotificacionPedido, recargarMateriales, guardarPrefs, sincronizarReservasPedido, guardarSubalquilerPedido } from "./lib/data.js";
+import { guardarPedido, borrarPedido, cargarMiembrosEmpresa, enviarNotificacionPedido, recargarMateriales, guardarPrefs, sincronizarReservasPedido, guardarSubalquilerPedido, crearLineaPedido } from "./lib/data.js";
 import PantallaEventoLogistica from "./PantallaEventoLogistica.jsx";
 import { fmtFecha, siguienteCodigo } from "./lib/fechas.js";
 import { conflictosPedido, calcularConflictosStock } from "./lib/stockConflictos.js";
@@ -1264,12 +1264,62 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
     setEditLinea(null);
   };
 
-  const confirmarAddLinea = () => {
+  // Convierte una fila de lscale.lineas_pedido (devuelta por fn_split_linea) en
+  // una línea del jsonb del pedido, con los flags del split para la UI.
+  const filaSplitALinea = (row, base) => ({
+    nombre: row.nombre || base.nombre,
+    categoria: row.categoria || base.categoria || "(sin categoría)",
+    cantidad: Number(row.cantidad) || 0,
+    unidad: row.unidad || base.unidad || "ud",
+    ...(base.almacen_id != null ? { almacen_id: base.almacen_id } : {}),
+    material_id: row.material_id ?? base.material_id ?? null,
+    // Flags del split (para badges y coste)
+    linea_pedido_id: row.id,
+    origen_coste: row.origen_coste,                    // 'Almacen_Propio' | 'Alquiler_Proveedor'
+    proveedor_id: row.proveedor_id ?? null,
+    estado_linea: row.estado_linea,                    // incl. 'pendiente_proveedor'
+    _coste_sub: row.origen_coste === 'Alquiler_Proveedor' ? row.coste_unitario : null,
+    _coste_total_sub: row.origen_coste === 'Alquiler_Proveedor' ? row.coste_total : null,
+    _origen_logistico: row.origen_coste === 'Alquiler_Proveedor' ? 'subalquiler' : 'propio',
+    tipo_origen: row.origen_coste === 'Alquiler_Proveedor' ? 'subalquiler' : 'propio',
+  });
+
+  const confirmarAddLinea = async () => {
     if (!addLinea?.nombre?.trim()) return;
+    const cantidad = Number(addLinea.cantidad) || 1;
+
+    // ── Split automático: solo si hay material enlazado, modo supabase y el
+    //    pedido es de tipo evento con fechas (que es cuando puede faltar stock).
+    const esEvento = p.tipo_pedido === 'evento' && p.fecha_evento_inicio;
+    const puedeSplit = modo === 'supabase' && addLinea.material_id != null && esEvento && p.id;
+    if (puedeSplit) {
+      try {
+        const filas = await crearLineaPedido({
+          pedidoId: p.id, materialId: addLinea.material_id, cantidad,
+          nombre: addLinea.nombre, categoria: addLinea.categoria, unidad: addLinea.unidad,
+        });
+        if (filas && filas.length) {
+          const nuevas = filas.map(r => filaSplitALinea(r, addLinea));
+          setP(prev => {
+            const actualizado = { ...prev, lineas: [...(prev.lineas || []), ...nuevas] };
+            Promise.resolve(onSave?.(actualizado, { silent: true }))
+              .catch(e => console.warn("[Pedido/add-linea]", e?.message));
+            return actualizado;
+          });
+          setAddLinea(null);
+          return;
+        }
+      } catch (e) {
+        console.warn("[Pedido/split]", e?.message);
+        // cae al alta simple si el split falla
+      }
+    }
+
+    // ── Alta simple (no evento, sin material, o demo) ──
     const nueva = {
       nombre: addLinea.nombre,
       categoria: addLinea.categoria || "(sin categoría)",
-      cantidad: Number(addLinea.cantidad) || 1,
+      cantidad,
       unidad: addLinea.unidad || "ud",
     };
     if (addLinea.almacen_id != null) nueva.almacen_id = addLinea.almacen_id;
@@ -1736,7 +1786,25 @@ function DetallePedido({ pedido, almacenes, vehiculosEmpresa, onBack, onSave, on
                         {item.categoria || ""}
                       </div>
                       <div style={{ padding:"9px 8px" }}>
-                        <div style={{ fontSize:13.5, color:C.ink }}>{item.nombre}</div>
+                        <div style={{ fontSize:13.5, color:C.ink, display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+                          <span>{item.nombre}</span>
+                          {/* Badge de origen del split (line-splitting híbrido) */}
+                          {item.origen_coste === 'Almacen_Propio' && (
+                            <span style={{ fontSize:10, fontWeight:700, color:C.ok, background:C.okSoft, borderRadius:999, padding:"1px 7px" }}>
+                              {L("Propio","Own")}
+                            </span>
+                          )}
+                          {item.origen_coste === 'Alquiler_Proveedor' && (
+                            <span style={{ fontSize:10, fontWeight:700,
+                              color: item.estado_linea === 'pendiente_proveedor' ? C.danger : C.warn,
+                              background: item.estado_linea === 'pendiente_proveedor' ? "rgba(220,38,38,.12)" : C.warnSoft,
+                              borderRadius:999, padding:"1px 7px" }}>
+                              {item.estado_linea === 'pendiente_proveedor'
+                                ? L("Alquiler · sin proveedor","Rental · no supplier")
+                                : L("Alquiler","Rental")}
+                            </span>
+                          )}
+                        </div>
                         {item._editado_por && (
                           <div style={{ display:"flex", alignItems:"center", gap:4, marginTop:3 }}>
                             <span style={{ fontSize:10.5, fontWeight:700, color:"#ea580c",

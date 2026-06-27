@@ -24,9 +24,10 @@ import TabFlota from "./TabFlota.jsx";
 import TabEtiquetas from "./TabEtiquetas.jsx";
 import TabCesta from "./TabCesta.jsx";
 import TabDistribuidor from "./TabDistribuidor.jsx";
+import TabFinanzas from "./TabFinanzas.jsx";
 import { ChatBase, BellButton, PresenceAvatars, leerCmdDeUrl, crearNotificacion as crearNotifEvento, serializarToken } from "@scale/shared/chat";
 import { cargarApps, crearResolveAppUrl } from "@scale/shared/registry";
-import { Package, Shield, ClipboardCheck, Truck, Tag, ShoppingCart } from "lucide-react";
+import { Package, Shield, ClipboardCheck, Truck, Tag, ShoppingCart, Euro } from "lucide-react";
 import AppLauncher from "./AppLauncher.jsx";
 import { ToastContainer, PanelAlertasStock, crearNotificacion } from "./StockNotificaciones.jsx";
 
@@ -67,6 +68,7 @@ const NAV = [
       // Etiquetas ya no va en la barra: es un botón dentro del detalle de cada pedido.
       { id: "planning",  label: "Planning",        Icon: CalendarDays  },
       { id: "retorno",   label: "Retorno/Cierre",  Icon: RotateCcw     },
+      { id: "finanzas",  label: "Finanzas",        Icon: Euro          },
     ],
   },
   { id: "flota",  label: "Flota",          Icon: Truck    },
@@ -663,6 +665,7 @@ export default function App() {
             onNotificarStock={notificarStock}
             onNotificarEvento={notificarEvento}
             onSavePedido={async p => { if (modo === "supabase" && empresa?.id) await guardarPedido(p, empresa.id); }} L={L}/>}
+          {tab === "finanzas" && <TabFinanzas empresa={empresa} modo={modo} materiales={materiales} L={L}/>}
           {tab === "flota"     && <TabFlota pedidos={pedidos} vehiculosEmpresa={vehiculosEmpresa} empresa={empresa} formatoFecha={formatoFecha} L={L}/>}
           {tab === "etiquetas" && <TabEtiquetas pedidos={pedidos} plantillas={plantillasEtiquetas} onGuardarPlantillas={guardarPlantillasEtiquetas}
             pedidoInicial={etiquetaPedido}

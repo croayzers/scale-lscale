@@ -10,6 +10,7 @@ import { C, Badge, Btn, ModalField, Help } from "./lib/ui.jsx";
 import { crearMaterial, upsertMaterialesLote, actualizarMaterial, borrarMaterial, borrarMaterialesLote, subirImagenMaterial, borrarImagenMaterial } from "./lib/data.js";
 import { sb } from "./lib/supabase.js";
 import AlmacenConfigurador from "./AlmacenConfigurador.jsx";
+import PanelTrazabilidad from "./PanelTrazabilidad.jsx";
 import { OrigenDatosPanel } from "@scale/shared/connectors";
 
 // Decodifica el base64 devuelto por /api/sharepoint/files/content a un File
@@ -1021,6 +1022,10 @@ table{width:100%;border-collapse:collapse}tbody tr:nth-child(even){background:#f
                 <textarea value={editObj.notas || ""} onChange={(e) => setEditObj((p) => ({ ...p, notas:e.target.value }))}
                   rows={2} style={{ width:"100%", marginTop:6, padding:"9px 11px", border:`1px solid ${C.strong}`, borderRadius:10, fontSize:13.5, fontFamily:"inherit", background:C.s2, color:C.ink, outline:"none", resize:"vertical" }}/>
               </div>
+              {/* Lotes (FIFO/PMP) o unidades serie — solo en material existente + Supabase */}
+              {editObj.id && modo === "supabase" && empresa?.id && (
+                <PanelTrazabilidad material={editObj} companyId={empresa.id} L={L}/>
+              )}
             </div>
             <div style={{ display:"flex", justifyContent:"flex-end", gap:10, marginTop:20 }}>
               <Btn outline onClick={() => setEditObj(null)}>{L("Cancelar","Cancel")}</Btn>
