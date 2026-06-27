@@ -15,6 +15,9 @@ import {
 } from "./lib/data.js";
 import { C, Badge, Btn } from "./lib/ui.jsx";
 import { empresaTieneFinanzas } from "./lib/gestion.js";
+import { cargarCompras } from "./lib/dataRecuentos.js";
+import { cargarProveedores } from "./lib/data.js";
+import { toolSpecs, crearDispatcher } from "./lib/actions.js";
 import TabAlmacen from "./TabAlmacen.jsx";
 import TabPedidos from "./TabPedidos.jsx";
 import TabPlanning from "./TabPlanning.jsx";
@@ -163,6 +166,9 @@ export default function App() {
   const [nivelApp,          setNivelApp]          = useState(null); // ver | editar | admin | null (sin restricción)
   const [formatoFecha,      setFormatoFecha]      = useState("DD/MM/YYYY");
   const [gestion,           setGestion]           = useState({ nivel: "operativo", categorias: {} });
+  // Datos para la capa de IA (consulta de compras): se cargan perezosamente.
+  const [comprasIA,         setComprasIA]         = useState([]);
+  const [proveedoresIA,     setProveedoresIA]     = useState([]);
   const [miembros,          setMiembros]          = useState([]);
   const [chatUnread,        setChatUnread]        = useState(0);
   const [highlightedPedido, setHighlightedPedido] = useState(null);
@@ -346,6 +352,29 @@ export default function App() {
 
   // Prefs en modo supabase: ya se cargan en cargar() desde cargarDatos().
   // En modo demo/local: cargamos desde localStorage.
+  // Carga perezosa de datos para la IA (compras + proveedores) cuando hay empresa.
+  // Las funciones de consulta son puras: operan sobre estos arrays en memoria.
+  useEffect(() => {
+    if (!empresa?.id) return;
+    let vivo = true;
+    (async () => {
+      try {
+        const [cs, ps] = await Promise.all([
+          cargarCompras(empresa.id, modo).catch(() => []),
+          modo === "supabase" ? cargarProveedores(empresa.id).catch(() => []) : Promise.resolve([]),
+        ]);
+        if (vivo) { setComprasIA(cs || []); setProveedoresIA(ps || []); }
+      } catch {}
+    })();
+    return () => { vivo = false; };
+  }, [empresa?.id, modo]);
+
+  // Dispatcher de tools para el asistente (memoizado sobre los datos cargados).
+  const iaOnTool = useMemo(
+    () => crearDispatcher({ compras: comprasIA, almacenes, proveedores: proveedoresIA }),
+    [comprasIA, almacenes, proveedoresIA]
+  );
+
   useEffect(() => {
     if (!empresa?.id || modo === "supabase") return;
     try { const v = JSON.parse(localStorage.getItem(`lscale.almacenes.${empresa.id}`)); if (Array.isArray(v) && v.length) setAlmacenes(v); } catch {}
@@ -710,11 +739,13 @@ export default function App() {
                 && !((empresa?.flags?.ai?.usuariosOff?.[sesion?.user?.id] || []).includes("*")),
               provider: empresa.aiProvider, keys: empresa.aiKeys || {}, orden: empresa?.flags?.ai?.orden,
               onFallback: ({ desde }) => { if (desde) marcarIASinTokens(empresa?.id, desde); },
-              system: "Eres el asistente de L-Scale, app de logística de eventos (almacén, pedidos, expediciones, planning de vehículos). Conoces la actividad reciente del equipo. Ayuda al usuario respondiendo dudas sobre la app y la logística, y resumiendo lo que ha pasado. Responde en español, breve y claro.",
+              system: "Eres el asistente de L-Scale, app de logística de eventos (almacén, pedidos, expediciones, planning de vehículos). Conoces la actividad reciente del equipo. Puedes consultar el HISTORIAL DE COMPRAS con las herramientas disponibles: usa consultar_compras para buscar líneas (por material, fechas, almacén o proveedor) y sumatorio_compras para agregados por material y mes. Cuando el usuario pregunte por compras, materiales comprados, gasto en aprovisionamiento o totales por periodo, llama a la herramienta y resume el resultado con cifras concretas. Responde en español, breve y claro.",
+              tools: toolSpecs(),
+              onTool: iaOnTool,
               prompts: [
-                "Resume la actividad reciente de mi equipo",
-                "¿Qué pedidos o eventos nuevos hay?",
-                "¿Tengo mensajes pendientes importantes?",
+                "¿Cuántas Copa de Vino hemos comprado en los últimos 120 días?",
+                "Hazme un resumen de las compras de este mes",
+                "¿Qué le hemos comprado a cada proveedor?",
               ],
             }}
           />
