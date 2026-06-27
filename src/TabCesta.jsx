@@ -922,22 +922,32 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
           </span>
         )}
 
-        {/* Proveedor por defecto del pedido (cambiable por material en cada fila) */}
-        {proveedores.length > 0 && (
-          <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:6 }}
-            title="Proveedor por defecto · puedes cambiarlo por material en cada fila">
-            <Building2 size={14} color={C.brand}/>
-            <span style={{ fontSize:11.5, color:C.sub, fontWeight:600 }}>Proveedor:</span>
-            <select value={provDefecto} onChange={e => { setProvDefecto(e.target.value); setProvPorMat({}); }}
-              style={{ padding:"6px 10px", borderRadius:999, fontSize:12.5, fontFamily:"inherit",
-                border:`1.5px solid ${provDefecto ? C.brand : C.strong}`,
-                background: provDefecto ? C.brandSoft : C.s2, color: provDefecto ? C.brand : C.ink,
-                cursor:"pointer", outline:"none" }}>
-              <option value="">Ninguno</option>
-              {proveedores.map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)}
-            </select>
-          </div>
-        )}
+        {/* Bloque derecho de la cabecera: botón Compras + selector de proveedor */}
+        <div style={{ marginLeft:"auto", display:"flex", alignItems:"center", gap:10 }}>
+          {onIrHistorial && (
+            <button onClick={onIrHistorial} title={L("Ver el historial de todas las compras","See the purchase history")}
+              style={{ display:"flex", alignItems:"center", gap:6, padding:"6px 12px", borderRadius:999,
+                border:`1.5px solid ${C.strong}`, background:C.s2, color:C.ink,
+                fontWeight:600, fontSize:12.5, cursor:"pointer", fontFamily:"inherit" }}>
+              <History size={14} color={C.brand}/>{L("Compras","Purchases")}
+            </button>
+          )}
+          {proveedores.length > 0 && (
+            <div style={{ display:"flex", alignItems:"center", gap:6 }}
+              title="Proveedor por defecto · puedes cambiarlo por material en cada fila">
+              <Building2 size={14} color={C.brand}/>
+              <span style={{ fontSize:11.5, color:C.sub, fontWeight:600 }}>Proveedor:</span>
+              <select value={provDefecto} onChange={e => { setProvDefecto(e.target.value); setProvPorMat({}); }}
+                style={{ padding:"6px 10px", borderRadius:999, fontSize:12.5, fontFamily:"inherit",
+                  border:`1.5px solid ${provDefecto ? C.brand : C.strong}`,
+                  background: provDefecto ? C.brandSoft : C.s2, color: provDefecto ? C.brand : C.ink,
+                  cursor:"pointer", outline:"none" }}>
+                <option value="">Ninguno</option>
+                {proveedores.map(p => <option key={p.id} value={String(p.id)}>{p.nombre}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Barra de acciones (arriba) */}
@@ -988,15 +998,7 @@ export default function TabCesta({ cesta, setCesta, materiales, setMateriales, a
         </button>
 
         <div style={{ flex:1 }}/>
-
-        {onIrHistorial && (
-          <button onClick={onIrHistorial} title={L("Ver el historial de todas las compras realizadas","See the history of all purchases")}
-            style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 14px",
-              borderRadius:8, border:`1px solid ${C.strong}`, background:C.s2, color:C.ink,
-              fontWeight:600, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-            <History size={14} color={C.brand}/>{L("Historial","History")}
-          </button>
-        )}
+        {/* El acceso a Compras/Historial está en la cabecera (junto al selector de proveedor). */}
 
         <button onClick={() => setCesta([])}
           style={{ display:"flex", alignItems:"center", gap:6, padding:"8px 14px",
