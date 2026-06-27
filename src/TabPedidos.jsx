@@ -385,29 +385,33 @@ function ListaPedidos({ pedidos, almacenes, vehiculosEmpresa, materiales = [], o
         ) : grupos.map(({ anyo, meses }) => (
           <div key={anyo}>
             {/* Cabecera año */}
-            <div onClick={() => toggleGrupo(anyo)}
-              style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 20px",
-                background:C.s2, borderBottom:`1px solid ${C.line}`, cursor:"pointer",
+            <button type="button" onClick={() => toggleGrupo(anyo)}
+              aria-expanded={abiertos.has(anyo)}
+              style={{ display:"flex", alignItems:"center", gap:8, padding:"8px 20px", width:"100%",
+                background:C.s2, border:"none", borderBottom:`1px solid ${C.line}`, cursor:"pointer",
+                fontFamily:"inherit", textAlign:"left",
                 position:"sticky", top:0, zIndex:2 }}>
               <ChevronRight size={14} color={C.brand} style={{ transform: abiertos.has(anyo) ? "rotate(90deg)" : "rotate(0deg)", transition:"transform .2s" }}/>
               <span style={{ fontWeight:800, fontSize:14, color:C.ink }}>{anyo}</span>
               <span style={{ fontSize:12, color:C.sub }}>
                 {meses.reduce((s, m) => s + m.items.length, 0)} pedidos
               </span>
-            </div>
+            </button>
 
             {abiertos.has(anyo) && meses.map(({ mes, label, items }) => {
               const key = `${anyo}-${mes}`;
               return (
                 <div key={key}>
                   {/* Cabecera mes */}
-                  <div onClick={() => toggleGrupo(key)}
-                    style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 32px",
-                      background:C.bg, borderBottom:`1px solid ${C.line}`, cursor:"pointer" }}>
+                  <button type="button" onClick={() => toggleGrupo(key)}
+                    aria-expanded={abiertos.has(key)}
+                    style={{ display:"flex", alignItems:"center", gap:8, padding:"6px 32px", width:"100%",
+                      background:C.bg, border:"none", borderBottom:`1px solid ${C.line}`, cursor:"pointer",
+                      fontFamily:"inherit", textAlign:"left" }}>
                     <ChevronRight size={12} color={C.sub} style={{ transform: abiertos.has(key) ? "rotate(90deg)" : "rotate(0deg)", transition:"transform .2s" }}/>
                     <span style={{ fontWeight:600, fontSize:13, color:C.sub }}>{label}</span>
                     <span style={{ fontSize:11.5, color:C.dim }}>{items.length} pedidos</span>
-                  </div>
+                  </button>
 
                   {abiertos.has(key) && items.map(p => {
             const chip = CHIP_ESTADO[p.estado] || CHIP_ESTADO.reservado;
