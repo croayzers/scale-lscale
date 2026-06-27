@@ -8,7 +8,41 @@
 
 ---
 
+## Parte 0 · Elige cuánta gestión necesitas (Modo de gestión)
+
+**No todas las empresas necesitan todo.** Antes de nada, en **Configuración → Modo de gestión**
+eliges el nivel que encaja con tu negocio. Puedes empezar simple y activar más cuando quieras;
+nada se pierde al cambiar de nivel.
+
+| Nivel | Para quién | Qué ves |
+|-------|-----------|---------|
+| **Operativo** | Solo organizas pedidos (la contabilidad la llevas en otro sitio) | Stock, pedidos, reparto propio/alquiler y retornos. **Sin** importes ni datos financieros. |
+| **Contabilidad básica** | Quieres controlar coste, margen y roturas | Lo anterior **+** coste y margen en pedidos, registro de roturas/pérdidas (cargos al cliente, deudas a proveedor) y la pestaña **Finanzas**. |
+| **Avanzada** | Gestionas activos de valor y quieres trazabilidad fina | Lo anterior **+** lotes (FIFO), precio medio, números de serie y amortización. |
+
+### Ajuste por categoría (la parte potente)
+
+¿Tienes **material caro mezclado con material simple**? No hace falta subir todo. En la misma
+pantalla puedes **subir el nivel solo a una categoría**:
+
+> Ejemplo real: un organizador audiovisual pone el nivel general en **Básica**, pero la categoría
+> **"Audiovisual"** (altavoces, mezcladores) la sube a **Avanzada** para controlar sus números de
+> serie y amortización. Los cables y consumibles se quedan en Básica, sin lotes ni series.
+
+Regla simple: una categoría **solo puede subir** por encima del nivel general, nunca bajar
+(las opciones por debajo aparecen atenuadas: "heredado del nivel general").
+
+**Qué pasa al cambiar de nivel:** subir muestra más campos; bajar los **oculta pero no borra** nada.
+Si vuelves a subir, tus datos siguen ahí. Lo que sigue activo **siempre**, en cualquier nivel:
+el reparto propio/alquiler de los pedidos y los estados de retorno (Apto/Roto/Perdido…) — eso es
+gestión logística, no contabilidad.
+
+---
+
 ## Parte 1 · Para ti (equipo de almacén / eventos)
+
+> Nota: lo de abajo describe **todas** las funciones. Según tu *Modo de gestión*, algunas no
+> aparecerán (p. ej. en Operativo no verás lotes, amortización ni importes). Es normal y esperado.
 
 ### 1. Cada material tiene un "tipo de control"
 
@@ -117,6 +151,18 @@ nada: queda todo registrado.
 - **No es facturación fiscal**: es el registro contable interno que alimenta los exports y los avisos.
 - Los avisos salen por el Worker central de notificaciones (**Scale_Notifications**), drenados
   desde una cola de eventos (`eventos_salientes`).
+
+### Estadios de gestión (cómo se implementan)
+
+- El nivel se guarda en `empresa_config.datos_json.gestion = { nivel, categorias }`
+  (`nivel` ∈ `operativo|basica|avanzada`; `categorias` = overrides por categoría).
+- Nivel efectivo de un material = **`max(nivel_global, nivel_categoría)`** (la categoría solo sube).
+  Lógica centralizada en `src/lib/gestion.js`: `nivelMaterial()`, `caps(nivel) → {finanzas, avanzado}`.
+- **No hay migración SQL para esto**: el backend (016) está siempre disponible; el nivel solo decide
+  qué muestra la UI y si se registran los cargos/deudas. Bajar de nivel **oculta, no borra**.
+- Capacidades por nivel: `finanzas` (≥ básica) habilita coste/margen, pestaña Finanzas y los
+  disparadores de merma; `avanzado` (= avanzada) habilita lotes/series/amortización y `tipo_trazabilidad`.
+- El **line-splitting** y los **estados de retorno** no dependen del nivel: son Estadio 1 (operativo).
 
 ### Multi-empresa y seguridad
 
