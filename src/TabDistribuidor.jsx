@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
-import { Plus, Trash2, Search, Upload, X, Check, Building2, Edit2, Save, Package, ArrowRight, Loader, RefreshCw, Star, Download, ShoppingBag } from "lucide-react";
+import { Plus, Trash2, Search, Upload, X, Check, Building2, Edit2, Save, Package, ArrowRight, Loader, RefreshCw, Star, Download, ShoppingBag, Sparkles } from "lucide-react";
 import * as XLSX from "xlsx";
 import { C, Btn, Help } from "./lib/ui.jsx";
+import ImportProveedorIA from "./ImportProveedorIA.jsx";
 import {
   cargarProveedores, crearProveedor, actualizarProveedor, borrarProveedor,
   cargarCorrelacionesDeProveedor, guardarCorrelacion, borrarCorrelacion,
@@ -1308,6 +1309,7 @@ export default function TabDistribuidor({ empresa, materiales = [], modo, pedido
   const [subTab, setSubTab] = useState("correlacion");
   const [wizardProv, setWizardProv] = useState(null);   // id de proveedor a importar, o null
   const [wizardCorrelacion, setWizardCorrelacion] = useState(false);
+  const [wizardIA, setWizardIA] = useState(false);      // import de catálogo con IA
   const [principalId, setPrincipalId] = useState(null); // proveedor cuyo coste es el por defecto
 
   const recargar = useCallback(async () => {
@@ -1418,9 +1420,14 @@ export default function TabDistribuidor({ empresa, materiales = [], modo, pedido
         </div>
         <div style={{ display:"flex", alignItems:"center", gap:6 }}>
           {subTab==="correlacion" && (
-            <Btn onClick={()=>setWizardCorrelacion(true)} style={{ fontSize:12, padding:"5px 12px" }}>
-              <Upload size={13}/> Importar Correlación
-            </Btn>
+            <>
+              <Btn onClick={()=>setWizardCorrelacion(true)} style={{ fontSize:12, padding:"5px 12px" }}>
+                <Upload size={13}/> Importar Correlación
+              </Btn>
+              <Btn outline onClick={()=>setWizardIA(true)} style={{ fontSize:12, padding:"5px 12px" }} disabled={proveedores.length===0}>
+                <Sparkles size={13}/> Importar con IA
+              </Btn>
+            </>
           )}
           <button onClick={recargar} title="Recargar" style={{ background:"none", border:"none", color:C.dim, cursor:"pointer", padding:6, display:"flex" }}><RefreshCw size={15}/></button>
         </div>
@@ -1455,6 +1462,14 @@ export default function TabDistribuidor({ empresa, materiales = [], modo, pedido
           proveedores={proveedores} materiales={materiales} cid={cid}
           onCrearProv={onCrearProv}
           onCerrar={()=>setWizardCorrelacion(false)}
+          onTerminar={()=>{ recargar(); }}/>
+      )}
+
+      {wizardIA && (
+        <ImportProveedorIA
+          proveedores={proveedores} materiales={materiales} companyId={cid}
+          provider={empresa?.aiProvider} keys={empresa?.aiKeys || {}} orden={empresa?.flags?.ai?.orden}
+          onCerrar={()=>setWizardIA(false)}
           onTerminar={()=>{ recargar(); }}/>
       )}
     </div>

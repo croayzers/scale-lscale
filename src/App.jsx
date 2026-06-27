@@ -18,6 +18,7 @@ import { empresaTieneFinanzas } from "./lib/gestion.js";
 import { cargarCompras } from "./lib/dataRecuentos.js";
 import { cargarProveedores, cargarCargosMerma, cargarDeudasProveedor, cargarRetornos } from "./lib/data.js";
 import { toolSpecs, crearDispatcher } from "./lib/actions.js";
+import { exportarTablaExcel, exportarTablaPDF } from "./lib/exportFile.js";
 import TabAlmacen from "./TabAlmacen.jsx";
 import TabPedidos from "./TabPedidos.jsx";
 import TabPlanning from "./TabPlanning.jsx";
@@ -393,13 +394,25 @@ export default function App() {
     return () => { vivo = false; };
   }, [empresa?.id, modo, pedidos]);
 
+  // Descarga de archivos solicitada por la IA (Excel/PDF). El dispatcher es
+  // síncrono y no puede devolver un fichero: lo delega en este callback.
+  const iaOnExport = useCallback(({ formato, titulo, subtitulo, columnas, filas }) => {
+    if (formato === "excel") {
+      exportarTablaExcel({ titulo, columnas, filas, nombreArchivo: titulo });
+    } else {
+      // exportarTablaPDF es async (import dinámico de jspdf); no necesitamos esperar.
+      exportarTablaPDF({ titulo, subtitulo, columnas, filas, nombreArchivo: titulo });
+    }
+  }, []);
+
   // Dispatcher de tools para el asistente (memoizado sobre los datos cargados).
   const iaOnTool = useMemo(
     () => crearDispatcher({
       compras: comprasIA, almacenes, proveedores: proveedoresIA,
       materiales, pedidos, cargos: cargosIA, deudas: deudasIA, retornos: retornosIA,
+      onExport: iaOnExport,
     }),
-    [comprasIA, almacenes, proveedoresIA, materiales, pedidos, cargosIA, deudasIA, retornosIA]
+    [comprasIA, almacenes, proveedoresIA, materiales, pedidos, cargosIA, deudasIA, retornosIA, iaOnExport]
   );
 
   useEffect(() => {
@@ -766,7 +779,7 @@ export default function App() {
                 && !((empresa?.flags?.ai?.usuariosOff?.[sesion?.user?.id] || []).includes("*")),
               provider: empresa.aiProvider, keys: empresa.aiKeys || {}, orden: empresa?.flags?.ai?.orden,
               onFallback: ({ desde }) => { if (desde) marcarIASinTokens(empresa?.id, desde); },
-              system: "Eres el asistente de L-Scale, app de logística de eventos (almacén, pedidos, expediciones, planning de vehículos, finanzas). Conoces la actividad reciente del equipo y puedes CONSULTAR datos reales con las herramientas disponibles; úsalas siempre que la pregunta requiera datos concretos y resume el resultado con cifras: COMPRAS — consultar_compras (líneas por material/fechas/almacén/proveedor) y sumatorio_compras (agregados por material y mes). ALMACÉN/STOCK — consultar_stock (stock actual vs mínimo, por material/categoría/almacén) y material_bajo_minimo (qué reponer). PEDIDOS — consultar_pedidos (por estado/fechas/cliente) y conflictos_stock (pedidos sin stock suficiente). FINANZAS — consultar_cargos_merma (cargos al cliente por roturas/pérdidas) y consultar_deudas_proveedor (lo que debemos a proveedores). PROVEEDORES — consultar_proveedores. RETORNOS — consultar_retornos (material devuelto: Apto/Cuarentena/Roto/Perdido). Responde en español, breve y claro.",
+              system: "Eres el asistente de L-Scale, app de logística de eventos (almacén, pedidos, expediciones, planning de vehículos, finanzas). Conoces la actividad reciente del equipo y puedes CONSULTAR datos reales con las herramientas disponibles; úsalas siempre que la pregunta requiera datos concretos y resume el resultado con cifras: COMPRAS — consultar_compras (líneas por material/fechas/almacén/proveedor) y sumatorio_compras (agregados por material y mes). ALMACÉN/STOCK — consultar_stock (stock actual vs mínimo, por material/categoría/almacén) y material_bajo_minimo (qué reponer). PEDIDOS — consultar_pedidos (por estado/fechas/cliente) y conflictos_stock (pedidos sin stock suficiente). FINANZAS — consultar_cargos_merma (cargos al cliente por roturas/pérdidas) y consultar_deudas_proveedor (lo que debemos a proveedores). PROVEEDORES — consultar_proveedores. RETORNOS — consultar_retornos (material devuelto: Apto/Cuarentena/Roto/Perdido). EXPORTACIÓN — exportar_excel y exportar_pdf: cuando el usuario pida descargar/exportar datos, primero consulta los datos con la herramienta adecuada y luego llama a exportar_excel o exportar_pdf pasando esas filas (columnas = etiquetas de cabecera, filas = arrays de valores en el mismo orden). Responde en español, breve y claro.",
               tools: toolSpecs(),
               onTool: iaOnTool,
               prompts: [
@@ -774,6 +787,8 @@ export default function App() {
                 "¿Qué pedidos tienen conflicto de stock?",
                 "¿Cuánto debemos a proveedores?",
                 "Hazme un resumen de las compras de este mes",
+                "Exporta a Excel los materiales bajo mínimo",
+                "Genera un PDF con las compras de este mes",
               ],
             }}
           />

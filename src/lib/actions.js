@@ -117,6 +117,27 @@ export function toolSpecs() {
         estado_recepcion: { type: "string", description: "Estado de recepción (opcional): Apto, Cuarentena, Roto o Perdido." },
       },
     },
+
+    // ── EXPORTACIÓN (descarga de archivos) ──
+    {
+      name: "exportar_excel",
+      description: "Genera y descarga un archivo Excel (.xlsx) con una tabla. Úsalo cuando el usuario pida 'exporta esto a Excel', 'descárgame un Excel con…' o 'pásamelo a hoja de cálculo'. Pásale los datos que YA obtuviste de una consulta previa (p. ej. tras consultar_stock o consultar_compras, usa esas filas) o cualquier tabla que el usuario quiera. 'columnas' son las etiquetas de cabecera y 'filas' los datos (cada fila un array de valores en el mismo orden que las columnas, o un objeto). El archivo se descarga en el navegador del usuario.",
+      params: {
+        titulo: { type: "string", description: "Título de la tabla / nombre base del archivo. Ej: 'Stock bajo mínimo'." },
+        columnas: { type: "array", description: "Etiquetas de las columnas (cabecera). Ej: ['Material','Stock','Mínimo']." },
+        filas: { type: "array", description: "Filas de datos. Cada fila es un array de valores en el orden de 'columnas' (también admite objetos). Ej: [['Copa de Vino', 120, 200], ['Plato llano', 80, 50]]." },
+      },
+    },
+    {
+      name: "exportar_pdf",
+      description: "Genera y descarga un archivo PDF con una tabla (cabecera + filas, paginado). Úsalo cuando el usuario pida 'exporta esto a PDF', 'hazme un PDF con…' o 'descárgame un informe'. Igual que exportar_excel: pásale los datos que YA obtuviste de una consulta previa o la tabla que el usuario quiera. El archivo se descarga en el navegador del usuario.",
+      params: {
+        titulo: { type: "string", description: "Título del informe / nombre base del archivo. Ej: 'Informe de compras junio'." },
+        subtitulo: { type: "string", description: "Subtítulo opcional bajo el título (p. ej. rango de fechas o filtro aplicado)." },
+        columnas: { type: "array", description: "Etiquetas de las columnas (cabecera). Ej: ['Fecha','Material','Cantidad']." },
+        filas: { type: "array", description: "Filas de datos. Cada fila es un array de valores en el orden de 'columnas' (también admite objetos)." },
+      },
+    },
   ];
 }
 
@@ -324,6 +345,31 @@ export function crearDispatcher(ctx = {}) {
         return {
           resumen: `${lista.length} retornos`,
           datos: { retornos: datos, total: lista.length, truncado: lista.length > 50 },
+        };
+      }
+
+      // ── EXPORTACIÓN ──
+      // El dispatcher es síncrono y no puede devolver un archivo: delega la
+      // descarga en ctx.onExport (implementado en App.jsx con XLSX/jsPDF).
+      if (name === "exportar_excel" || name === "exportar_pdf") {
+        if (typeof ctx.onExport !== "function") {
+          return { error: "Exportación no disponible en este contexto." };
+        }
+        const formato = name === "exportar_excel" ? "excel" : "pdf";
+        const columnas = Array.isArray(input.columnas) ? input.columnas : [];
+        const filas = Array.isArray(input.filas) ? input.filas : [];
+        if (!columnas.length || !filas.length) {
+          return { error: "Faltan datos para exportar: indica 'columnas' y 'filas'." };
+        }
+        const titulo = input.titulo || (formato === "excel" ? "Datos" : "Informe");
+        try {
+          ctx.onExport({ formato, titulo, subtitulo: input.subtitulo || null, columnas, filas });
+        } catch (e) {
+          return { error: e?.message || "No se pudo generar el archivo." };
+        }
+        return {
+          resumen: `Archivo ${formato === "excel" ? "Excel" : "PDF"} generado: "${titulo}" (${filas.length} filas).`,
+          datos: { formato, titulo, n_columnas: columnas.length, n_filas: filas.length },
         };
       }
 
