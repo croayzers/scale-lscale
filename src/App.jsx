@@ -64,7 +64,7 @@ const NAV = [
     items: [
       { id: "distribuidor", label: "Proveedores", Icon: Building2      },
       { id: "almacen",      label: "Almacén",      Icon: Warehouse      },
-      { id: "compras",      label: "Compras",      Icon: History        },
+      // Compras NO va en la barra: se accede con el botón "Compras" dentro de la Cesta.
       // Inventario ya no va en la barra: es un botón dentro del header de Almacén.
     ],
   },
